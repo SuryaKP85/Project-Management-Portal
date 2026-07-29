@@ -19,6 +19,7 @@ import { GanttModule } from './gantt.js';
 import { ActionCenterModule } from './actionCenter.js';
 import { AppIntegrationModule } from './appIntegration.js';
 import { MigrationConfig } from './migrationConfig.js';
+import { SettingsModule } from './settings.js';
 
 class EnterprisePortalApp {
   constructor() {
@@ -43,11 +44,11 @@ class EnterprisePortalApp {
     ];
     
     this.resourcesList = [
-      { id: 'RES201', name: 'Alice Smith', role: 'Lead Architect', dept: 'Engineering', allocation: 100, status: 'allocated' },
-      { id: 'RES202', name: 'Bob Johnson', role: 'Fullstack Dev', dept: 'Engineering', allocation: 100, status: 'allocated' },
-      { id: 'RES203', name: 'Clara Oswald', role: 'UX Designer', dept: 'Design', allocation: 50, status: 'allocated' },
-      { id: 'RES204', name: 'David Miller', role: 'QA Automation', dept: 'QA / Test', allocation: 0, status: 'pending' },
-      { id: 'RES205', name: 'Elena Rostova', role: 'Product Manager', dept: 'Product', allocation: 80, status: 'allocated' }
+      { id: 'RES201', name: 'Alice Smith', role: 'Lead Developer', dept: 'Dev', allocation: 100, status: 'allocated' },
+      { id: 'RES202', name: 'Bob Johnson', role: 'Fullstack Dev', dept: 'Dev', allocation: 100, status: 'allocated' },
+      { id: 'RES203', name: 'Clara Oswald', role: 'QA Lead', dept: 'QA', allocation: 50, status: 'allocated' },
+      { id: 'RES204', name: 'David Miller', role: 'Business Analyst', dept: 'BA', allocation: 0, status: 'pending' },
+      { id: 'RES205', name: 'Elena Rostova', role: 'Product Manager', dept: 'Product Manager', allocation: 80, status: 'allocated' }
     ];
     
     this.leavesList = [
@@ -80,6 +81,9 @@ class EnterprisePortalApp {
 
     // Initialize Integration Harness (Keyboard shortcuts, Command Palette, Autosave, A11y)
     AppIntegrationModule.init(this);
+    
+    // Initialize Settings & User session
+    SettingsModule.init(this);
     
     this.showToast('Enterprise PM Portal fully integrated & active', 'info');
   }
@@ -216,22 +220,56 @@ class EnterprisePortalApp {
     overlay.querySelector('#global-modal-title').textContent = title;
     overlay.querySelector('#global-modal-body').innerHTML = bodyHtml;
     
-    const saveBtn = overlay.querySelector('#global-modal-save-btn');
-    
-    // Clone and replace the save button to clear previous listeners
-    const newSaveBtn = saveBtn.cloneNode(true);
-    saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
-    
-    newSaveBtn.addEventListener('click', () => {
+    const footer = overlay.querySelector('#global-modal-footer');
+    footer.innerHTML = `
+      <button class="btn-enterprise btn-enterprise-secondary" id="global-modal-cancel-btn">Cancel</button>
+      <button class="btn-enterprise btn-enterprise-primary" id="global-modal-save-btn">Save Changes</button>
+    `;
+
+    const closeModal = () => overlay.classList.remove('show');
+    overlay.querySelector('#global-modal-cancel-btn').onclick = closeModal;
+    overlay.querySelector('#global-modal-close-btn').onclick = closeModal;
+
+    overlay.querySelector('#global-modal-save-btn').onclick = () => {
       if (typeof onSave === 'function') {
         const result = onSave(overlay);
         if (result !== false) {
-          overlay.classList.remove('show');
+          closeModal();
         }
       } else {
-        overlay.classList.remove('show');
+        closeModal();
       }
-    });
+    };
+
+    overlay.classList.add('show');
+  }
+
+  /**
+   * Opens a reusable confirmation modal overlay
+   */
+  confirmModal({ title = 'Confirm Action', bodyHtml = 'Are you sure?', confirmText = 'Confirm', confirmClass = 'btn-enterprise-danger', onConfirm }) {
+    const overlay = document.getElementById('global-modal-overlay');
+    if (!overlay) return;
+
+    overlay.querySelector('#global-modal-title').textContent = title;
+    overlay.querySelector('#global-modal-body').innerHTML = bodyHtml;
+
+    const footer = overlay.querySelector('#global-modal-footer');
+    footer.innerHTML = `
+      <button class="btn-enterprise btn-enterprise-secondary" id="global-modal-cancel-btn">Cancel</button>
+      <button class="btn-enterprise ${confirmClass}" id="global-modal-confirm-btn">${confirmText}</button>
+    `;
+
+    const closeModal = () => overlay.classList.remove('show');
+    overlay.querySelector('#global-modal-cancel-btn').onclick = closeModal;
+    overlay.querySelector('#global-modal-close-btn').onclick = closeModal;
+
+    overlay.querySelector('#global-modal-confirm-btn').onclick = () => {
+      closeModal();
+      if (typeof onConfirm === 'function') {
+        onConfirm();
+      }
+    };
 
     overlay.classList.add('show');
   }
@@ -338,6 +376,8 @@ class EnterprisePortalApp {
     } else if (pageId === 'reports') {
       ExcelEngineModule.init(this);
       ReportsHubModule.init(this);
+    } else if (pageId === 'settings') {
+      SettingsModule.init(this);
     }
 
     // Close sidebar on mobile after selecting a link

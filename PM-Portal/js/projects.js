@@ -343,12 +343,24 @@ export const ProjectsModule = {
         if (this.selectedIds.size === 0) return;
         
         const count = this.selectedIds.size;
-        if (confirm(`Are you absolutely sure you want to permanently delete these ${count} projects?`)) {
+        const doBulkDelete = () => {
           this.projects = this.projects.filter(p => !this.selectedIds.has(p.id));
           this.saveProjects();
           this.app.showToast(`Successfully deleted ${count} projects`, 'success');
           this.selectedIds.clear();
           this.render();
+        };
+
+        if (this.app && typeof this.app.confirmModal === 'function') {
+          this.app.confirmModal({
+            title: 'Delete Selected Projects',
+            bodyHtml: `<div class="p-2"><p class="mb-2 font-semibold text-danger">Are you sure you want to permanently delete these ${count} selected projects?</p></div>`,
+            confirmText: 'Delete Selected',
+            confirmClass: 'btn-enterprise-danger',
+            onConfirm: doBulkDelete
+          });
+        } else {
+          doBulkDelete();
         }
       });
     }
@@ -827,13 +839,25 @@ export const ProjectsModule = {
   },
 
   deleteProject(id) {
-    if (confirm(`Are you absolutely sure you want to permanently delete project ${id}?`)) {
+    const executeDelete = () => {
       this.projects = this.projects.filter(p => p.id !== id);
       this.saveProjects();
       this.selectedIds.delete(id);
       this.populateFilterDropdowns();
       this.app.showToast(`Deleted project ${id} successfully`, 'success');
       this.render();
+    };
+
+    if (this.app && typeof this.app.confirmModal === 'function') {
+      this.app.confirmModal({
+        title: 'Delete Project',
+        bodyHtml: `<div class="p-2"><p class="mb-2 font-semibold text-danger">Are you sure you want to permanently delete project <strong>${id}</strong>?</p></div>`,
+        confirmText: 'Delete Project',
+        confirmClass: 'btn-enterprise-danger',
+        onConfirm: executeDelete
+      });
+    } else {
+      executeDelete();
     }
   },
 
@@ -1275,6 +1299,10 @@ export const ProjectsModule = {
           </select>
         </div>
         <div class="col-md-6">
+          <label class="form-label font-semibold" style="font-size: 0.85rem;">Point of Contact (POC)</label>
+          <input type="text" class="form-control select-enterprise w-100" id="mod-poc" placeholder="E.g. Client Lead / John Doe" />
+        </div>
+        <div class="col-md-6">
           <label class="form-label font-semibold" style="font-size: 0.85rem;">Approved Budget ($) <span class="text-danger">*</span></label>
           <input type="number" class="form-control select-enterprise w-100" id="mod-budget" placeholder="150000" min="1" required />
           <div class="invalid-feedback">Please enter a positive budget amount.</div>
@@ -1294,6 +1322,7 @@ export const ProjectsModule = {
       const name = overlay.querySelector('#mod-name').value;
       const client = overlay.querySelector('#mod-client').value;
       const pm = overlay.querySelector('#mod-pm').value;
+      const poc = overlay.querySelector('#mod-poc').value;
       const budget = overlay.querySelector('#mod-budget').value;
       const status = overlay.querySelector('#mod-status').value;
 
@@ -1325,6 +1354,7 @@ export const ProjectsModule = {
         name,
         client,
         manager: pm,
+        poc: poc || '',
         progress: 0,
         budget: Number(budget),
         status,

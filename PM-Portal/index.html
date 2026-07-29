@@ -1455,10 +1455,10 @@
                     <label class="form-label font-semibold" style="font-size: 0.85rem; color: var(--text-primary); margin-bottom: 4px;">Department *</label>
                     <select class="form-select select-enterprise w-100" id="tl-dept" style="border-radius: var(--border-radius-sm); border: 1px solid var(--border-color); padding: 8px 12px; height: auto;" required>
                       <option value="">Select Department...</option>
-                      <option value="Engineering">Engineering</option>
-                      <option value="Design">Design</option>
-                      <option value="QA / Test">QA / Test</option>
-                      <option value="Product">Product</option>
+                      <option value="Dev">Dev</option>
+                      <option value="QA">QA</option>
+                      <option value="BA">BA</option>
+                      <option value="Product Manager">Product Manager</option>
                     </select>
                   </div>
 
@@ -1567,9 +1567,14 @@
             <h1 class="page-title">Resource Allocation Planner</h1>
             <p class="page-description">Visual timeline mapping, capacity constraints, heatmaps, and pipelines</p>
           </div>
-          <button id="btn-allocate-resource" class="btn-enterprise btn-enterprise-primary d-flex align-items-center gap-2">
-            <i class="fa-solid fa-calendar-plus"></i> Allocate Resource
-          </button>
+          <div class="d-flex gap-2">
+            <button id="btn-add-team-member" class="btn-enterprise btn-enterprise-secondary d-flex align-items-center gap-2">
+              <i class="fa-solid fa-user-plus text-primary"></i> Add Team Member
+            </button>
+            <button id="btn-allocate-resource" class="btn-enterprise btn-enterprise-primary d-flex align-items-center gap-2">
+              <i class="fa-solid fa-calendar-plus"></i> Allocate Resource
+            </button>
+          </div>
         </div>
 
         <!-- KPI STATS GRID -->
@@ -3160,45 +3165,90 @@
         </div>
       </section>
 
-      <!-- 10. PORTAL SETTINGS PLACEHOLDER -->
+      <!-- 10. PORTAL SETTINGS PAGE -->
       <section id="page-settings" class="page-container">
-        <div class="page-header">
+        <div class="page-header d-flex flex-wrap justify-content-between align-items-center gap-3">
           <div>
-            <h1 class="page-title">Portal Configuration</h1>
-            <p class="page-description">Personal settings, regional parameters, and account features</p>
+            <h1 class="page-title">Portal Configuration & Team Access</h1>
+            <p class="page-description">Manage account profiles, team member roles by department, entry-only restrictions, and app sharing</p>
+          </div>
+          <div class="d-flex gap-2 align-items-center">
+            <button id="settings-btn-share" class="btn-enterprise btn-enterprise-primary d-flex align-items-center gap-2">
+              <i class="fa-solid fa-share-nodes"></i> Share App with Team
+            </button>
           </div>
         </div>
 
-        <div class="row g-4">
-          <div class="col-md-6">
-            <div class="enterprise-card">
-              <div class="card-header-clean">
-                <h3 class="card-title-clean"><i class="fa-solid fa-user-gear text-primary"></i> Account Information</h3>
+        <!-- ACTIVE SESSION SWITCHER CARD -->
+        <div class="enterprise-card mb-4" style="background-color: var(--bg-card); border-color: var(--border-color);">
+          <div class="card-header-clean d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h3 class="card-title-clean"><i class="fa-solid fa-user-check text-success"></i> Active Session User</h3>
+            <span class="text-xs text-muted">Switch active profile to test role permissions (Admin vs Member entry-only)</span>
+          </div>
+          <div class="p-3">
+            <div class="row align-items-center g-3">
+              <div class="col-md-8">
+                <label class="form-label font-semibold text-xs text-secondary mb-1">Currently Logged-In Profile</label>
+                <select id="settings-active-user-select" class="form-select select-enterprise w-100 font-bold">
+                  <!-- Populated dynamically in settings.js -->
+                </select>
               </div>
-              <form class="row g-3" onsubmit="event.preventDefault();">
+              <div class="col-md-4">
+                <div class="p-2.5 rounded bg-body-tertiary border text-xs" style="border-color: var(--border-color) !important;">
+                  <i class="fa-solid fa-lock text-warning me-1"></i>
+                  <strong>Role Rule:</strong> Members have <em>Entry-Only</em> access (cannot delete logs or resources).
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-4 mb-4">
+          <!-- PERSONAL EDITABLE PROFILE -->
+          <div class="col-md-6">
+            <div class="enterprise-card h-100">
+              <div class="card-header-clean">
+                <h3 class="card-title-clean"><i class="fa-solid fa-user-pen text-primary"></i> Personal Profile Details</h3>
+              </div>
+              <form id="settings-profile-form" class="row g-3 p-3">
                 <div class="col-12">
                   <label class="form-label font-semibold">Display Full Name</label>
-                  <input type="text" class="form-control select-enterprise w-100" value="Prashanth K" readonly />
-                </div>
-                <div class="col-12">
-                  <label class="form-label font-semibold">Designated Role</label>
-                  <input type="text" class="form-control select-enterprise w-100" value="Admin Lead" readonly />
+                  <input type="text" id="settings-user-name" class="form-control select-enterprise w-100" required />
                 </div>
                 <div class="col-12">
                   <label class="form-label font-semibold">User Email Address</label>
-                  <input type="email" class="form-control select-enterprise w-100" value="surya.prashanth.kp@gmail.com" readonly />
+                  <input type="email" id="settings-user-email" class="form-control select-enterprise w-100" required />
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label font-semibold">Assigned Department</label>
+                  <select id="settings-user-dept" class="form-select select-enterprise w-100">
+                    <option value="Dev">Dev</option>
+                    <option value="QA">QA</option>
+                    <option value="BA">BA</option>
+                    <option value="Product Manager">Product Manager</option>
+                  </select>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label font-semibold">System Permission Level</label>
+                  <input type="text" id="settings-user-role" class="form-control select-enterprise w-100" readonly style="background-color: var(--bg-light);" />
+                </div>
+                <div class="col-12 pt-2">
+                  <button type="submit" class="btn-enterprise btn-enterprise-primary w-100">
+                    <i class="fa-solid fa-floppy-disk me-1"></i> Save Profile Details
+                  </button>
                 </div>
               </form>
             </div>
           </div>
 
+          <!-- PLATFORM PREFERENCES -->
           <div class="col-md-6">
-            <div class="enterprise-card">
+            <div class="enterprise-card h-100">
               <div class="card-header-clean">
                 <h3 class="card-title-clean"><i class="fa-solid fa-bell-concierge text-warning"></i> Platform Settings</h3>
               </div>
               <ul class="list-group list-group-flush text-secondary">
-                <li class="list-group-item d-flex justify-content-between align-items-center bg-transparent border-color">
+                <li class="list-group-item d-flex justify-content-between align-items-center bg-transparent border-color py-3">
                   <div>
                     <h6 class="mb-0 font-semibold text-primary-custom" style="color: var(--text-primary);">Email notifications</h6>
                     <small class="text-muted">Receive summaries of critical risks weekly</small>
@@ -3207,7 +3257,7 @@
                     <input class="form-check-input" type="checkbox" role="switch" checked />
                   </div>
                 </li>
-                <li class="list-group-item d-flex justify-content-between align-items-center bg-transparent border-color">
+                <li class="list-group-item d-flex justify-content-between align-items-center bg-transparent border-color py-3">
                   <div>
                     <h6 class="mb-0 font-semibold text-primary-custom" style="color: var(--text-primary);">Theme Override Mode</h6>
                     <small class="text-muted">Locks current display style independently</small>
@@ -3216,13 +3266,49 @@
                     <input class="form-check-input" type="checkbox" role="switch" id="theme-switch-settings" />
                   </div>
                 </li>
-                <li class="list-group-item d-flex justify-content-between align-items-center bg-transparent border-color border-0">
-                  <button class="btn-enterprise btn-enterprise-primary w-100" id="btn-save-settings">Save Configurations</button>
+                <li class="list-group-item d-flex justify-content-between align-items-center bg-transparent border-color py-3">
+                  <div>
+                    <h6 class="mb-0 font-semibold text-primary-custom" style="color: var(--text-primary);">Department-Based Time Entry</h6>
+                    <small class="text-muted">Group team members by department in time logging</small>
+                  </div>
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" role="switch" checked disabled />
+                  </div>
                 </li>
               </ul>
             </div>
           </div>
         </div>
+
+        <!-- TEAM ACCOUNTS & DEPARTMENT ROLES TABLE -->
+        <div class="enterprise-card">
+          <div class="card-header-clean d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h3 class="card-title-clean"><i class="fa-solid fa-users-gear text-primary"></i> Team Accounts & Department Access</h3>
+            <button id="settings-btn-add-user" class="btn-enterprise btn-enterprise-primary btn-sm d-flex align-items-center gap-1.5">
+              <i class="fa-solid fa-user-plus"></i> Add Team Member / User
+            </button>
+          </div>
+          <div class="p-0">
+            <div class="table-responsive">
+              <table class="table-enterprise w-100" style="border-collapse: collapse;">
+                <thead>
+                  <tr style="border-bottom: 1px solid var(--border-color); background-color: var(--bg-main);">
+                    <th style="padding: 12px 16px;">User Name</th>
+                    <th>Email Address</th>
+                    <th>Department</th>
+                    <th>System Role</th>
+                    <th>Status</th>
+                    <th class="text-center" style="width: 100px;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="settings-users-table-body">
+                  <!-- Injected dynamically in settings.js -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
       </section>
 
       <!-- STICKY FOOTER -->
@@ -3305,9 +3391,12 @@
         });
         
         // Listen to external toggles to sync switch position
-        document.getElementById('theme-toggle-btn').addEventListener('click', () => {
-          themeSwitch.checked = Storage.getTheme() === 'dark';
-        });
+        const toggleBtn = document.getElementById('theme-toggle-btn');
+        if (toggleBtn) {
+          toggleBtn.addEventListener('click', () => {
+            themeSwitch.checked = Storage.getTheme() === 'dark';
+          });
+        }
       }
     });
   </script>

@@ -10,7 +10,7 @@ export const TimeLoggingModule = {
   searchQuery: '',
 
   // Standard departments list
-  departments: ['Engineering', 'Design', 'QA / Test', 'Product'],
+  departments: ['Dev', 'QA', 'BA', 'Product Manager'],
 
   /**
    * Initialize Daily Time Logging Page Module
@@ -45,14 +45,14 @@ export const TimeLoggingModule = {
    */
   loadEstimates() {
     let stored = Storage.get('project_dept_estimates');
-    if (!stored || typeof stored !== 'object') {
+    if (!stored || typeof stored !== 'object' || Object.keys(stored).length === 0 || stored['PRJ001']?.['Engineering']) {
       // Seed default project department estimates (Total matches project budgeted/estimated hrs)
       stored = {
-        'PRJ001': { 'Engineering': 120, 'Design': 60, 'QA / Test': 50, 'Product': 30 },
-        'PRJ002': { 'Engineering': 220, 'Design': 100, 'QA / Test': 80, 'Product': 50 },
-        'PRJ003': { 'Engineering': 80, 'Design': 30, 'QA / Test': 30, 'Product': 20 },
-        'PRJ004': { 'Engineering': 180, 'Design': 70, 'QA / Test': 60, 'Product': 40 },
-        'PRJ005': { 'Engineering': 100, 'Design': 50, 'QA / Test': 40, 'Product': 20 }
+        'PRJ001': { 'Dev': 120, 'QA': 50, 'BA': 60, 'Product Manager': 30 },
+        'PRJ002': { 'Dev': 220, 'QA': 80, 'BA': 100, 'Product Manager': 50 },
+        'PRJ003': { 'Dev': 80, 'QA': 30, 'BA': 30, 'Product Manager': 20 },
+        'PRJ004': { 'Dev': 180, 'QA': 60, 'BA': 70, 'Product Manager': 40 },
+        'PRJ005': { 'Dev': 100, 'QA': 40, 'BA': 50, 'Product Manager': 20 }
       };
       Storage.set('project_dept_estimates', stored);
     }
@@ -121,38 +121,25 @@ export const TimeLoggingModule = {
     // Employee or Date change -> Updates standard capacity metric
     const empSelect = document.getElementById('tl-employee');
     const dateInput = document.getElementById('tl-date');
+    const deptSelect = document.getElementById('tl-dept');
 
-    if (empSelect) empSelect.addEventListener('change', () => this.updateEmployeeCapacity());
-    if (dateInput) dateInput.addEventListener('change', () => this.updateEmployeeCapacity());
+    if (empSelect) {
+      empSelect.addEventListener('change', () => {
+        this.updateEmployeeCapacity();
 
-    // Search query input in the logs registry
-    const searchInp = document.getElementById('tl-search-input');
-    if (searchInp) {
-      searchInp.addEventListener('input', (e) => {
-        this.searchQuery = e.target.value.toLowerCase().trim();
-        this.renderLogsTable();
-      });
-    }
-
-    // Sample data load button
-    const btnSample = document.getElementById('tl-btn-load-sample');
-    if (btnSample) {
-      btnSample.addEventListener('click', () => {
-        this.loadSampleData();
-      });
-    }
-
-    // Reset data button
-    const btnReset = document.getElementById('tl-btn-reset');
-    if (btnReset) {
-      btnReset.addEventListener('click', () => {
-        if (confirm('Are you sure you want to reset all daily time logging data and estimates to defaults?')) {
-          this.resetData();
+        // Auto-set department based on employee's department
+        const empName = empSelect.value;
+        const resList = Storage.get('resources') || this.app.resourcesList || [];
+        const userList = Storage.get('portal_users') || [];
+        const target = resList.find(r => r.name === empName) || userList.find(u => u.name === empName);
+        if (target && target.dept && deptSelect) {
+          deptSelect.value = target.dept;
         }
       });
     }
+    if (dateInput) dateInput.addEventListener('change', () => this.updateEmployeeCapacity());
 
-    // Listen for inline estimates change
+    // Listen for inline estimates change or inline member time logging
     const matrixBody = document.getElementById('tl-matrix-table-body');
     if (matrixBody) {
       matrixBody.addEventListener('change', (e) => {
@@ -172,6 +159,47 @@ export const TimeLoggingModule = {
           } else {
             e.target.value = this.estimates[pId]?.[dept] || 0;
             this.app.showToast('Please enter a valid estimate hours value (>= 0)', 'warning');
+          }
+        }
+      });
+
+      matrixBody.addEventListener('click', (e) => {
+        const memberLogBtn = e.target.closest('.tl-member-log-btn');
+        if (memberLogBtn) {
+          const pId = memberLogBtn.getAttribute('data-project');
+          const dept = memberLogBtn.getAttribute('data-dept');
+          const emp = memberLogBtn.getAttribute('data-employee');
+          const inputEl = document.querySelector(`.tl-member-log-input[data-project="${pId}"][data-dept="${dept}"][data-employee="${emp}"]`);
+          
+          if (inputEl) {
+            const hrs = parseFloat(inputEl.value);
+            if (!isNaN(hrs) && hrs > 0) {
+              const pObj = (this.app.projectsList || []).find(p => p.id === pId);
+              const pName = pObj ? pObj.name : pId;
+              const today = new Date().toISOString().split('T')[0];
+
+              const newLog = {
+                id: `TL-${Date.now().toString().slice(-6)}`,
+                date: today,
+                employee: emp,
+                projectId: pId,
+                projectName: pName,
+                department: dept,
+                task: `Daily effort logged directly under ${dept} department`,
+                hours: hrs,
+                remarks: 'Logged via team member matrix entry'
+              };
+
+              this.logs.unshift(newLog);
+              Storage.set('time_logs', this.logs);
+              this.app.showToast(`Logged ${hrs}h for ${emp} under ${pId} (${dept})`, 'success');
+              inputEl.value = '';
+              this.recalculateAndRender();
+              this.updateEmployeeCapacity();
+              this.syncWithDashboard();
+            } else {
+              this.app.showToast('Please enter valid hours (> 0)', 'warning');
+            }
           }
         }
       });
@@ -308,6 +336,12 @@ export const TimeLoggingModule = {
    * Delete an existing log entry
    */
   deleteLogEntry(logId) {
+    const canDelete = !this.app.currentUser || this.app.currentUser.role === 'admin';
+    if (!canDelete) {
+      this.app.showToast('Delete permission restricted: Standard team members have entry-only access. Contact an Administrator to delete records.', 'danger');
+      return;
+    }
+
     this.logs = this.logs.filter(l => l.id !== logId);
     Storage.set('time_logs', this.logs);
     this.app.showToast('Time log entry deleted', 'info');
@@ -531,15 +565,15 @@ export const TimeLoggingModule = {
         const dOverrunStyle = dOverrun > 0 ? 'color: var(--brand-danger); font-weight: 700;' : '';
 
         dRow.innerHTML = `
-          <td style="padding: 8px 16px 8px 36px; color: var(--text-secondary); ${dRowBg}">
-            <i class="fa-solid fa-angles-right text-muted me-1" style="font-size: 0.7rem; opacity: 0.5;"></i> ${dept}
+          <td style="padding: 8px 16px 8px 36px; color: var(--text-primary); font-weight: 700; ${dRowBg}">
+            <i class="fa-solid fa-layer-group text-primary me-1.5" style="font-size: 0.8rem;"></i> ${dept} Department
           </td>
           <td class="text-center p-1" style="${dRowBg}">
             <input type="number" class="form-control form-control-sm border rounded text-center font-semibold tl-est-input" 
               style="width: 80px; margin: 0 auto; padding: 2px 4px; font-size: 0.8rem; background-color: var(--bg-card); color: var(--text-primary); border-color: var(--border-color);" 
               value="${est}" data-project="${p.id}" data-dept="${dept}" min="0" step="5" />
           </td>
-          <td class="text-center" style="${dLoggedStyle} ${dRowBg}">${logged}h</td>
+          <td class="text-center font-bold" style="${dLoggedStyle} ${dRowBg}">${logged}h</td>
           <td class="text-center text-muted" style="${dRowBg}">${dRemaining}h</td>
           <td class="text-center" style="${dOverrunStyle} ${dRowBg}">${dOverrun > 0 ? `+${dOverrun}h` : '-'}</td>
           <td style="${dRowBg}">
@@ -555,6 +589,69 @@ export const TimeLoggingModule = {
           </td>
         `;
         tableBody.appendChild(dRow);
+
+        // 3. Render TEAM MEMBERS under this Department
+        const allResources = Storage.get('resources') || this.app.resourcesList || [];
+        const allUsers = Storage.get('portal_users') || [];
+
+        // Combine resources and users for complete member list
+        const memberMap = new Map();
+        allResources.forEach(r => {
+          if (r.dept === dept || r.department === dept) {
+            memberMap.set(r.name, { name: r.name, role: r.role || 'Team Specialist', dept });
+          }
+        });
+        allUsers.forEach(u => {
+          if (u.dept === dept) {
+            if (!memberMap.has(u.name)) {
+              memberMap.set(u.name, { name: u.name, role: u.role === 'admin' ? 'Lead' : 'Member', dept });
+            }
+          }
+        });
+
+        const members = Array.from(memberMap.values());
+
+        if (members.length > 0) {
+          members.forEach(m => {
+            const mLogged = this.logs
+              .filter(l => l.projectId === p.id && l.department === dept && l.employee === m.name)
+              .reduce((sum, l) => sum + l.hours, 0);
+
+            const mRow = document.createElement('tr');
+            mRow.style.fontSize = '0.8rem';
+            mRow.style.borderBottom = '1px dashed var(--border-color)';
+            mRow.style.backgroundColor = 'var(--bg-card)';
+
+            mRow.innerHTML = `
+              <td style="padding: 6px 16px 6px 60px;">
+                <div class="d-flex align-items-center gap-1.5">
+                  <i class="fa-solid fa-user text-secondary" style="font-size: 0.7rem;"></i>
+                  <span class="font-semibold" style="color: var(--text-primary);">${m.name}</span>
+                  <span class="text-muted text-xs">(${m.role})</span>
+                </div>
+              </td>
+              <td class="text-center">
+                <span class="text-muted text-xs">Member Entry</span>
+              </td>
+              <td class="text-center font-bold text-primary">${mLogged}h</td>
+              <td class="text-center text-muted" colspan="2">
+                <div class="d-flex justify-content-center align-items-center gap-1">
+                  <input type="number" class="form-control form-control-sm text-center tl-member-log-input" 
+                    placeholder="Hrs" style="width: 65px; height: 26px; font-size: 0.75rem;" 
+                    min="0.5" max="12" step="0.5" data-project="${p.id}" data-dept="${dept}" data-employee="${m.name}" />
+                  <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 tl-member-log-btn" 
+                    style="height: 26px; font-size: 0.725rem;" data-project="${p.id}" data-dept="${dept}" data-employee="${m.name}">
+                    + Log
+                  </button>
+                </div>
+              </td>
+              <td colspan="2" class="text-center">
+                <span class="text-xs text-secondary">${mLogged > 0 ? `${mLogged}h logged on ${p.id}` : 'No effort logged yet'}</span>
+              </td>
+            `;
+            tableBody.appendChild(mRow);
+          });
+        }
       });
     });
   },

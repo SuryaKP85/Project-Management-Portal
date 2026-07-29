@@ -51,12 +51,27 @@ export const ResourcePlannerModule = {
   loadResources() {
     // Check if resources exist in local storage, otherwise use default
     let stored = Storage.get('resources');
+    const ALLOWED_DEPTS = ['Dev', 'QA', 'BA', 'Product Manager'];
+    const mapDept = (d) => {
+      if (d === 'Engineering') return 'Dev';
+      if (d === 'Design') return 'BA';
+      if (d === 'QA / Test') return 'QA';
+      if (d === 'Product') return 'Product Manager';
+      if (ALLOWED_DEPTS.includes(d)) return d;
+      return 'Dev';
+    };
+
     if (stored && Array.isArray(stored) && stored.length > 0) {
-      this.resources = stored;
+      this.resources = stored.map(r => ({
+        ...r,
+        dept: mapDept(r.dept)
+      }));
+      Storage.set('resources', this.resources);
     } else {
       // Map initial ones with capacity information
       this.resources = (this.app.resourcesList || []).map(r => ({
         ...r,
+        dept: mapDept(r.dept),
         baseWeeklyCapacity: 40, // standard hours
         baseDailyCapacity: 8, // hours per weekday
         loggedHours: r.id === 'RES201' ? 130 : r.id === 'RES202' ? 142 : r.id === 'RES203' ? 70 : r.id === 'RES205' ? 110 : 0,
@@ -217,12 +232,20 @@ export const ResourcePlannerModule = {
     // 7. Allocate Resource Modal Trigger
     const allocateBtn = document.getElementById('btn-allocate-resource');
     if (allocateBtn) {
-      // Remove any previously bound listeners
       const newAllocateBtn = allocateBtn.cloneNode(true);
       allocateBtn.parentNode.replaceChild(newAllocateBtn, allocateBtn);
-      
       newAllocateBtn.addEventListener('click', () => {
         this.openAllocateModal();
+      });
+    }
+
+    // 8. Add Team Member Modal Trigger
+    const addMemberBtn = document.getElementById('btn-add-team-member');
+    if (addMemberBtn) {
+      const newAddBtn = addMemberBtn.cloneNode(true);
+      addMemberBtn.parentNode.replaceChild(newAddBtn, addMemberBtn);
+      newAddBtn.addEventListener('click', () => {
+        this.openResourceModal();
       });
     }
   },
@@ -235,7 +258,7 @@ export const ResourcePlannerModule = {
     const roleSelect = document.getElementById('planner-role-select');
 
     if (deptSelect) {
-      const depts = [...new Set(this.resources.map(r => r.dept))];
+      const depts = ['Dev', 'QA', 'BA', 'Product Manager'];
       deptSelect.innerHTML = '<option value="all">All Departments</option>';
       depts.forEach(d => {
         deptSelect.innerHTML += `<option value="${d}">${d}</option>`;
@@ -988,13 +1011,23 @@ export const ResourcePlannerModule = {
       listHtml += `
         <div class="row g-0 align-items-stretch border-bottom py-3 hover-row">
           <div class="col-md-3 border-end pe-3 d-flex flex-column justify-content-center">
-            <div class="d-flex align-items-center gap-2">
-              <div class="avatar-circle font-bold d-flex align-items-center justify-content-center" style="width: 34px; height: 34px; border-radius: 50%; background-color: var(--brand-primary); color: white; font-size: 0.8rem;">
-                ${res.name.split(' ').map(n => n[0]).join('')}
+            <div class="d-flex align-items-center justify-content-between">
+              <div class="d-flex align-items-center gap-2">
+                <div class="avatar-circle font-bold d-flex align-items-center justify-content-center" style="width: 34px; height: 34px; border-radius: 50%; background-color: var(--brand-primary); color: white; font-size: 0.8rem; flex-shrink: 0;">
+                  ${res.name.split(' ').map(n => n[0]).join('')}
+                </div>
+                <div>
+                  <h6 class="mb-0 font-bold text-primary" style="font-size: 0.9rem;">${res.name}</h6>
+                  <span class="text-xs text-secondary-custom">${res.role} • <strong>${res.dept}</strong></span>
+                </div>
               </div>
-              <div>
-                <h6 class="mb-0 font-bold text-primary" style="font-size: 0.9rem;">${res.name}</h6>
-                <span class="text-xs text-secondary-custom">${res.role} • <strong>${res.dept}</strong></span>
+              <div class="d-flex align-items-center gap-1">
+                <button class="btn btn-sm btn-outline-primary py-0 px-1.5" onclick="window.portalPlannerInstance.openResourceModal('${res.id}')" title="Edit Resource Details">
+                  <i class="fa-solid fa-pen-to-square" style="font-size: 0.75rem;"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger py-0 px-1.5" onclick="window.portalPlannerInstance.deleteResource('${res.id}')" title="Delete Resource">
+                  <i class="fa-solid fa-trash-can" style="font-size: 0.75rem;"></i>
+                </button>
               </div>
             </div>
           </div>
@@ -1123,25 +1156,41 @@ export const ResourcePlannerModule = {
             <span class="badge ${utilBadgeClass} font-mono px-3 py-1 font-semibold" style="font-size: 0.8rem;">${utilization.toFixed(0)}%</span>
           </td>
           <td style="font-size: 0.8rem; line-height: 1.3;">${allocationsText}</td>
+          <td class="text-center align-middle">
+            <div class="d-flex justify-content-center gap-1">
+              <button class="btn btn-sm btn-outline-primary py-0 px-1.5" onclick="window.portalPlannerInstance.openResourceModal('${res.id}')" title="Edit Team Member">
+                <i class="fa-solid fa-pen-to-square"></i>
+              </button>
+              <button class="btn btn-sm btn-outline-success py-0 px-1.5" onclick="window.portalPlannerInstance.openAllocateModal('${res.id}')" title="Allocate Project">
+                <i class="fa-solid fa-plus"></i>
+              </button>
+              <button class="btn btn-sm btn-outline-danger py-0 px-1.5" onclick="window.portalPlannerInstance.deleteResource('${res.id}')" title="Delete Team Member">
+                <i class="fa-solid fa-trash-can"></i>
+              </button>
+            </div>
+          </td>
         </tr>
       `;
     });
+
+    window.portalPlannerInstance = this;
 
     matrixEl.innerHTML = `
       <div class="table-responsive" style="border: 1px solid var(--border-color); border-radius: 8px;">
         <table class="table table-enterprise m-0 align-middle">
           <thead>
             <tr style="background-color: var(--bg-light); font-size: 0.8rem; text-align: center;">
-              <th class="text-start" style="width: 200px;">Employee & Designation</th>
-              <th style="width: 120px;">Department</th>
-              <th style="width: 90px;">Net Cap</th>
-              <th style="width: 90px;">Assigned</th>
-              <th style="width: 90px;">Logged</th>
-              <th style="width: 90px;">Leave</th>
-              <th style="width: 90px;">Weekend</th>
-              <th style="width: 100px;">Remaining</th>
-              <th style="width: 110px;">Utilization</th>
+              <th class="text-start" style="width: 180px;">Employee & Designation</th>
+              <th style="width: 110px;">Department</th>
+              <th style="width: 80px;">Net Cap</th>
+              <th style="width: 80px;">Assigned</th>
+              <th style="width: 80px;">Logged</th>
+              <th style="width: 80px;">Leave</th>
+              <th style="width: 80px;">Weekend</th>
+              <th style="width: 90px;">Remaining</th>
+              <th style="width: 100px;">Utilization</th>
               <th>Pipeline Projects Allocations</th>
+              <th style="width: 110px;">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -1150,6 +1199,164 @@ export const ResourcePlannerModule = {
         </table>
       </div>
     `;
+  },
+
+  /**
+   * Delete team member and associated allocations
+   */
+  deleteResource(resourceId) {
+    const canDelete = !this.app.currentUser || this.app.currentUser.role === 'admin';
+    if (!canDelete) {
+      this.app.showToast('Delete permission restricted to Administrators.', 'danger');
+      return;
+    }
+
+    const res = this.resources.find(r => r.id === resourceId);
+    if (!res) return;
+
+    const executeDelete = () => {
+      this.resources = this.resources.filter(r => r.id !== resourceId);
+      this.allocations = this.allocations.filter(a => a.resourceId !== resourceId);
+      
+      Storage.set('resources', this.resources);
+      Storage.set('resource_allocations', this.allocations);
+      this.app.resourcesList = this.resources;
+
+      this.app.showToast(`Team member '${res.name}' deleted successfully`, 'info');
+      this.populateDropdowns();
+      this.render();
+    };
+
+    if (this.app && typeof this.app.confirmModal === 'function') {
+      this.app.confirmModal({
+        title: 'Delete Team Member',
+        bodyHtml: `
+          <div class="p-2">
+            <p class="mb-2 font-semibold text-danger" style="font-size: 0.95rem;">Are you sure you want to delete team member <strong>${res.name}</strong>?</p>
+            <p class="text-secondary text-xs mb-0">All project allocations, capacity logs, and scheduling entries for this resource will also be released.</p>
+          </div>
+        `,
+        confirmText: 'Delete Resource',
+        confirmClass: 'btn-enterprise-danger',
+        onConfirm: executeDelete
+      });
+    } else {
+      executeDelete();
+    }
+  },
+
+  /**
+   * Add or Edit Team Member Modal
+   */
+  openResourceModal(resourceId = null) {
+    const target = resourceId ? this.resources.find(r => r.id === resourceId) : null;
+    const isEdit = !!target;
+    const title = isEdit ? 'Edit Team Member Details' : 'Add New Team Member to Resource Planner';
+
+    const depts = ['Dev', 'QA', 'BA', 'Product Manager'];
+    let deptOptions = '';
+    depts.forEach(d => {
+      const sel = (target && target.dept === d) ? 'selected' : '';
+      deptOptions += `<option value="${d}" ${sel}>${d}</option>`;
+    });
+
+    const bodyHtml = `
+      <form id="resource-edit-form" class="row g-3">
+        <div class="col-md-12">
+          <label class="form-label font-semibold">Full Name *</label>
+          <input type="text" class="form-control select-enterprise w-100" id="res-name" value="${target ? target.name : ''}" required placeholder="E.g. Sarah Connor" />
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label font-semibold">Department *</label>
+          <select class="form-select select-enterprise w-100" id="res-dept" required>
+            ${deptOptions}
+          </select>
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label font-semibold">Designation / Role *</label>
+          <input type="text" class="form-control select-enterprise w-100" id="res-role" value="${target ? target.role : ''}" required placeholder="E.g. Senior Security Engineer" />
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label font-semibold">Base Weekly Capacity (Hours)</label>
+          <input type="number" class="form-control select-enterprise w-100" id="res-weekly-cap" value="${target ? (target.baseWeeklyCapacity || 40) : 40}" min="10" max="80" required />
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label font-semibold">Base Daily Capacity (Hours)</label>
+          <input type="number" class="form-control select-enterprise w-100" id="res-daily-cap" value="${target ? (target.baseDailyCapacity || 8) : 8}" min="1" max="16" required />
+        </div>
+
+        ${isEdit ? `
+          <div class="col-12 mt-3 pt-3 border-top d-flex justify-content-between">
+            <button type="button" class="btn btn-sm btn-outline-danger d-flex align-items-center gap-1" id="btn-delete-resource-modal">
+              <i class="fa-solid fa-trash-can"></i> Delete Team Member
+            </button>
+            <span class="text-muted small align-self-center">Resource ID: ${target.id}</span>
+          </div>
+        ` : ''}
+      </form>
+    `;
+
+    this.app.openModal(title, bodyHtml, (overlay) => {
+      const delBtn = overlay.querySelector('#btn-delete-resource-modal');
+      if (delBtn) {
+        delBtn.addEventListener('click', () => {
+          overlay.classList.remove('show');
+          this.deleteResource(target.id);
+        });
+      }
+
+      const name = overlay.querySelector('#res-name').value.trim();
+      const dept = overlay.querySelector('#res-dept').value;
+      const role = overlay.querySelector('#res-role').value.trim();
+      const weeklyCap = parseInt(overlay.querySelector('#res-weekly-cap').value, 10) || 40;
+      const dailyCap = parseInt(overlay.querySelector('#res-daily-cap').value, 10) || 8;
+
+      if (!name || !role) {
+        this.app.showToast('Please enter full name and role designation', 'warning');
+        return false;
+      }
+
+      if (isEdit) {
+        const idx = this.resources.findIndex(r => r.id === target.id);
+        if (idx !== -1) {
+          this.resources[idx] = {
+            ...this.resources[idx],
+            name,
+            dept,
+            role,
+            baseWeeklyCapacity: weeklyCap,
+            baseDailyCapacity: dailyCap
+          };
+        }
+        this.app.showToast(`Updated details for ${name}`, 'success');
+      } else {
+        const newId = `RES20${this.resources.length + 1}`;
+        const newRes = {
+          id: newId,
+          name,
+          dept,
+          role,
+          baseWeeklyCapacity: weeklyCap,
+          baseDailyCapacity: dailyCap,
+          allocation: 0,
+          status: 'pending',
+          loggedHours: 0,
+          weekendHours: 0
+        };
+        this.resources.push(newRes);
+        this.app.showToast(`Added team member ${name} under ${dept}`, 'success');
+      }
+
+      Storage.set('resources', this.resources);
+      this.app.resourcesList = this.resources;
+      this.populateDropdowns();
+      this.render();
+      return true;
+    });
   },
 
   /**
