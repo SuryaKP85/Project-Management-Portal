@@ -67,6 +67,7 @@ export const SettingsModule = {
     if (this.app) {
       this.app.currentUser = active;
     }
+    this.syncAvatarAcrossUI();
   },
 
   /**
@@ -86,6 +87,35 @@ export const SettingsModule = {
       profileForm.addEventListener('submit', (e) => {
         e.preventDefault();
         this.saveProfile();
+      });
+    }
+
+    // Avatar Photo Change Button and File Input
+    const btnUploadAvatar = document.getElementById('settings-btn-upload-avatar');
+    const avatarInput = document.getElementById('settings-avatar-input');
+    const btnRemoveAvatar = document.getElementById('settings-btn-remove-avatar');
+
+    if (btnUploadAvatar && avatarInput) {
+      btnUploadAvatar.addEventListener('click', () => avatarInput.click());
+      avatarInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          this.handleAvatarUpload(e.target.files[0]);
+          avatarInput.value = '';
+        }
+      });
+    }
+
+    if (btnRemoveAvatar) {
+      btnRemoveAvatar.addEventListener('click', () => {
+        if (this.currentUser) {
+          this.currentUser.avatar = '';
+          const idx = this.users.findIndex(u => u.id === this.currentUser.id);
+          if (idx !== -1) this.users[idx].avatar = '';
+          Storage.set('current_user', this.currentUser);
+          Storage.set('portal_users', this.users);
+          this.syncAvatarAcrossUI();
+          if (this.app) this.app.showToast('Profile photo removed.', 'info');
+        }
       });
     }
 
@@ -131,6 +161,66 @@ export const SettingsModule = {
     this.renderProfileForm();
     this.renderUsersTable();
     this.renderUserSwitcher();
+    this.syncAvatarAcrossUI();
+  },
+
+  /**
+   * Handle avatar image file selection & Base64 conversion
+   */
+  handleAvatarUpload(file) {
+    if (!file.type.startsWith('image/')) {
+      if (this.app) this.app.showToast('Please select a valid image file (PNG, JPG, WEBP).', 'warning');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      if (this.app) this.app.showToast('Image file size exceeds 5MB limit.', 'warning');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64Data = e.target.result;
+      if (this.currentUser) {
+        this.currentUser.avatar = base64Data;
+        const idx = this.users.findIndex(u => u.id === this.currentUser.id);
+        if (idx !== -1) {
+          this.users[idx] = { ...this.currentUser };
+        }
+        Storage.set('current_user', this.currentUser);
+        Storage.set('portal_users', this.users);
+        this.syncAvatarAcrossUI();
+        this.renderUsersTable();
+        if (this.app) this.app.showToast('Profile photo updated successfully!', 'success');
+      }
+    };
+    reader.readAsDataURL(file);
+  },
+
+  /**
+   * Synchronize profile picture and user name across top navbar and sidebar
+   */
+  syncAvatarAcrossUI() {
+    if (!this.currentUser) return;
+    const avatarSrc = this.currentUser.avatar || 'assets/baby_feet.jpg';
+
+    // Settings Preview
+    const setPrev = document.getElementById('settings-avatar-preview');
+    if (setPrev) setPrev.src = avatarSrc;
+
+    // Sidebar Avatar & Info
+    const sbAvatar = document.getElementById('sidebar-user-avatar');
+    if (sbAvatar) sbAvatar.src = avatarSrc;
+
+    const sbName = document.getElementById('sidebar-user-name');
+    if (sbName) sbName.textContent = this.currentUser.name || 'Prashanth K';
+
+    const sbRole = document.getElementById('sidebar-user-role');
+    if (sbRole) sbRole.textContent = this.currentUser.role === 'admin' ? 'Admin Lead' : 'Team Member';
+
+    // Top Header Avatar
+    const hdrAvatar = document.getElementById('header-user-avatar');
+    if (hdrAvatar) hdrAvatar.src = avatarSrc;
   },
 
   /**
@@ -185,6 +275,7 @@ export const SettingsModule = {
     }
 
     this.app.showToast('User profile details updated successfully', 'success');
+    this.syncAvatarAcrossUI();
     this.render();
   },
 

@@ -3244,6 +3244,24 @@
               <div class="card-header-clean">
                 <h3 class="card-title-clean"><i class="fa-solid fa-user-pen text-primary"></i> Personal Profile Details</h3>
               </div>
+              <div class="p-3 border-bottom d-flex align-items-center gap-3">
+                <div id="settings-avatar-container">
+                  <img id="settings-avatar-preview" src="assets/baby_feet.jpg" alt="Profile Photo" style="width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 2px solid var(--brand-primary);" />
+                </div>
+                <div>
+                  <div class="font-semibold mb-1" style="font-size: 0.9rem;">Profile Picture</div>
+                  <div class="d-flex align-items-center gap-2">
+                    <button type="button" id="settings-btn-upload-avatar" class="btn-enterprise btn-enterprise-secondary" style="font-size: 0.78rem; padding: 5px 12px;">
+                      <i class="fa-solid fa-camera text-primary"></i> Change Photo
+                    </button>
+                    <input type="file" id="settings-avatar-input" accept="image/*" class="d-none" />
+                    <button type="button" id="settings-btn-remove-avatar" class="btn-enterprise btn-enterprise-secondary text-danger" style="font-size: 0.78rem; padding: 5px 12px; border-color: rgba(239, 68, 68, 0.3);">
+                      <i class="fa-solid fa-trash-can"></i> Remove
+                    </button>
+                  </div>
+                  <span class="text-xs text-muted mt-1 d-block">Supports PNG, JPG, WEBP (Max 5MB)</span>
+                </div>
+              </div>
               <form id="settings-profile-form" class="row g-3 p-3">
                 <div class="col-12">
                   <label class="form-label font-semibold">Display Full Name</label>
@@ -3347,8 +3365,8 @@
 
       <!-- STICKY FOOTER -->
       <footer id="footer">
-        <div>&copy; 2026 Enterprise PM Portal. All rights reserved.</div>
-        <div class="d-none d-sm-block">Version 1.0.0 (Phase 1 UI Framework) | <a href="#" onclick="alert('Demo License - Enterprise Version'); return false;">License agreement</a></div>
+        <div>&copy; 2026 Enterprise PM Portal. Created by Surya. All rights reserved.</div>
+        <div class="d-none d-sm-block">Version 1.1.0 (Enterprise Suite) | <a href="#" onclick="alert('Demo License - Enterprise Version'); return false;">License agreement</a></div>
       </footer>
 
     </main>
