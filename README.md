@@ -1,11 +1,5 @@
-<div align="center">
+# Enterprise Project Management (PM) Portal
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+An end-to-end, high-performance, responsive **Enterprise Project Management Portal** built with modern web technologies.
 
-  <h1>Built with AI Studio</h2>
-
-  <p>The fastest path from prompt to production with Gemini.</p>
-
-  <a href="https://aistudio.google.com/apps">Start building</a>
-
-</div>
+Refer to [/PM-Portal/README.md](./PM-Portal/README.md) for full documentation.

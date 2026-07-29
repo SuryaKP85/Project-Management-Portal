@@ -1,0 +1,264 @@
+/* tables.css - Styling for tables, badges, filters, and list-views */
+
+/* Table panel controls */
+.table-panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-bottom: none;
+  border-top-left-radius: var(--border-radius-md);
+  border-top-right-radius: var(--border-radius-md);
+}
+
+.table-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Custom Select Dropdowns */
+.select-enterprise {
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+  border-radius: var(--border-radius-sm);
+  outline: none;
+  cursor: pointer;
+  min-width: 140px;
+  transition: var(--transition-smooth);
+}
+
+.select-enterprise:focus {
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+/* Responsive Table container */
+.table-responsive-container {
+  border: 1px solid var(--border-color);
+  border-bottom-left-radius: var(--border-radius-md);
+  border-bottom-right-radius: var(--border-radius-md);
+  background-color: var(--bg-card);
+  overflow-x: auto;
+}
+
+/* Clean Enterprise Table standard */
+.table-enterprise {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.table-enterprise th {
+  background-color: rgba(148, 163, 184, 0.05);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.725rem;
+  letter-spacing: 0.8px;
+  color: var(--text-secondary);
+  padding: 14px 20px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.table-enterprise td {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+  transition: var(--transition-smooth);
+}
+
+.table-enterprise tr:last-child td {
+  border-bottom: none;
+}
+
+.table-enterprise tbody tr:hover td {
+  background-color: rgba(148, 163, 184, 0.02);
+}
+
+[data-theme="dark"] .table-enterprise tbody tr:hover td {
+  background-color: rgba(255, 255, 255, 0.01);
+}
+
+/* Row elements and helper structures */
+.table-project-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.table-project-title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.table-project-client {
+  font-size: 0.775rem;
+  color: var(--text-secondary);
+}
+
+/* Status Badges */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 0.725rem;
+  font-weight: 600;
+  border-radius: 20px;
+  text-transform: uppercase;
+}
+
+.status-badge.active,
+.status-badge.completed,
+.status-badge.approved {
+  background-color: rgba(16, 185, 129, 0.1);
+  color: var(--brand-success);
+}
+
+.status-badge.planning,
+.status-badge.pending,
+.status-badge.on-hold {
+  background-color: rgba(245, 158, 11, 0.1);
+  color: var(--brand-warning);
+}
+
+.status-badge.inactive,
+.status-badge.cancelled,
+.status-badge.critical {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: var(--brand-danger);
+}
+
+.status-badge.in-progress,
+.status-badge.allocated {
+  background-color: rgba(79, 70, 229, 0.15);
+  color: var(--brand-primary);
+}
+
+/* User avatar lists in table cells */
+.avatar-group {
+  display: flex;
+  align-items: center;
+}
+
+.avatar-group-item {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-card);
+  object-fit: cover;
+  margin-left: -8px;
+  transition: var(--transition-smooth);
+}
+
+.avatar-group-item:first-child {
+  margin-left: 0;
+}
+
+.avatar-group-item:hover {
+  transform: translateY(-2px);
+  z-index: 5;
+}
+
+.avatar-group-more {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-card);
+  background-color: var(--border-color);
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: -8px;
+}
+
+/* Custom Table Progress Indicators */
+.table-progress-bar {
+  width: 120px;
+  height: 6px;
+  background-color: var(--border-color);
+  border-radius: 4px;
+  overflow: hidden;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.table-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+}
+
+.table-progress-text {
+  font-size: 0.775rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  margin-left: 8px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* Pagination panel */
+.pagination-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-top: none;
+  border-bottom-left-radius: var(--border-radius-md);
+  border-bottom-right-radius: var(--border-radius-md);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pagination-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--border-radius-sm);
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: var(--transition-smooth);
+}
+
+.pagination-btn:hover:not(:disabled) {
+  border-color: var(--brand-primary);
+  color: var(--brand-primary);
+}
+
+.pagination-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pagination-btn.active {
+  background-color: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: #ffffff;
+}

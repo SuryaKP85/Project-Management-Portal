@@ -1,0 +1,6 @@
+{
+  "name": "Enterprise Project Management Portal",
+  "description": "Phase 1 of an Enterprise Project Management Portal featuring a responsive dashboard, professional sidebar, light/dark mode, and customizable enterprise UI widgets.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

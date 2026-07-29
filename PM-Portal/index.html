@@ -1,0 +1,3315 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Enterprise Project Management Portal</title>
+  
+  <!-- Bootstrap 5 CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+  
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  
+  <!-- Custom Modular Stylesheets -->
+  <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="css/dashboard.css" />
+  <link rel="stylesheet" href="css/tables.css" />
+  <link rel="stylesheet" href="css/gantt.css" />
+  
+  <!-- Chart.js CDN Library -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <!-- SheetJS Library for Excel Engine -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+
+  <!-- Responsive Overlay for Mobile Sidebar Drawer -->
+  <div id="sidebar-overlay"></div>
+
+  <!-- Main Application Wrapper -->
+  <div id="app-container">
+    
+    <!-- LEFT SIDEBAR -->
+    <aside id="sidebar">
+      <div class="sidebar-brand">
+        <a href="#" class="brand-logo" data-page="dashboard" id="sidebar-logo">
+          <i class="fa-solid fa-cubes-stacked"></i>
+          <div>
+            <span class="brand-text">PM Portal</span>
+            <span class="brand-subtitle">Enterprise</span>
+          </div>
+        </a>
+      </div>
+
+      <ul class="sidebar-menu">
+        <li class="menu-header">Overview</li>
+        <li class="menu-item active">
+          <a href="#" class="menu-link" data-page="dashboard">
+            <i class="fa-solid fa-chart-pie"></i>
+            <span class="menu-text">Executive Dashboard</span>
+          </a>
+        </li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="action-center">
+            <i class="fa-solid fa-bolt text-warning"></i>
+            <span class="menu-text">Executive Action Center</span>
+          </a>
+        </li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="projects">
+            <i class="fa-solid fa-diagram-project"></i>
+            <span class="menu-text">Projects</span>
+          </a>
+        </li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="customers">
+            <i class="fa-solid fa-handshake"></i>
+            <span class="menu-text">Customers</span>
+          </a>
+        </li>
+        
+        <li class="menu-header">Operations & Resourcing</li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="resources">
+            <i class="fa-solid fa-users-gear"></i>
+            <span class="menu-text">Resources</span>
+          </a>
+        </li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="resource-planner">
+            <i class="fa-solid fa-calendar-week"></i>
+            <span class="menu-text">Resource Planner</span>
+          </a>
+        </li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="time-logging">
+            <i class="fa-solid fa-clock text-warning"></i>
+            <span class="menu-text">Daily Time Logging</span>
+          </a>
+        </li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="leave-tracker">
+            <i class="fa-solid fa-umbrella-beach"></i>
+            <span class="menu-text">Leave Tracker</span>
+          </a>
+        </li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="weekend-planner">
+            <i class="fa-solid fa-business-time"></i>
+            <span class="menu-text">Weekend Planner</span>
+          </a>
+        </li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="forecast">
+            <i class="fa-solid fa-chart-line text-info"></i>
+            <span class="menu-text">Forecast Engine</span>
+          </a>
+        </li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="gantt">
+            <i class="fa-solid fa-bars-progress text-danger"></i>
+            <span class="menu-text">Gantt Chart</span>
+          </a>
+        </li>
+
+        <li class="menu-header">Risk & Governance</li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="risks">
+            <i class="fa-solid fa-shield-halved"></i>
+            <span class="menu-text">Risks</span>
+          </a>
+        </li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="reports">
+            <i class="fa-solid fa-file-invoice-dollar"></i>
+            <span class="menu-text">Reports</span>
+          </a>
+        </li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="settings">
+            <i class="fa-solid fa-sliders"></i>
+            <span class="menu-text">Settings</span>
+          </a>
+        </li>
+      </ul>
+
+      <!-- Sidebar User Profile Footer -->
+      <div class="sidebar-footer">
+        <img src="assets/baby_feet.jpg" alt="Profile" referrerpolicy="no-referrer" />
+        <div class="user-info">
+          <div class="font-semibold text-white" style="font-size: 0.85rem;">Prashanth K</div>
+          <div class="brand-subtitle" style="margin: 0; opacity: 0.8;">Admin Lead</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- RIGHT MAIN CONTENT CONTAINER -->
+    <main id="main-content">
+      
+      <!-- TOP STICKY NAVIGATION BAR -->
+      <header id="top-navbar">
+        <div class="left-controls">
+          <button id="sidebar-toggle-btn" class="sidebar-toggle" aria-label="Toggle Sidebar">
+            <i class="fa-solid fa-bars"></i>
+          </button>
+          
+          <div class="breadcrumb-container">
+            <a href="#" class="breadcrumb-link" data-page="dashboard">Home</a>
+            <span class="divider"><i class="fa-solid fa-chevron-right" style="font-size: 0.65rem; opacity: 0.6;"></i></span>
+            <span id="navbar-breadcrumb-label" class="font-semibold" style="color: var(--text-primary);">Dashboard</span>
+          </div>
+        </div>
+
+        <div class="right-controls">
+          <!-- Global Search box -->
+          <div class="search-bar d-none d-md-flex">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="text" placeholder="Global search..." aria-label="Search" />
+          </div>
+
+          <!-- Theme Toggler (Dark/Light) -->
+          <button id="theme-toggle-btn" class="control-btn" aria-label="Toggle Dark Mode">
+            <i class="fa-regular fa-moon"></i>
+          </button>
+
+          <!-- Notifications Bell Area -->
+          <button id="notifications-toggle-btn" class="control-btn" aria-label="Notifications Center">
+            <i class="fa-regular fa-bell"></i>
+            <span class="badge-dot"></span>
+          </button>
+
+          <!-- Dynamic Notifications Dropdown -->
+          <div class="notifications-dropdown" id="notifications-dropdown-menu">
+            <div class="notifications-header">
+              <span>Notifications</span>
+              <span class="text-primary font-semibold" style="font-size: 0.75rem; cursor: pointer;">Mark all read</span>
+            </div>
+            <div class="notifications-list">
+              <a href="#" class="notification-item unread">
+                <div class="notification-icon"><i class="fa-solid fa-shield-halved"></i></div>
+                <div class="notification-info">
+                  <span class="notification-title">Risk Level Critical</span>
+                  <span class="notification-text">Ares Core database replication lagging by 35min.</span>
+                  <span class="notification-time">15 min ago</span>
+                </div>
+              </a>
+              <a href="#" class="notification-item unread">
+                <div class="notification-icon success"><i class="fa-solid fa-umbrella-beach"></i></div>
+                <div class="notification-info">
+                  <span class="notification-title">Leave Approved</span>
+                  <span class="notification-text">Sarah Connor leave approval completed automatically.</span>
+                  <span class="notification-time">2 hours ago</span>
+                </div>
+              </a>
+              <a href="#" class="notification-item">
+                <div class="notification-icon warning"><i class="fa-solid fa-circle-exclamation"></i></div>
+                <div class="notification-info">
+                  <span class="notification-title">Budget Warning</span>
+                  <span class="notification-text">Project Chronos has reached 80% of Q3 milestones budget limit.</span>
+                  <span class="notification-time">1 day ago</span>
+                </div>
+              </a>
+            </div>
+            <div class="notifications-footer">
+              <a href="#">View All Notifications</a>
+            </div>
+          </div>
+
+          <!-- User profile shortcut -->
+          <a href="#" class="user-profile-menu" data-page="settings">
+            <img src="assets/baby_feet.jpg" alt="Prashanth" referrerpolicy="no-referrer" />
+          </a>
+        </div>
+      </header>
+
+      <!-- ===================================================================== -->
+      <!-- VIEW PAGES (DYNAMIC CONTAINERS DISPLAY CONTROLLED BY ROUTING)          -->
+      <!-- ===================================================================== -->
+
+      <!-- 1. DASHBOARD PAGE -->
+      <section id="page-dashboard" class="page-container active">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Executive Dashboard</h1>
+            <p class="page-description">Comprehensive portfolio health, resourcing metrics, and milestone forecasts</p>
+          </div>
+          <button id="refresh-dashboard-btn" class="btn-enterprise btn-enterprise-secondary" aria-label="Refresh Stats">
+            <i class="fa-solid fa-arrows-rotate"></i> Refresh Metrics
+          </button>
+        </div>
+
+        <!-- Metric KPI Cards (12 items) -->
+        <div class="stats-grid-executive">
+          
+          <!-- 1. Total Customers -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Total Customers</span>
+              <div class="kpi-icon-wrapper kpi-icon-primary"><i class="fa-solid fa-handshake"></i></div>
+            </div>
+            <h2 class="kpi-value" id="metric-total-customers">0</h2>
+            <div class="kpi-footer">
+              <span class="kpi-trend positive"><i class="fa-solid fa-arrow-up"></i> +2</span>
+              <span>this quarter</span>
+            </div>
+          </div>
+
+          <!-- 2. Total Projects -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Total Projects</span>
+              <div class="kpi-icon-wrapper kpi-icon-info"><i class="fa-solid fa-cubes"></i></div>
+            </div>
+            <h2 class="kpi-value" id="metric-total-projects">0</h2>
+            <div class="kpi-footer">
+              <span class="kpi-trend positive"><i class="fa-solid fa-arrow-up"></i> +12%</span>
+              <span>vs last year</span>
+            </div>
+          </div>
+
+          <!-- 3. Projects In Progress -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Projects In Progress</span>
+              <div class="kpi-icon-wrapper kpi-icon-primary"><i class="fa-solid fa-spinner fa-spin"></i></div>
+            </div>
+            <h2 class="kpi-value" id="metric-projects-in-progress">0</h2>
+            <div class="kpi-footer">
+              <span class="kpi-trend neutral"><i class="fa-solid fa-equals"></i> stable</span>
+              <span>84% capacity load</span>
+            </div>
+          </div>
+
+          <!-- 4. Completed Projects -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Completed Projects</span>
+              <div class="kpi-icon-wrapper kpi-icon-success"><i class="fa-solid fa-circle-check"></i></div>
+            </div>
+            <h2 class="kpi-value" id="metric-completed-projects">0</h2>
+            <div class="kpi-footer">
+              <span class="kpi-trend positive"><i class="fa-solid fa-arrow-up"></i> +4</span>
+              <span>completed Q2</span>
+            </div>
+          </div>
+
+          <!-- 5. Delayed Projects -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Delayed Projects</span>
+              <div class="kpi-icon-wrapper kpi-icon-danger"><i class="fa-solid fa-clock-rotate-left"></i></div>
+            </div>
+            <h2 class="kpi-value" id="metric-delayed-projects">0</h2>
+            <div class="kpi-footer">
+              <span class="kpi-trend negative"><i class="fa-solid fa-arrow-up"></i> +1</span>
+              <span>needs alignment</span>
+            </div>
+          </div>
+
+          <!-- 6. Critical Projects -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Critical Projects</span>
+              <div class="kpi-icon-wrapper kpi-icon-danger"><i class="fa-solid fa-triangle-exclamation"></i></div>
+            </div>
+            <h2 class="kpi-value" id="metric-critical-projects">0</h2>
+            <div class="kpi-footer">
+              <span class="kpi-trend negative"><i class="fa-solid fa-circle-exclamation"></i> Active</span>
+              <span>immediate review</span>
+            </div>
+          </div>
+
+          <!-- 7. Pending SOW -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Pending SOW</span>
+              <div class="kpi-icon-wrapper kpi-icon-warning"><i class="fa-solid fa-file-signature"></i></div>
+            </div>
+            <h2 class="kpi-value" id="metric-pending-sow">0</h2>
+            <div class="kpi-footer">
+              <span class="kpi-trend neutral"><i class="fa-solid fa-hourglass-half"></i> 3 drafts</span>
+              <span>awaiting sign-off</span>
+            </div>
+          </div>
+
+          <!-- 8. Employees on Leave -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Employees on Leave</span>
+              <div class="kpi-icon-wrapper kpi-icon-info"><i class="fa-solid fa-umbrella-beach"></i></div>
+            </div>
+            <h2 class="kpi-value" id="metric-employees-on-leave">0</h2>
+            <div class="kpi-footer">
+              <span class="kpi-trend neutral"><i class="fa-solid fa-user-clock"></i> Scheduled</span>
+              <span>approved leave logs</span>
+            </div>
+          </div>
+
+          <!-- 9. Weekend Support -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Weekend Support</span>
+              <div class="kpi-icon-wrapper kpi-icon-success"><i class="fa-solid fa-business-time"></i></div>
+            </div>
+            <h2 class="kpi-value" id="metric-weekend-support">0</h2>
+            <div class="kpi-footer">
+              <span class="kpi-trend positive"><i class="fa-solid fa-shield"></i> On standby</span>
+              <span>active roster</span>
+            </div>
+          </div>
+
+          <!-- 10. Average Project Health -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Average Project Health</span>
+              <div class="kpi-icon-wrapper kpi-icon-success"><i class="fa-solid fa-heart-pulse"></i></div>
+            </div>
+            <h2 class="kpi-value" id="metric-avg-project-health">0%</h2>
+            <div class="kpi-footer">
+              <span class="kpi-trend positive"><i class="fa-solid fa-arrow-up"></i> +1.5%</span>
+              <span>overall rating</span>
+            </div>
+          </div>
+
+          <!-- 11. Remaining Hours -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Remaining Hours</span>
+              <div class="kpi-icon-wrapper kpi-icon-warning"><i class="fa-solid fa-hourglass-half"></i></div>
+            </div>
+            <h2 class="kpi-value" id="metric-remaining-hours">0</h2>
+            <div class="kpi-footer">
+              <span class="kpi-trend negative"><i class="fa-solid fa-arrow-down"></i> -150</span>
+              <span>this sprint cycle</span>
+            </div>
+          </div>
+
+          <!-- 12. Logged Hours -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Logged Hours</span>
+              <div class="kpi-icon-wrapper kpi-icon-primary"><i class="fa-solid fa-stopwatch"></i></div>
+            </div>
+            <h2 class="kpi-value" id="metric-logged-hours">0</h2>
+            <div class="kpi-footer">
+              <span class="kpi-trend positive"><i class="fa-solid fa-arrow-up"></i> +480</span>
+              <span>timesheet ledger</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- PHASE 16: EXECUTIVE AI ANALYTICS & DECISION SUPPORT PANEL -->
+        <div class="row g-3 mb-4 mt-1">
+          <div class="col-lg-7">
+            <div id="ai-executive-insights-container"></div>
+          </div>
+          <div class="col-lg-5">
+            <div id="ai-daily-action-center-container"></div>
+          </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+          <div class="col-lg-6">
+            <div id="ai-recommendations-container"></div>
+          </div>
+          <div class="col-lg-6">
+            <div id="ai-forecast-container"></div>
+          </div>
+        </div>
+
+        <!-- Charts Grid (9 Chart.js canvases) -->
+        <div class="charts-grid-executive">
+          
+          <!-- 1. Customer-wise Projects -->
+          <div class="enterprise-card">
+            <div class="card-header-clean">
+              <h3 class="card-title-clean"><i class="fa-solid fa-chart-column" style="color: var(--brand-primary)"></i> Customer-wise Projects</h3>
+            </div>
+            <div class="chart-container-wrapper" style="height: 250px; padding: 10px;">
+              <canvas id="chart-customer-projects"></canvas>
+            </div>
+          </div>
+
+          <!-- 2. Project Status -->
+          <div class="enterprise-card">
+            <div class="card-header-clean">
+              <h3 class="card-title-clean"><i class="fa-solid fa-chart-pie" style="color: var(--brand-success)"></i> Project Status</h3>
+            </div>
+            <div class="chart-container-wrapper" style="height: 250px; padding: 10px;">
+              <canvas id="chart-project-status"></canvas>
+            </div>
+          </div>
+
+          <!-- 3. Priority -->
+          <div class="enterprise-card">
+            <div class="card-header-clean">
+              <h3 class="card-title-clean"><i class="fa-solid fa-arrow-up-wide-short" style="color: var(--brand-warning)"></i> Priority Distribution</h3>
+            </div>
+            <div class="chart-container-wrapper" style="height: 250px; padding: 10px;">
+              <canvas id="chart-project-priority"></canvas>
+            </div>
+          </div>
+
+          <!-- 4. Risk -->
+          <div class="enterprise-card">
+            <div class="card-header-clean">
+              <h3 class="card-title-clean"><i class="fa-solid fa-shield-halved" style="color: var(--brand-danger)"></i> Risk Level Overview</h3>
+            </div>
+            <div class="chart-container-wrapper" style="height: 250px; padding: 10px;">
+              <canvas id="chart-project-risk"></canvas>
+            </div>
+          </div>
+
+          <!-- 5. Monthly Deliveries -->
+          <div class="enterprise-card">
+            <div class="card-header-clean">
+              <h3 class="card-title-clean"><i class="fa-solid fa-chart-line" style="color: var(--brand-info)"></i> Monthly Deliveries</h3>
+            </div>
+            <div class="chart-container-wrapper" style="height: 250px; padding: 10px;">
+              <canvas id="chart-monthly-deliveries"></canvas>
+            </div>
+          </div>
+
+          <!-- 6. Department Effort -->
+          <div class="enterprise-card">
+            <div class="card-header-clean">
+              <h3 class="card-title-clean"><i class="fa-solid fa-network-wired" style="color: var(--brand-primary)"></i> Department Effort (FTE)</h3>
+            </div>
+            <div class="chart-container-wrapper" style="height: 250px; padding: 10px;">
+              <canvas id="chart-dept-effort"></canvas>
+            </div>
+          </div>
+
+          <!-- 7. Remaining Hours -->
+          <div class="enterprise-card">
+            <div class="card-header-clean">
+              <h3 class="card-title-clean"><i class="fa-solid fa-hourglass-half" style="color: var(--brand-warning)"></i> Remaining Hours by Team</h3>
+            </div>
+            <div class="chart-container-wrapper" style="height: 250px; padding: 10px;">
+              <canvas id="chart-remaining-hours"></canvas>
+            </div>
+          </div>
+
+          <!-- 8. Resource Utilization -->
+          <div class="enterprise-card">
+            <div class="card-header-clean">
+              <h3 class="card-title-clean"><i class="fa-solid fa-users" style="color: var(--brand-success)"></i> Resource Utilization</h3>
+            </div>
+            <div class="chart-container-wrapper" style="height: 250px; padding: 10px;">
+              <canvas id="chart-resource-utilization"></canvas>
+            </div>
+          </div>
+
+          <!-- 9. SOW Status -->
+          <div class="enterprise-card">
+            <div class="card-header-clean">
+              <h3 class="card-title-clean"><i class="fa-solid fa-file-invoice" style="color: var(--brand-info)"></i> SOW Status</h3>
+            </div>
+            <div class="chart-container-wrapper" style="height: 250px; padding: 10px;">
+              <canvas id="chart-sow-status"></canvas>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Secondary Section for Operations checklist and active activity log (backward compatibility) -->
+        <div class="dashboard-grid mt-4">
+          <!-- Left Column (Tasks Checklist) -->
+          <div class="enterprise-card">
+            <div class="card-header-clean">
+              <h3 class="card-title-clean"><i class="fa-solid fa-list-check" style="color: var(--brand-warning)"></i> Interactive Operational Task Checklist</h3>
+              <span style="font-size: 0.8rem; color: var(--text-muted);">Persistence Active</span>
+            </div>
+            <div id="dashboard-tasks-container">
+              <!-- Dynamic Task rows loaded from storage -->
+            </div>
+          </div>
+
+          <!-- Right Column (Audit Logs) -->
+          <div class="enterprise-card">
+            <div class="card-header-clean">
+              <h3 class="card-title-clean"><i class="fa-solid fa-receipt" style="color: var(--brand-danger)"></i> Active Audit Logs</h3>
+            </div>
+            <div id="dashboard-activity-container" class="activity-list">
+              <!-- Dynamic Activities -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. PROJECTS PORTFOLIO PAGE -->
+      <section id="page-projects" class="page-container">
+        <!-- LIST VIEW CONTAINER -->
+        <div id="projects-list-container">
+          <div class="page-header">
+            <div>
+              <h1 class="page-title">Enterprise Project Registers</h1>
+              <p class="page-description">Manage company project codes, health rates, and budget allocations</p>
+            </div>
+            <div class="d-flex gap-2">
+              <button id="project-export-btn" class="btn-enterprise btn-enterprise-secondary">
+                <i class="fa-solid fa-file-excel" style="color: #107c41;"></i> Export Spreadsheet
+              </button>
+              <button id="project-create-btn" class="btn-enterprise btn-enterprise-primary">
+                <i class="fa-solid fa-circle-plus"></i> Initiate Project
+              </button>
+            </div>
+          </div>
+
+          <!-- Primary Filter & Search Bar -->
+          <div class="table-panel-header">
+            <div class="search-bar">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="project-search-input" placeholder="Search code, name, client, PM, developer..." />
+            </div>
+            <div class="table-panel-actions">
+              <button id="toggle-adv-filters-btn" class="btn-enterprise btn-enterprise-secondary btn-sm" style="padding: 6px 12px; font-size: 0.8rem;">
+                <i class="fa-solid fa-sliders"></i> Advanced Filters <span id="active-filter-badge" class="badge bg-primary ms-1" style="display: none;">0</span>
+              </button>
+              <button id="reset-filters-btn" class="btn-enterprise btn-enterprise-secondary btn-sm" style="padding: 6px 12px; font-size: 0.8rem; display: none;">
+                Reset Filters
+              </button>
+            </div>
+          </div>
+
+          <!-- Advanced Filters Panel (Collapsible) -->
+          <div id="advanced-filters-panel" class="p-3 mb-3 border rounded" style="display: none; background-color: var(--bg-card); border-color: var(--border-color) !important;">
+            <div class="row g-2">
+              <!-- Customer Filter -->
+              <div class="col-6 col-md-3 col-lg-2">
+                <label class="form-label font-semibold mb-1 text-secondary" style="font-size: 0.75rem;">Customer</label>
+                <select id="filter-customer" class="select-enterprise w-100" style="min-width: unset; padding: 6px 10px; font-size: 0.8rem;">
+                  <option value="all">All Customers</option>
+                </select>
+              </div>
+              <!-- Project Code Filter -->
+              <div class="col-6 col-md-3 col-lg-2">
+                <label class="form-label font-semibold mb-1 text-secondary" style="font-size: 0.75rem;">Project ID</label>
+                <select id="filter-project" class="select-enterprise w-100" style="min-width: unset; padding: 6px 10px; font-size: 0.8rem;">
+                  <option value="all">All IDs</option>
+                </select>
+              </div>
+              <!-- Sprint Filter -->
+              <div class="col-6 col-md-3 col-lg-2">
+                <label class="form-label font-semibold mb-1 text-secondary" style="font-size: 0.75rem;">Sprint</label>
+                <select id="filter-sprint" class="select-enterprise w-100" style="min-width: unset; padding: 6px 10px; font-size: 0.8rem;">
+                  <option value="all">All Sprints</option>
+                </select>
+              </div>
+              <!-- Status Filter -->
+              <div class="col-6 col-md-3 col-lg-2">
+                <label class="form-label font-semibold mb-1 text-secondary" style="font-size: 0.75rem;">Status</label>
+                <select id="filter-status" class="select-enterprise w-100" style="min-width: unset; padding: 6px 10px; font-size: 0.8rem;">
+                  <option value="all">All Statuses</option>
+                  <option value="in-progress">In Progress</option>
+                  <option value="completed">Completed</option>
+                  <option value="planning">Planning</option>
+                  <option value="on-hold">On Hold</option>
+                  <option value="archived">Archived</option>
+                </select>
+              </div>
+              <!-- Risk Filter -->
+              <div class="col-6 col-md-3 col-lg-2">
+                <label class="form-label font-semibold mb-1 text-secondary" style="font-size: 0.75rem;">Risk</label>
+                <select id="filter-risk" class="select-enterprise w-100" style="min-width: unset; padding: 6px 10px; font-size: 0.8rem;">
+                  <option value="all">All Risks</option>
+                  <option value="Low">Low</option>
+                  <option value="Medium">Medium</option>
+                  <option value="High">High</option>
+                  <option value="Critical">Critical</option>
+                </select>
+              </div>
+              <!-- Developer Filter -->
+              <div class="col-6 col-md-3 col-lg-2">
+                <label class="form-label font-semibold mb-1 text-secondary" style="font-size: 0.75rem;">Developer</label>
+                <select id="filter-developer" class="select-enterprise w-100" style="min-width: unset; padding: 6px 10px; font-size: 0.8rem;">
+                  <option value="all">All Developers</option>
+                </select>
+              </div>
+              <!-- QA Filter -->
+              <div class="col-6 col-md-3 col-lg-2">
+                <label class="form-label font-semibold mb-1 text-secondary" style="font-size: 0.75rem;">QA</label>
+                <select id="filter-qa" class="select-enterprise w-100" style="min-width: unset; padding: 6px 10px; font-size: 0.8rem;">
+                  <option value="all">All QAs</option>
+                </select>
+              </div>
+              <!-- BA Filter -->
+              <div class="col-6 col-md-3 col-lg-2">
+                <label class="form-label font-semibold mb-1 text-secondary" style="font-size: 0.75rem;">BA</label>
+                <select id="filter-ba" class="select-enterprise w-100" style="min-width: unset; padding: 6px 10px; font-size: 0.8rem;">
+                  <option value="all">All BAs</option>
+                </select>
+              </div>
+              <!-- Month Filter -->
+              <div class="col-6 col-md-3 col-lg-2">
+                <label class="form-label font-semibold mb-1 text-secondary" style="font-size: 0.75rem;">Month</label>
+                <select id="filter-month" class="select-enterprise w-100" style="min-width: unset; padding: 6px 10px; font-size: 0.8rem;">
+                  <option value="all">All Months</option>
+                  <option value="January">January</option>
+                  <option value="February">February</option>
+                  <option value="March">March</option>
+                  <option value="April">April</option>
+                  <option value="May">May</option>
+                  <option value="June">June</option>
+                  <option value="July">July</option>
+                  <option value="August">August</option>
+                  <option value="September">September</option>
+                  <option value="October">October</option>
+                  <option value="November">November</option>
+                  <option value="December">December</option>
+                </select>
+              </div>
+              <!-- Quarter Filter -->
+              <div class="col-6 col-md-3 col-lg-2">
+                <label class="form-label font-semibold mb-1 text-secondary" style="font-size: 0.75rem;">Quarter</label>
+                <select id="filter-quarter" class="select-enterprise w-100" style="min-width: unset; padding: 6px 10px; font-size: 0.8rem;">
+                  <option value="all">All Quarters</option>
+                  <option value="Q1">Q1</option>
+                  <option value="Q2">Q2</option>
+                  <option value="Q3">Q3</option>
+                  <option value="Q4">Q4</option>
+                </select>
+              </div>
+              <!-- Year Filter -->
+              <div class="col-6 col-md-3 col-lg-2">
+                <label class="form-label font-semibold mb-1 text-secondary" style="font-size: 0.75rem;">Year</label>
+                <select id="filter-year" class="select-enterprise w-100" style="min-width: unset; padding: 6px 10px; font-size: 0.8rem;">
+                  <option value="all">All Years</option>
+                  <option value="2025">2025</option>
+                  <option value="2026">2026</option>
+                  <option value="2027">2027</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bulk Update / Action Panel (Appears when items are selected) -->
+          <div id="bulk-action-panel" class="p-3 mb-3 border rounded align-items-center justify-content-between gap-3" style="display: none; background-color: rgba(79, 70, 229, 0.04); border-color: var(--brand-primary) !important;">
+            <div class="d-flex align-items-center gap-2">
+              <i class="fa-solid fa-circle-info text-primary" style="color: var(--brand-primary);"></i>
+              <span class="font-semibold text-primary" style="font-size: 0.85rem;"><span id="bulk-selected-count">0</span> projects selected</span>
+            </div>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <span class="text-secondary" style="font-size: 0.75rem; font-weight: 500;">Bulk Actions:</span>
+              
+              <!-- Bulk status update -->
+              <select id="bulk-status-select" class="select-enterprise py-1" style="min-width: 120px; font-size: 0.75rem;">
+                <option value="">Update Status...</option>
+                <option value="planning">Planning</option>
+                <option value="in-progress">In Progress</option>
+                <option value="on-hold">On Hold</option>
+                <option value="completed">Completed</option>
+                <option value="archived">Archived</option>
+              </select>
+
+              <!-- Bulk risk update -->
+              <select id="bulk-risk-select" class="select-enterprise py-1" style="min-width: 120px; font-size: 0.75rem;">
+                <option value="">Update Risk...</option>
+                <option value="Low">Low</option>
+                <option value="Medium">Medium</option>
+                <option value="High">High</option>
+                <option value="Critical">Critical</option>
+              </select>
+
+              <button id="bulk-duplicate-btn" class="btn-enterprise btn-enterprise-secondary btn-sm py-1 px-2" style="font-size: 0.75rem;">
+                <i class="fa-regular fa-copy"></i> Duplicate
+              </button>
+              <button id="bulk-archive-btn" class="btn-enterprise btn-enterprise-secondary btn-sm py-1 px-2" style="font-size: 0.75rem;">
+                <i class="fa-solid fa-box-archive"></i> Archive
+              </button>
+              <button id="bulk-delete-btn" class="btn-enterprise btn-enterprise-secondary btn-sm py-1 px-2 text-danger" style="font-size: 0.75rem; border-color: var(--brand-danger);">
+                <i class="fa-regular fa-trash-can"></i> Delete
+              </button>
+              <button id="bulk-clear-selection-btn" class="btn-enterprise btn-enterprise-secondary btn-sm py-1 px-2" style="font-size: 0.75rem;">
+                Clear Selection
+              </button>
+            </div>
+          </div>
+
+          <!-- Table Grid Container with Sticky Headers -->
+          <div class="table-responsive-container" style="max-height: 62vh; overflow-y: auto;">
+            <table class="table-enterprise">
+              <thead style="position: sticky; top: 0; z-index: 10; background-color: var(--bg-card);">
+                <tr>
+                  <th style="width: 40px; padding: 14px 10px 14px 20px;">
+                    <input type="checkbox" id="project-select-all" class="form-check-input" />
+                  </th>
+                  <th style="width: 120px; cursor: pointer;" id="th-code">
+                    Code <i class="fa-solid fa-sort ms-1 opacity-50 text-muted" style="font-size: 0.65rem;"></i>
+                  </th>
+                  <th style="cursor: pointer;" id="th-name">
+                    Project / Client Name <i class="fa-solid fa-sort ms-1 opacity-50 text-muted" style="font-size: 0.65rem;"></i>
+                  </th>
+                  <th style="cursor: pointer;" id="th-pm">
+                    Project Manager <i class="fa-solid fa-sort ms-1 opacity-50 text-muted" style="font-size: 0.65rem;"></i>
+                  </th>
+                  <th style="cursor: pointer;" id="th-sprint">
+                    Sprint <i class="fa-solid fa-sort ms-1 opacity-50 text-muted" style="font-size: 0.65rem;"></i>
+                  </th>
+                  <th style="width: 100px; cursor: pointer;" id="th-risk">
+                    Risk <i class="fa-solid fa-sort ms-1 opacity-50 text-muted" style="font-size: 0.65rem;"></i>
+                  </th>
+                  <th style="width: 180px; cursor: pointer;" id="th-progress">
+                    Progress <i class="fa-solid fa-sort ms-1 opacity-50 text-muted" style="font-size: 0.65rem;"></i>
+                  </th>
+                  <th style="cursor: pointer;" id="th-budget">
+                    Budget <i class="fa-solid fa-sort ms-1 opacity-50 text-muted" style="font-size: 0.65rem;"></i>
+                  </th>
+                  <th style="width: 130px; cursor: pointer;" id="th-status">
+                    Status <i class="fa-solid fa-sort ms-1 opacity-50 text-muted" style="font-size: 0.65rem;"></i>
+                  </th>
+                  <th style="width: 110px; text-align: right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="projects-table-body">
+                <!-- Dynamic Rows loaded from js/projects.js -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Pagination controls -->
+          <div class="pagination-container">
+            <div id="pagination-info">Showing 0 to 0 of 0 entries</div>
+            <div class="d-flex align-items-center gap-3">
+              <div class="d-flex align-items-center gap-1">
+                <span style="font-size: 0.75rem;">Show:</span>
+                <select id="pagination-limit" class="select-enterprise py-1 px-2" style="min-width: 60px; font-size: 0.75rem;">
+                  <option value="5">5</option>
+                  <option value="10" selected>10</option>
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                </select>
+              </div>
+              <div class="pagination-controls" id="pagination-pages">
+                <!-- Dynamic pagination buttons -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- DETAIL / EDIT VIEW CONTAINER -->
+        <div id="projects-detail-container" style="display: none;">
+          <div class="page-header pb-2 border-bottom mb-4">
+            <div class="d-flex align-items-center gap-3">
+              <button id="btn-back-to-list" class="btn-enterprise btn-enterprise-secondary btn-sm" style="padding: 6px 12px; font-size: 0.8rem;">
+                <i class="fa-solid fa-chevron-left me-1"></i> Projects List
+              </button>
+              <div>
+                <h1 class="page-title mb-0" style="font-size: 1.5rem;"><span id="detail-proj-id" class="text-muted">PRJ000</span> <span id="detail-proj-title">Project Title</span></h1>
+                <p class="page-description mb-0 mt-0" style="font-size: 0.85rem;">Interactive Project Codebook & Governance</p>
+              </div>
+            </div>
+            <!-- Auto-save / Validation status indicator -->
+            <div class="d-flex align-items-center gap-2">
+              <div id="autosave-status" class="text-secondary d-flex align-items-center gap-1 font-semibold" style="font-size: 0.8rem;">
+                <i class="fa-solid fa-circle-check text-success"></i> All changes saved
+              </div>
+            </div>
+          </div>
+
+          <div class="card p-4" style="background-color: var(--bg-card); border-color: var(--border-color); border-radius: var(--border-radius-md);">
+            <form id="project-details-form" class="needs-validation" novalidate>
+              <input type="hidden" id="edit-id" />
+              
+              <div class="row g-4">
+                <!-- SECTION 1: GENERAL OVERVIEW -->
+                <div class="col-12 border-bottom pb-2">
+                  <h4 class="font-semibold text-primary m-0" style="font-size: 1.1rem;"><i class="fa-regular fa-folder-open text-primary me-2"></i>General Information</h4>
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label font-semibold" style="font-size: 0.85rem;">Project Name <span class="text-danger">*</span></label>
+                  <input type="text" class="form-control select-enterprise w-100" id="edit-name" required />
+                  <div class="invalid-feedback" id="val-name-feedback">Project name is required and must not be empty.</div>
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label font-semibold" style="font-size: 0.85rem;">Client / Customer <span class="text-danger">*</span></label>
+                  <select class="form-select select-enterprise w-100" id="edit-client" required>
+                    <!-- Populated dynamically -->
+                  </select>
+                  <div class="invalid-feedback">Please assign a valid client company.</div>
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label font-semibold" style="font-size: 0.85rem;">Approved Budget ($) <span class="text-danger">*</span></label>
+                  <input type="number" class="form-control select-enterprise w-100" id="edit-budget" min="1" required />
+                  <div class="invalid-feedback">Approved budget must be a positive number greater than zero.</div>
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label font-semibold" style="font-size: 0.85rem;">Remarks & Remarks Descriptions</label>
+                  <input type="text" class="form-control select-enterprise w-100" id="edit-remarks" placeholder="Optional comments, milestones or status summaries" />
+                </div>
+
+                <!-- SECTION 2: TIMELINE DATES -->
+                <div class="col-12 border-bottom pb-2 mt-4">
+                  <h4 class="font-semibold text-primary m-0" style="font-size: 1.1rem;"><i class="fa-regular fa-calendar-days text-primary me-2"></i>Dates & Milestone Timeline</h4>
+                </div>
+
+                <div class="col-md-3">
+                  <label class="form-label font-semibold" style="font-size: 0.85rem;">Estimated Start</label>
+                  <input type="date" class="form-control select-enterprise w-100" id="edit-est-start" />
+                </div>
+
+                <div class="col-md-3">
+                  <label class="form-label font-semibold" style="font-size: 0.85rem;">Estimated End</label>
+                  <input type="date" class="form-control select-enterprise w-100" id="edit-est-end" />
+                  <div class="invalid-feedback" id="val-date-feedback">Estimated End date must be after Estimated Start date.</div>
+                </div>
+
+                <div class="col-md-3">
+                  <label class="form-label font-semibold" style="font-size: 0.85rem;">Actual Start</label>
+                  <input type="date" class="form-control select-enterprise w-100" id="edit-act-start" />
+                </div>
+
+                <div class="col-md-3">
+                  <label class="form-label font-semibold" style="font-size: 0.85rem;">Actual End</label>
+                  <input type="date" class="form-control select-enterprise w-100" id="edit-act-end" />
+                </div>
+
+                <!-- SECTION 3: STAFFING ASSIGNMENTS -->
+                <div class="col-12 border-bottom pb-2 mt-4">
+                  <h4 class="font-semibold text-primary m-0" style="font-size: 1.1rem;"><i class="fa-solid fa-users-gear text-primary me-2"></i>Resources & Team Allocations</h4>
+                </div>
+
+                <div class="col-md-3">
+                  <label class="form-label font-semibold" style="font-size: 0.85rem;">Project Manager (PM)</label>
+                  <select class="form-select select-enterprise w-100" id="edit-manager">
+                    <!-- Populated dynamically -->
+                  </select>
+                </div>
+
+                <div class="col-md-3">
+                  <label class="form-label font-semibold" style="font-size: 0.85rem;">Business Analyst (BA)</label>
+                  <select class="form-select select-enterprise w-100" id="edit-ba">
+                    <!-- Populated dynamically -->
+                  </select>
+                </div>
+
+                <div class="col-md-3">
+                  <label class="form-label font-semibold" style="font-size: 0.85rem;">Lead Developer</label>
+                  <select class="form-select select-enterprise w-100" id="edit-developer">
+                    <!-- Populated dynamically -->
+                  </select>
+                </div>
+
+                <div class="col-md-3">
+                  <label class="form-label font-semibold" style="font-size: 0.85rem;">QA Analyst</label>
+                  <select class="form-select select-enterprise w-100" id="edit-qa">
+                    <!-- Populated dynamically -->
+                  </select>
+                </div>
+
+                <!-- SECTION 4: PROGRESS & RISK GOVERNANCE -->
+                <div class="col-12 border-bottom pb-2 mt-4">
+                  <h4 class="font-semibold text-primary m-0" style="font-size: 1.1rem;"><i class="fa-solid fa-shield-halved text-primary me-2"></i>Governance, Progress & Risk Metrics</h4>
+                </div>
+
+                <div class="col-md-4">
+                  <label class="form-label font-semibold" style="font-size: 0.85rem;">Active Sprint</label>
+                  <select class="form-select select-enterprise w-100" id="edit-sprint">
+                    <!-- Populated dynamically -->
+                  </select>
+                </div>
+
+                <div class="col-md-4">
+                  <label class="form-label font-semibold" style="font-size: 0.85rem;">Risk Matrix Level</label>
+                  <select class="form-select select-enterprise w-100" id="edit-risk">
+                    <option value="Low">Low Risk</option>
+                    <option value="Medium">Medium Risk</option>
+                    <option value="High">High Risk</option>
+                    <option value="Critical">Critical Risk</option>
+                  </select>
+                </div>
+
+                <div class="col-md-4">
+                  <label class="form-label font-semibold" style="font-size: 0.85rem;">Portfolio Status</label>
+                  <select class="form-select select-enterprise w-100" id="edit-status">
+                    <option value="planning">Planning</option>
+                    <option value="in-progress">In Progress</option>
+                    <option value="on-hold">On Hold</option>
+                    <option value="completed">Completed</option>
+                    <option value="archived">Archived</option>
+                  </select>
+                </div>
+
+                <div class="col-md-12">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <label class="form-label font-semibold m-0" style="font-size: 0.85rem;">Completion Progress Percentage</label>
+                    <span id="edit-progress-badge" class="badge bg-primary">0%</span>
+                  </div>
+                  <div class="d-flex align-items-center gap-3">
+                    <input type="range" class="form-range flex-grow-1" id="edit-progress" min="0" max="100" step="5" />
+                  </div>
+                </div>
+
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. CUSTOMERS PAGE -->
+      <section id="page-customers" class="page-container">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Customers Directory</h1>
+            <p class="page-description">Maintain client contacts, contracts, and active project counts</p>
+          </div>
+        </div>
+
+        <!-- Customers List Directory View -->
+        <div id="customers-list-container">
+          <!-- Filter Action Panel -->
+          <div class="table-panel-header">
+            <div class="search-bar">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="customer-search-input" placeholder="Search customer, industry..." />
+            </div>
+            <div class="table-panel-actions">
+              <span style="font-size: 0.85rem; font-weight: 500; color: var(--text-secondary);">Contract:</span>
+              <select id="customer-status-select" class="select-enterprise">
+                <option value="all">All Registries</option>
+                <option value="active">Active Accounts</option>
+                <option value="inactive">Suspended</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Table Grid Container -->
+          <div class="table-responsive-container">
+            <table class="table-enterprise">
+              <thead>
+                <tr>
+                  <th style="width: 140px;">Customer Code</th>
+                  <th>Company Name</th>
+                  <th>Industry Sector</th>
+                  <th>Primary Executive Contact</th>
+                  <th style="width: 140px;">Contract Status</th>
+                </tr>
+              </thead>
+              <tbody id="customers-table-body">
+                <!-- Dynamic Rows -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Customer Executive Dashboard View -->
+        <div id="customers-dashboard-container" style="display: none;">
+          <!-- Header and Actions -->
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4 pb-3 border-bottom">
+            <div class="d-flex align-items-center gap-3">
+              <button id="btn-back-to-cust-list" class="btn btn-sm btn-light border font-semibold d-flex align-items-center gap-1 py-2 px-3">
+                <i class="fa-solid fa-arrow-left"></i> Back to Directory
+              </button>
+              <div>
+                <h2 id="cust-dash-name" class="font-bold text-primary m-0" style="font-size: 1.4rem;">Customer Dashboard</h2>
+                <p id="cust-dash-subtitle" class="text-muted m-0" style="font-size: 0.85rem;">Executive Performance Portfolio</p>
+              </div>
+            </div>
+            <button id="btn-cust-summary-report" class="btn-enterprise btn-enterprise-primary d-flex align-items-center gap-2">
+              <i class="fa-solid fa-file-contract"></i> Customer Summary Report
+            </button>
+          </div>
+
+          <!-- KPI Stat Grid -->
+          <div class="stats-grid mb-4">
+            <!-- Estimated Hours -->
+            <div class="kpi-card">
+              <div class="kpi-header">
+                <span class="kpi-title">Estimated Effort</span>
+                <div class="kpi-icon-wrapper kpi-icon-primary">
+                  <i class="fa-solid fa-hourglass-start"></i>
+                </div>
+              </div>
+              <h3 class="kpi-value" id="cust-kpi-est-hours">0 hrs</h3>
+              <div class="kpi-footer">
+                <span class="text-muted">Approved scope budget</span>
+              </div>
+            </div>
+
+            <!-- Actual Hours -->
+            <div class="kpi-card">
+              <div class="kpi-header">
+                <span class="kpi-title">Actual Effort Spent</span>
+                <div class="kpi-icon-wrapper kpi-icon-success">
+                  <i class="fa-solid fa-hourglass-half"></i>
+                </div>
+              </div>
+              <h3 class="kpi-value" id="cust-kpi-act-hours">0 hrs</h3>
+              <div class="kpi-footer">
+                <span class="text-muted">Accrued time sheet delivery</span>
+              </div>
+            </div>
+
+            <!-- Remaining Hours -->
+            <div class="kpi-card">
+              <div class="kpi-header">
+                <span class="kpi-title">Remaining Backlog</span>
+                <div class="kpi-icon-wrapper kpi-icon-warning">
+                  <i class="fa-solid fa-hourglass-end"></i>
+                </div>
+              </div>
+              <h3 class="kpi-value" id="cust-kpi-rem-hours">0 hrs</h3>
+              <div class="kpi-footer">
+                <span class="text-muted">Unfinished effort balance</span>
+              </div>
+            </div>
+
+            <!-- Average Progress -->
+            <div class="kpi-card">
+              <div class="kpi-header">
+                <span class="kpi-title">Portfolio Delivery %</span>
+                <div class="kpi-icon-wrapper kpi-icon-info">
+                  <i class="fa-solid fa-chart-line"></i>
+                </div>
+              </div>
+              <h3 class="kpi-value" id="cust-kpi-completion">0%</h3>
+              <div class="kpi-footer">
+                <span class="text-muted">Weighted completion progress</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sub Navigation Tabs for Dashboard Details -->
+          <div class="mb-4">
+            <ul class="nav nav-pills gap-2 p-1 bg-light border rounded-pill d-inline-flex" id="cust-dashboard-tab-headers" style="list-style: none; margin: 0; padding: 4px;">
+              <li>
+                <button class="btn btn-sm rounded-pill font-semibold px-4 py-2 active btn-cust-tab" data-tab="cust-overview">
+                  <i class="fa-solid fa-chart-pie me-1"></i> Overview & Charts
+                </button>
+              </li>
+              <li>
+                <button class="btn btn-sm rounded-pill font-semibold px-4 py-2 btn-cust-tab" data-tab="cust-projects">
+                  <i class="fa-solid fa-folder-tree me-1"></i> Projects & Timeline
+                </button>
+              </li>
+              <li>
+                <button class="btn btn-sm rounded-pill font-semibold px-4 py-2 btn-cust-tab" data-tab="cust-risks">
+                  <i class="fa-solid fa-triangle-exclamation me-1"></i> Risks & Tickets
+                </button>
+              </li>
+              <li>
+                <button class="btn btn-sm rounded-pill font-semibold px-4 py-2 btn-cust-tab" data-tab="cust-milestones">
+                  <i class="fa-solid fa-list-check me-1"></i> Milestones & Resources
+                </button>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Tab Content Panes -->
+          <div id="cust-dashboard-tab-content">
+            
+            <!-- PANELS 1: OVERVIEW & CHARTS -->
+            <div class="cust-tab-panel active-panel" id="pane-cust-overview">
+              <div class="row g-4">
+                <!-- Left Side: Profile Card -->
+                <div class="col-lg-4">
+                  <div class="enterprise-card h-100" style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); padding: 24px;">
+                    <div class="border-bottom pb-3 mb-3">
+                      <h4 class="font-bold text-primary mb-1" id="cust-profile-name">Company Name</h4>
+                      <span class="badge bg-success-subtle text-success font-bold" id="cust-profile-status" style="font-size: 0.75rem;">Active Contract</span>
+                    </div>
+                    
+                    <div class="d-flex flex-column gap-3">
+                      <div>
+                        <span class="text-muted d-block font-semibold" style="font-size: 0.75rem; text-transform: uppercase;">Industry Sector</span>
+                        <span class="font-semibold text-secondary-custom" id="cust-profile-industry" style="font-size: 0.95rem;">Industry</span>
+                      </div>
+                      <div>
+                        <span class="text-muted d-block font-semibold" style="font-size: 0.75rem; text-transform: uppercase;">Executive Contact</span>
+                        <span class="font-semibold text-secondary-custom" id="cust-profile-contact" style="font-size: 0.95rem;">William Vance</span>
+                      </div>
+                      <div>
+                        <span class="text-muted d-block font-semibold" style="font-size: 0.75rem; text-transform: uppercase;">Total Projects Registered</span>
+                        <span class="font-bold text-primary" id="cust-profile-projects-count" style="font-size: 1.2rem;">0</span>
+                      </div>
+                      <div>
+                        <span class="text-muted d-block font-semibold" style="font-size: 0.75rem; text-transform: uppercase;">Account ID Code</span>
+                        <span class="badge bg-light text-dark font-mono font-bold" id="cust-profile-code">CST101</span>
+                      </div>
+                      <div>
+                        <span class="text-muted d-block font-semibold" style="font-size: 0.75rem; text-transform: uppercase;">SLA Level Profile</span>
+                        <span class="text-success font-semibold" style="font-size: 0.9rem;"><i class="fa-solid fa-circle-check"></i> Standard Premium 24/7 SLA</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Right Side: Charts Pane -->
+                <div class="col-lg-8">
+                  <div class="row g-4">
+                    <div class="col-md-6">
+                      <div class="enterprise-card" style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); padding: 20px;">
+                        <h5 class="card-title-clean font-bold mb-3" style="font-size: 0.95rem;"><i class="fa-solid fa-heart-pulse text-danger me-1"></i> Project Health & Status</h5>
+                        <div style="height: 240px; position: relative;">
+                          <canvas id="chart-cust-project-health"></canvas>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="col-md-6">
+                      <div class="enterprise-card" style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); padding: 20px;">
+                        <h5 class="card-title-clean font-bold mb-3" style="font-size: 0.95rem;"><i class="fa-solid fa-ticket text-warning me-1"></i> Support Ticket Backlog</h5>
+                        <div style="height: 240px; position: relative;">
+                          <canvas id="chart-cust-tickets"></canvas>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- PANEL 2: PROJECTS & TIMELINE -->
+            <div class="cust-tab-panel" id="pane-cust-projects" style="display: none;">
+              <div class="row g-4">
+                <!-- Left Side: Projects Registry Table -->
+                <div class="col-xl-7">
+                  <div class="enterprise-card h-100" style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); padding: 20px;">
+                    <h5 class="card-title-clean font-bold mb-3" style="font-size: 1rem;"><i class="fa-solid fa-folder-closed text-primary me-2"></i>Associated Project Accounts</h5>
+                    
+                    <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                      <table class="table-enterprise w-100" style="font-size: 0.85rem;">
+                        <thead>
+                          <tr>
+                            <th>Code</th>
+                            <th>Project Title</th>
+                            <th>Manager</th>
+                            <th>Risk</th>
+                            <th>Progress</th>
+                            <th>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody id="cust-projects-table-body">
+                          <!-- Dynamic Customer Projects Rows -->
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Right Side: Interactive Project Timeline/Gantt -->
+                <div class="col-xl-5">
+                  <div class="enterprise-card h-100" style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); padding: 20px;">
+                    <h5 class="card-title-clean font-bold mb-3" style="font-size: 1rem;"><i class="fa-regular fa-clock text-info me-2"></i>Active Project Milestone Timeline</h5>
+                    <p class="text-muted mb-4" style="font-size: 0.8rem;">Gantt visualization of start and completion timelines for active accounts</p>
+                    
+                    <div class="d-flex flex-column gap-3" id="cust-gantt-container" style="overflow-y: auto; max-height: 340px;">
+                      <!-- Dynamic Timeline Gantt Bars -->
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- PANEL 3: RISKS & TICKETS -->
+            <div class="cust-tab-panel" id="pane-cust-risks" style="display: none;">
+              <div class="row g-4">
+                <!-- Left Side: Project Risks Matrix -->
+                <div class="col-lg-6">
+                  <div class="enterprise-card h-100" style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); padding: 20px;">
+                    <h5 class="card-title-clean font-bold mb-3 text-danger" style="font-size: 1rem;"><i class="fa-solid fa-shield-virus me-2"></i>Active Project Risk Registry</h5>
+                    
+                    <div class="table-responsive" style="max-height: 380px;">
+                      <table class="table-enterprise w-100" style="font-size: 0.85rem;">
+                        <thead>
+                          <tr>
+                            <th>Project</th>
+                            <th>Risk Score</th>
+                            <th>Governance Strategy</th>
+                          </tr>
+                        </thead>
+                        <tbody id="cust-risks-table-body">
+                          <!-- Dynamic Risks Rows -->
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Right Side: Tickets Backlog -->
+                <div class="col-lg-6">
+                  <div class="enterprise-card h-100" style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); padding: 20px;">
+                    <h5 class="card-title-clean font-bold mb-3 text-warning" style="font-size: 1rem;"><i class="fa-solid fa-circle-exclamation me-2"></i>Jira & Helpdesk Issue Backlog</h5>
+                    
+                    <div class="table-responsive" style="max-height: 380px;">
+                      <table class="table-enterprise w-100" style="font-size: 0.85rem;">
+                        <thead>
+                          <tr>
+                            <th>Issue ID</th>
+                            <th>Type</th>
+                            <th>Description</th>
+                            <th>SLA Severity</th>
+                            <th>Owner</th>
+                          </tr>
+                        </thead>
+                        <tbody id="cust-tickets-table-body">
+                          <!-- Dynamic Tickets Rows -->
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- PANEL 4: MILESTONES & RESOURCES -->
+            <div class="cust-tab-panel" id="pane-cust-milestones" style="display: none;">
+              <div class="row g-4">
+                <!-- Left Side: Project Milestones Checklist -->
+                <div class="col-lg-6">
+                  <div class="enterprise-card h-100" style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); padding: 20px;">
+                    <h5 class="card-title-clean font-bold mb-3 text-success" style="font-size: 1rem;"><i class="fa-solid fa-clipboard-check me-2"></i>Enterprise Project Milestone Roadmaps</h5>
+                    
+                    <div class="d-flex flex-column gap-3" id="cust-milestones-container" style="max-height: 400px; overflow-y: auto; padding-right: 5px;">
+                      <!-- Dynamic project milestones -->
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Right Side: Resource Allocation Grid -->
+                <div class="col-lg-6">
+                  <div class="enterprise-card h-100" style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); padding: 20px;">
+                    <h5 class="card-title-clean font-bold mb-3 text-info" style="font-size: 1rem;"><i class="fa-solid fa-people-group me-2"></i>Project Team Resource Allocations</h5>
+                    
+                    <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                      <table class="table-enterprise w-100" style="font-size: 0.85rem;">
+                        <thead>
+                          <tr>
+                            <th>Resource Name</th>
+                            <th>Role Assigned</th>
+                            <th>Work Allocation</th>
+                            <th>Account Code</th>
+                          </tr>
+                        </thead>
+                        <tbody id="cust-allocations-table-body">
+                          <!-- Dynamic allocations rows -->
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. RESOURCES PAGE -->
+      <section id="page-resources" class="page-container">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Human Resource Inventory</h1>
+            <p class="page-description">Detailed overview of core skillsets, allocation ratios, and active departments</p>
+          </div>
+        </div>
+
+        <!-- Filter Action Panel -->
+        <div class="table-panel-header">
+          <div class="search-bar">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="text" id="resource-search-input" placeholder="Search name, role, skills..." />
+          </div>
+          <div class="table-panel-actions">
+            <span style="font-size: 0.85rem; font-weight: 500; color: var(--text-secondary);">Department:</span>
+            <select id="resource-dept-select" class="select-enterprise">
+              <option value="all">All Departments</option>
+              <option value="Engineering">Engineering</option>
+              <option value="Design">Design</option>
+              <option value="QA / Test">QA / Test</option>
+              <option value="Product">Product Management</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Table Grid Container -->
+        <div class="table-responsive-container">
+          <table class="table-enterprise">
+            <thead>
+              <tr>
+                <th style="width: 140px;">Resource ID</th>
+                <th>Employee Name</th>
+                <th>Professional Role</th>
+                <th>Business Department</th>
+                <th style="width: 220px;">Allocation Load</th>
+              </tr>
+            </thead>
+            <tbody id="resources-table-body">
+              <!-- Dynamic Rows -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 4b. DAILY TIME LOGGING PAGE -->
+      <section id="page-time-logging" class="page-container">
+        <div class="page-header d-flex flex-wrap justify-content-between align-items-center gap-3" style="padding-bottom: 12px; margin-bottom: 24px;">
+          <div>
+            <h1 class="page-title" style="font-size: 1.75rem; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">Daily Time Logging</h1>
+            <p class="page-description" style="font-size: 0.9rem; color: var(--text-secondary); margin: 0;">Log daily employee effort, track project-department capacities, and monitor overruns in real-time</p>
+          </div>
+          <div class="d-flex gap-2">
+            <button id="tl-btn-load-sample" class="btn-enterprise btn-enterprise-secondary d-flex align-items-center gap-2" style="font-size: 0.85rem; padding: 8px 16px;">
+              <i class="fa-solid fa-cloud-arrow-down text-info"></i> Load Sample Logs
+            </button>
+            <button id="tl-btn-reset" class="btn-enterprise btn-enterprise-danger btn-sm d-flex align-items-center gap-2" style="background-color: var(--brand-danger); border-color: var(--brand-danger); color: white; font-size: 0.85rem; padding: 8px 16px;">
+              <i class="fa-solid fa-trash"></i> Reset Data
+            </button>
+          </div>
+        </div>
+
+        <!-- KPI OVERVIEW CARDS -->
+        <div class="stats-grid mb-4">
+          <!-- Total Estimated Hours -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title" style="font-size: 0.85rem; font-weight: 600; text-transform: uppercase; color: var(--text-secondary);">Total Estimated Hours</span>
+              <div class="kpi-icon-wrapper kpi-icon-primary" style="background-color: rgba(79, 70, 229, 0.1); color: var(--brand-primary); width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 8px;">
+                <i class="fa-solid fa-hourglass"></i>
+              </div>
+            </div>
+            <div class="mt-2">
+              <h3 id="tl-kpi-estimated" class="kpi-value mb-0" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary);">0h</h3>
+              <div class="text-xs text-secondary mt-1" style="font-size: 0.75rem; color: var(--text-muted);">Across all enterprise pipelines</div>
+            </div>
+          </div>
+
+          <!-- Total Logged Hours -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title" style="font-size: 0.85rem; font-weight: 600; text-transform: uppercase; color: var(--text-secondary);">Total Logged Hours</span>
+              <div class="kpi-icon-wrapper kpi-icon-success" id="tl-kpi-logged-icon-wrap" style="background-color: rgba(16, 185, 129, 0.1); color: var(--brand-success); width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 8px;">
+                <i class="fa-solid fa-clock"></i>
+              </div>
+            </div>
+            <div class="mt-2">
+              <h3 id="tl-kpi-logged" class="kpi-value mb-0" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary);">0h</h3>
+              <div id="tl-kpi-logged-subtext" class="text-xs text-secondary mt-1" style="font-size: 0.75rem; color: var(--text-muted);">Summed from log registry</div>
+            </div>
+          </div>
+
+          <!-- Total Remaining Hours -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title" style="font-size: 0.85rem; font-weight: 600; text-transform: uppercase; color: var(--text-secondary);">Total Remaining Hours</span>
+              <div class="kpi-icon-wrapper kpi-icon-info" style="background-color: rgba(6, 182, 212, 0.1); color: var(--brand-info); width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 8px;">
+                <i class="fa-solid fa-hourglass-half"></i>
+              </div>
+            </div>
+            <div class="mt-2">
+              <h3 id="tl-kpi-remaining" class="kpi-value mb-0" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary);">0h</h3>
+              <div class="text-xs text-secondary mt-1" style="font-size: 0.75rem; color: var(--text-muted);">Capacity left within estimates</div>
+            </div>
+          </div>
+
+          <!-- Overrun Metrics -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title" style="font-size: 0.85rem; font-weight: 600; text-transform: uppercase; color: var(--text-secondary);">Active Overrun Hours</span>
+              <div class="kpi-icon-wrapper kpi-icon-warning" id="tl-kpi-overrun-icon-wrap" style="background-color: rgba(245, 158, 11, 0.1); color: var(--brand-warning); width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 8px;">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+              </div>
+            </div>
+            <div class="mt-2">
+              <h3 id="tl-kpi-overrun" class="kpi-value mb-0" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary);">0h</h3>
+              <div id="tl-kpi-overrun-subtext" class="text-xs text-secondary mt-1" style="font-size: 0.75rem; color: var(--text-muted);">Exceeded estimate limits</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-4">
+          <!-- LEFT SIDE: LOG FORM -->
+          <div class="col-lg-4 col-md-12">
+            <div class="enterprise-card h-100" style="border: 1px solid var(--border-color); border-radius: var(--border-radius-md); background-color: var(--bg-card);">
+              <div class="card-header-clean" style="padding: 16px; border-bottom: 1px solid var(--border-color);">
+                <h3 class="card-title-clean" style="font-size: 1.1rem; font-weight: 600; color: var(--text-primary); margin: 0;"><i class="fa-solid fa-pen-to-square text-primary" style="color: var(--brand-primary); margin-right: 8px;"></i> Log Daily Effort</h3>
+              </div>
+              <div class="p-4">
+                <form id="time-log-form" class="row g-3" onsubmit="event.preventDefault();">
+                  <div class="col-12">
+                    <label class="form-label font-semibold" style="font-size: 0.85rem; color: var(--text-primary); margin-bottom: 4px;">Work Date *</label>
+                    <input type="date" class="form-control select-enterprise w-100" id="tl-date" style="border-radius: var(--border-radius-sm); border: 1px solid var(--border-color); padding: 8px 12px;" required />
+                  </div>
+                  
+                  <div class="col-12">
+                    <label class="form-label font-semibold" style="font-size: 0.85rem; color: var(--text-primary); margin-bottom: 4px;">Employee / Resource *</label>
+                    <select class="form-select select-enterprise w-100" id="tl-employee" style="border-radius: var(--border-radius-sm); border: 1px solid var(--border-color); padding: 8px 12px; height: auto;" required>
+                      <option value="">Select Employee...</option>
+                    </select>
+                  </div>
+
+                  <div class="col-12">
+                    <label class="form-label font-semibold" style="font-size: 0.85rem; color: var(--text-primary); margin-bottom: 4px;">Project *</label>
+                    <select class="form-select select-enterprise w-100" id="tl-project" style="border-radius: var(--border-radius-sm); border: 1px solid var(--border-color); padding: 8px 12px; height: auto;" required>
+                      <option value="">Select Project...</option>
+                    </select>
+                  </div>
+
+                  <div class="col-12">
+                    <label class="form-label font-semibold" style="font-size: 0.85rem; color: var(--text-primary); margin-bottom: 4px;">Department *</label>
+                    <select class="form-select select-enterprise w-100" id="tl-dept" style="border-radius: var(--border-radius-sm); border: 1px solid var(--border-color); padding: 8px 12px; height: auto;" required>
+                      <option value="">Select Department...</option>
+                      <option value="Engineering">Engineering</option>
+                      <option value="Design">Design</option>
+                      <option value="QA / Test">QA / Test</option>
+                      <option value="Product">Product</option>
+                    </select>
+                  </div>
+
+                  <div class="col-12">
+                    <label class="form-label font-semibold" style="font-size: 0.85rem; color: var(--text-primary); margin-bottom: 4px;">Task Description *</label>
+                    <input type="text" class="form-control select-enterprise w-100" id="tl-task" placeholder="E.g. Refactored DB schemas" style="border-radius: var(--border-radius-sm); border: 1px solid var(--border-color); padding: 8px 12px;" required />
+                  </div>
+
+                  <div class="col-12">
+                    <div class="d-flex justify-content-between">
+                      <label class="form-label font-semibold" style="font-size: 0.85rem; color: var(--text-primary); margin-bottom: 4px;">Hours Logged *</label>
+                      <span id="tl-emp-capacity" class="text-xs text-primary font-semibold" style="font-size: 0.75rem;">Remaining Capacity: 8h</span>
+                    </div>
+                    <input type="number" class="form-control select-enterprise w-100" id="tl-hours" placeholder="E.g. 8" min="0.5" max="24" step="0.5" style="border-radius: var(--border-radius-sm); border: 1px solid var(--border-color); padding: 8px 12px;" required />
+                    <div id="tl-hours-capacity-hint" class="text-xs text-muted mt-1" style="font-size: 0.75rem; color: var(--text-muted);">Max 24h. Standard daily capacity is 8h.</div>
+                  </div>
+
+                  <div class="col-12">
+                    <label class="form-label font-semibold" style="font-size: 0.85rem; color: var(--text-primary); margin-bottom: 4px;">Remarks / Comments</label>
+                    <textarea class="form-control select-enterprise w-100" id="tl-remarks" rows="2" placeholder="Describe progress or details..." style="border-radius: var(--border-radius-sm); border: 1px solid var(--border-color); padding: 8px 12px;"></textarea>
+                  </div>
+
+                  <div class="col-12 mt-4">
+                    <button type="submit" id="tl-btn-submit" class="btn-enterprise btn-enterprise-primary w-100 py-2.5" style="border-radius: var(--border-radius-sm); font-weight: 600; padding: 10px;">
+                      <i class="fa-solid fa-floppy-disk me-1"></i> Submit Time Log
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT SIDE: PERFORMANCE MATRIX -->
+          <div class="col-lg-8 col-md-12">
+            <div class="enterprise-card h-100" style="border: 1px solid var(--border-color); border-radius: var(--border-radius-md); background-color: var(--bg-card); overflow: hidden;">
+              <div class="card-header-clean d-flex justify-content-between align-items-center flex-wrap gap-2" style="padding: 16px; border-bottom: 1px solid var(--border-color);">
+                <h3 class="card-title-clean" style="font-size: 1.1rem; font-weight: 600; color: var(--text-primary); margin: 0;"><i class="fa-solid fa-table-list text-success" style="color: var(--brand-success); margin-right: 8px;"></i> Project & Department Capacity Matrix</h3>
+                <span class="badge bg-light text-secondary border px-2 py-1" style="font-size: 0.75rem; border-color: var(--border-color);">Estimates can be changed inline</span>
+              </div>
+              <div class="p-0">
+                <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+                  <table class="table-enterprise mb-0" id="tl-matrix-table" style="width: 100%; border-collapse: collapse;">
+                    <thead style="position: sticky; top: 0; background-color: var(--bg-main); z-index: 5; border-bottom: 2px solid var(--border-color);">
+                      <tr>
+                        <th style="padding: 12px 16px;">Project / Department</th>
+                        <th style="width: 120px;" class="text-center">Estimated Hrs</th>
+                        <th style="width: 110px;" class="text-center">Logged Hrs</th>
+                        <th style="width: 110px;" class="text-center">Remaining Hrs</th>
+                        <th style="width: 110px;" class="text-center">Overrun Hrs</th>
+                        <th style="width: 130px;">Progress</th>
+                        <th style="width: 100px;" class="text-center">Health</th>
+                      </tr>
+                    </thead>
+                    <tbody id="tl-matrix-table-body">
+                      <!-- Dynamic nested rows -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- RECENT REGISTRY LOGS TABLE -->
+        <div class="enterprise-card mt-4" style="border: 1px solid var(--border-color); border-radius: var(--border-radius-md); background-color: var(--bg-card); overflow: hidden;">
+          <div class="card-header-clean d-flex justify-content-between align-items-center flex-wrap gap-2" style="padding: 16px; border-bottom: 1px solid var(--border-color);">
+            <h3 class="card-title-clean" style="font-size: 1.1rem; font-weight: 600; color: var(--text-primary); margin: 0;"><i class="fa-solid fa-clock-rotate-left text-info" style="color: var(--brand-info); margin-right: 8px;"></i> Daily Time Logs Registry</h3>
+            <div class="search-bar" style="margin: 0; min-width: 250px;">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="tl-search-input" placeholder="Search logs by employee, task..." style="padding: 6px 12px 6px 36px; border-radius: var(--border-radius-sm); border: 1px solid var(--border-color);" />
+            </div>
+          </div>
+          <div class="p-0">
+            <div class="table-responsive">
+              <table class="table-enterprise" style="width: 100%; border-collapse: collapse;">
+                <thead>
+                  <tr style="border-bottom: 1px solid var(--border-color); background-color: var(--bg-main);">
+                    <th style="width: 110px; padding: 12px 16px;">Date</th>
+                    <th style="width: 140px;">Employee</th>
+                    <th style="width: 180px;">Project</th>
+                    <th style="width: 130px;">Department</th>
+                    <th>Task Description</th>
+                    <th style="width: 100px;" class="text-center">Logged Hrs</th>
+                    <th style="width: 200px;">Remarks</th>
+                    <th style="width: 80px;" class="text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="tl-logs-table-body">
+                  <tr>
+                    <td colspan="8" class="text-center py-5 text-muted">
+                      <i class="fa-solid fa-folder-open mb-2 d-block" style="font-size: 2rem; opacity: 0.4;"></i>
+                      No effort logs recorded yet. Use the left form to add your first daily entry.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. RESOURCE PLANNER PAGE -->
+      <section id="page-resource-planner" class="page-container">
+        <div class="page-header d-flex flex-wrap justify-content-between align-items-center gap-3">
+          <div>
+            <h1 class="page-title">Resource Allocation Planner</h1>
+            <p class="page-description">Visual timeline mapping, capacity constraints, heatmaps, and pipelines</p>
+          </div>
+          <button id="btn-allocate-resource" class="btn-enterprise btn-enterprise-primary d-flex align-items-center gap-2">
+            <i class="fa-solid fa-calendar-plus"></i> Allocate Resource
+          </button>
+        </div>
+
+        <!-- KPI STATS GRID -->
+        <div class="stats-grid mb-4">
+          <!-- Total Capacity Block -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Total Allocated Effort</span>
+              <div class="kpi-icon-wrapper kpi-icon-primary">
+                <i class="fa-solid fa-hourglass-start"></i>
+              </div>
+            </div>
+            <div id="kpi-planner-capacity">
+              <h3 class="kpi-value mb-0">0h</h3>
+              <div class="text-xs text-secondary mt-1">Calculating...</div>
+            </div>
+          </div>
+
+          <!-- Overall Utilization Index -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title font-semibold">Utilization Index</span>
+              <div class="kpi-icon-wrapper kpi-icon-success">
+                <i class="fa-solid fa-chart-pie"></i>
+              </div>
+            </div>
+            <div id="kpi-planner-utilization">
+              <h3 class="kpi-value mb-0">0%</h3>
+              <div class="text-xs text-secondary mt-1">Calculating...</div>
+            </div>
+          </div>
+
+          <!-- Registered Leaves -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Registered Leaves</span>
+              <div class="kpi-icon-wrapper kpi-icon-warning">
+                <i class="fa-solid fa-umbrella-beach"></i>
+              </div>
+            </div>
+            <div id="kpi-planner-leave">
+              <h3 class="kpi-value mb-0">0h</h3>
+              <div class="text-xs text-secondary mt-1">Calculating...</div>
+            </div>
+          </div>
+
+          <!-- Weekend Worklogs -->
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Weekend Overtime</span>
+              <div class="kpi-icon-wrapper kpi-icon-info">
+                <i class="fa-solid fa-business-time"></i>
+              </div>
+            </div>
+            <div id="kpi-planner-weekend">
+              <h3 class="kpi-value mb-0">0h</h3>
+              <div class="text-xs text-secondary mt-1">Calculating...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- WARNINGS AND CAPACITY ALERTS -->
+        <div class="enterprise-card mb-4" style="background-color: var(--bg-card); border-color: var(--border-color);">
+          <div class="card-header-clean d-flex align-items-center gap-2">
+            <h5 class="card-title-clean m-0 font-bold" style="font-size: 0.95rem; color: var(--text-primary);">
+              <i class="fa-solid fa-triangle-exclamation text-warning"></i> Capacity Alerts & Allocation Risks
+            </h5>
+          </div>
+          <div class="p-3" id="planner-warnings-list">
+            <div class="p-3 text-center text-muted" style="font-size: 0.85rem;">
+              Evaluating team risk profile...
+            </div>
+          </div>
+        </div>
+
+        <!-- VIEWS TAB SELECTION & CONTROL BAR -->
+        <div class="enterprise-card mb-4">
+          <div class="p-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-3" style="background-color: var(--bg-light);">
+            <div class="d-flex align-items-center gap-2">
+              <ul class="nav nav-pills gap-1 p-1 bg-light border rounded-pill d-inline-flex" style="list-style: none; margin: 0; padding: 4px;">
+                <li>
+                  <button class="btn btn-sm rounded-pill font-semibold px-4 py-2 active btn-planner-tab" data-tab="heatmap">
+                    <i class="fa-solid fa-fire-flame-curved me-1 text-danger"></i> Heatmap Grid
+                  </button>
+                </li>
+                <li>
+                  <button class="btn btn-sm rounded-pill font-semibold px-4 py-2 btn-planner-tab" data-tab="calendar">
+                    <i class="fa-solid fa-calendar-week me-1 text-primary"></i> Allocation Calendar
+                  </button>
+                </li>
+                <li>
+                  <button class="btn btn-sm rounded-pill font-semibold px-4 py-2 btn-planner-tab" data-tab="matrix">
+                    <i class="fa-solid fa-table me-1 text-success"></i> Availability Matrix
+                  </button>
+                </li>
+              </ul>
+            </div>
+            
+            <!-- Filter Toolbar -->
+            <div class="d-flex flex-wrap align-items-center gap-3">
+              <!-- Search query -->
+              <div class="search-bar" style="margin: 0; min-width: 200px;">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" id="planner-search-input" placeholder="Search employee..." style="padding-top: 6px; padding-bottom: 6px;" />
+              </div>
+
+              <!-- Month Range Selection -->
+              <div class="d-flex align-items-center gap-1">
+                <span class="text-xs text-secondary font-semibold" style="font-size: 0.75rem;">Month:</span>
+                <select id="planner-month-select" class="select-enterprise" style="padding-top: 6px; padding-bottom: 6px; height: auto;">
+                  <option value="2026-07" selected>July 2026</option>
+                  <option value="2026-08">August 2026</option>
+                  <option value="2026-09">September 2026</option>
+                </select>
+              </div>
+
+              <!-- Department Filter -->
+              <div class="d-flex align-items-center gap-1">
+                <span class="text-xs text-secondary font-semibold" style="font-size: 0.75rem;">Dept:</span>
+                <select id="planner-dept-select" class="select-enterprise" style="padding-top: 6px; padding-bottom: 6px; height: auto;">
+                  <option value="all">All</option>
+                </select>
+              </div>
+
+              <!-- Role Filter -->
+              <div class="d-flex align-items-center gap-1">
+                <span class="text-xs text-secondary font-semibold" style="font-size: 0.75rem;">Role:</span>
+                <select id="planner-role-select" class="select-enterprise" style="padding-top: 6px; padding-bottom: 6px; height: auto;">
+                  <option value="all">All</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Heatmap View Controls (visible only when Heatmap active) -->
+          <div id="heatmap-controls-row" class="px-3 py-2 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2" style="background-color: var(--bg-card);">
+            <div class="text-xs text-muted font-semibold" style="font-size: 0.75rem;">UTILIZATION SCALE FOR CURRENT FILTER VIEW:</div>
+            <div class="d-flex gap-1">
+              <button class="btn btn-xs btn-enterprise btn-enterprise-primary btn-heatmap-scope active" data-scope="daily" style="font-size: 0.7rem; padding: 3px 10px;">Daily Grid</button>
+              <button class="btn btn-xs btn-enterprise btn-enterprise-secondary btn-heatmap-scope" data-scope="weekly" style="font-size: 0.7rem; padding: 3px 10px;">Weekly Avg</button>
+              <button class="btn btn-xs btn-enterprise btn-enterprise-secondary btn-heatmap-scope" data-scope="monthly" style="font-size: 0.7rem; padding: 3px 10px;">Monthly Summary</button>
+            </div>
+          </div>
+
+          <div class="p-4" style="background-color: var(--bg-card);">
+            <!-- View 1: Heatmap Grid -->
+            <div id="planner-heatmap-container">
+              <!-- Dynamic Daily/Weekly/Monthly Heatmap Grid -->
+            </div>
+
+            <!-- View 2: Allocation Calendar -->
+            <div id="planner-calendar-container" style="display: none;">
+              <!-- Dynamic Timeline Calendar -->
+            </div>
+
+            <!-- View 3: Availability Matrix -->
+            <div id="planner-matrix-container" style="display: none;">
+              <!-- Dynamic Table Matrix -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. LEAVE TRACKER PAGE -->
+      <section id="page-leave-tracker" class="page-container">
+        <div class="page-header d-flex flex-wrap justify-content-between align-items-center gap-3">
+          <div>
+            <h1 class="page-title">Time Off & Leave Tracker</h1>
+            <p class="page-description">Manage team absence plans, evaluate real-time capability risk, and coordinate delivery windows</p>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <button id="leave-btn-load-sample" class="btn-enterprise btn-enterprise-secondary d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px;">
+              <i class="fa-solid fa-wand-magic-sparkles text-primary"></i> Pre-populate Demo Logs
+            </button>
+            <button id="leave-btn-reset" class="btn-enterprise btn-enterprise-secondary text-danger d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px; border-color: rgba(239, 68, 68, 0.2);">
+              <i class="fa-solid fa-trash-can"></i> Clear Database
+            </button>
+          </div>
+        </div>
+
+        <!-- LEAVE KPI CARDS -->
+        <div class="stats-grid mb-4">
+          <!-- Total Approved Days -->
+          <div class="kpi-card" style="border: 1px solid var(--border-color); border-radius: var(--border-radius-md); background-color: var(--bg-card);">
+            <div class="kpi-header">
+              <span class="kpi-title">Approved Absence</span>
+              <div class="kpi-icon-wrapper kpi-icon-primary">
+                <i class="fa-solid fa-calendar-check"></i>
+              </div>
+            </div>
+            <div>
+              <h3 id="leave-kpi-days" class="kpi-value mb-0">0 Days</h3>
+              <div class="text-xs text-secondary mt-1">Total approved time off logged</div>
+            </div>
+          </div>
+
+          <!-- Conflict Alarms -->
+          <div class="kpi-card" style="border: 1px solid var(--border-color); border-radius: var(--border-radius-md); background-color: var(--bg-card);">
+            <div class="kpi-header">
+              <span class="kpi-title">Conflict Alerts</span>
+              <div class="kpi-icon-wrapper kpi-icon-danger" style="background-color: rgba(239, 68, 68, 0.1); color: var(--brand-danger);">
+                <i class="fa-solid fa-bell"></i>
+              </div>
+            </div>
+            <div>
+              <h3 id="leave-kpi-conflicts" class="kpi-value mb-0">0 Active</h3>
+              <div class="text-xs text-secondary mt-1">Overlapping department absences</div>
+            </div>
+          </div>
+
+          <!-- Core Staffing Index -->
+          <div class="kpi-card" style="border: 1px solid var(--border-color); border-radius: var(--border-radius-md); background-color: var(--bg-card);">
+            <div class="kpi-header">
+              <span class="kpi-title">Avg Staffing Index</span>
+              <div class="kpi-icon-wrapper kpi-icon-success">
+                <i class="fa-solid fa-people-group"></i>
+              </div>
+            </div>
+            <div>
+              <h3 id="leave-kpi-capacity" class="kpi-value mb-0">100%</h3>
+              <div class="text-xs text-secondary mt-1">Team capacity safety score</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MAIN LAYOUT COLUMNS -->
+        <div class="row g-4">
+          <!-- Left Column: Submit Request & Real-time Auto-Impact Simulator -->
+          <div class="col-lg-4 col-md-12">
+            <!-- Apply Leave Card -->
+            <div class="enterprise-card mb-4" style="background-color: var(--bg-card); border: 1px solid var(--border-color);">
+              <div class="card-header-clean">
+                <h5 class="card-title-clean font-bold m-0" style="font-size: 0.95rem; color: var(--text-primary);">
+                  <i class="fa-solid fa-pen-to-square text-primary me-1"></i> Apply Time Off
+                </h5>
+              </div>
+              <div class="p-3">
+                <form id="apply-leave-form" class="row g-3">
+                  <div class="col-12">
+                    <label class="form-label font-bold text-xs text-secondary mb-1">Employee Name</label>
+                    <select class="form-select select-enterprise w-100" id="m-leave-name" required>
+                      <!-- Populated dynamically -->
+                    </select>
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label font-bold text-xs text-secondary mb-1">Leave Category</label>
+                    <select class="form-select select-enterprise w-100" id="m-leave-type" required>
+                      <option value="Annual Leave" selected>Annual Leave (Vacation)</option>
+                      <option value="Sick Leave">Sick Leave (Medical)</option>
+                      <option value="Personal Day">Personal Day (Casual)</option>
+                      <option value="Parental Leave">Parental Leave</option>
+                      <option value="Bereavement">Bereavement Leave</option>
+                    </select>
+                  </div>
+                  <div class="col-6">
+                    <label class="form-label font-bold text-xs text-secondary mb-1">Start Date</label>
+                    <input type="date" class="form-control select-enterprise w-100" id="m-leave-start" required />
+                  </div>
+                  <div class="col-6">
+                    <label class="form-label font-bold text-xs text-secondary mb-1">End Date</label>
+                    <input type="date" class="form-control select-enterprise w-100" id="m-leave-end" required />
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label font-bold text-xs text-secondary mb-1">Reason / Notes</label>
+                    <textarea class="form-control select-enterprise w-100" id="m-leave-reason" rows="2" placeholder="Describe the reason for time off..." required></textarea>
+                  </div>
+                  <div class="col-12 mt-3">
+                    <button type="submit" class="btn-enterprise btn-enterprise-primary w-100 py-2 font-bold d-flex align-items-center justify-content-center gap-2">
+                      <i class="fa-solid fa-umbrella-beach"></i> Log Absence
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <!-- Auto Impact Assessment Card -->
+            <div class="enterprise-card" style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-top: 3px solid var(--brand-info);">
+              <div class="p-3 border-bottom d-flex justify-content-between align-items-center" style="background-color: var(--bg-light);">
+                <span class="font-bold text-xs text-primary uppercase tracking-wider">
+                  <i class="fa-solid fa-wand-magic-sparkles text-info me-1"></i> Auto-Impact Assessment
+                </span>
+                <span id="impact-risk-badge" class="badge bg-success-subtle text-success px-2 py-0.5" style="font-size: 0.7rem;">Evaluating</span>
+              </div>
+              <div class="p-3">
+                <div class="mb-3">
+                  <label class="text-xs text-secondary font-bold d-block mb-1">PROJECTS AFFECTED:</label>
+                  <div id="impact-projects-list" class="d-flex flex-wrap gap-1">
+                    <span class="text-muted text-xs">Waiting for dates...</span>
+                  </div>
+                </div>
+
+                <div class="mb-3">
+                  <label class="text-xs text-secondary font-bold d-block mb-1">JIRAS IMPACTED:</label>
+                  <div id="impact-jiras-list" style="max-height: 80px; overflow-y: auto;">
+                    <span class="text-muted text-xs">None scheduled</span>
+                  </div>
+                </div>
+
+                <div class="mb-3">
+                  <label class="text-xs text-secondary font-bold d-block mb-1">MILESTONES AFFECTED:</label>
+                  <div id="impact-milestones-list" style="max-height: 80px; overflow-y: auto;">
+                    <span class="text-muted text-xs">None scheduled</span>
+                  </div>
+                </div>
+
+                <div class="mb-3 p-2 rounded" style="background-color: var(--bg-main); border: 1px solid var(--border-color);">
+                  <label class="text-xs text-secondary font-bold d-block mb-1">RESOURCE SHORTAGE EVALUATION:</label>
+                  <div id="impact-shortage-metric" class="font-bold text-primary" style="font-size: 0.75rem;">
+                    Awaiting form selection...
+                  </div>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center p-2 rounded bg-light border">
+                  <div>
+                    <span class="text-xs text-secondary font-bold d-block">APPROVAL DECISION:</span>
+                    <span class="text-xs text-muted">Auto-determined</span>
+                  </div>
+                  <span id="impact-approval-status" class="badge bg-secondary px-2.5 py-1" style="font-size: 0.75rem;">Awaiting</span>
+                </div>
+
+                <div class="mt-3 p-2 rounded border border-warning-subtle bg-warning-subtle" style="font-size: 0.75rem; color: #856404; display: block;">
+                  <div class="font-bold"><i class="fa-solid fa-circle-info me-1"></i> Assessment Log:</div>
+                  <div id="impact-explanation" class="mt-1">
+                    Select an employee, start/end dates to run impact simulation.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Column: Visual Leave Calendar & Active Conflicts List -->
+          <div class="col-lg-8 col-md-12">
+            <!-- Leave Calendar Visual Widget -->
+            <div class="enterprise-card mb-4" style="background-color: var(--bg-card); border: 1px solid var(--border-color);">
+              <div class="p-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-3" style="background-color: var(--bg-light);">
+                <h5 class="card-title-clean font-bold m-0" style="font-size: 0.95rem; color: var(--text-primary);">
+                  <i class="fa-solid fa-calendar-days text-primary me-1"></i> Leave Calendar Gantt Grid
+                </h5>
+                <div class="d-flex align-items-center gap-2">
+                  <span class="text-xs text-secondary font-semibold" style="font-size: 0.75rem;">Active Month:</span>
+                  <select id="leave-month-select" class="select-enterprise" style="padding-top: 4px; padding-bottom: 4px; height: auto; font-size: 0.75rem;">
+                    <option value="2026-07" selected>July 2026</option>
+                    <option value="2026-08">August 2026</option>
+                    <option value="2026-09">September 2026</option>
+                  </select>
+                </div>
+              </div>
+              <div class="p-3">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                  <div id="leave-calendar-month-label" class="font-bold text-primary" style="font-size: 0.95rem;">July 2026</div>
+                  <div class="d-flex gap-3 text-xs" style="font-size: 0.7rem;">
+                    <div class="d-flex align-items-center gap-1">
+                      <span class="d-inline-block rounded-circle" style="width: 10px; height: 10px; background-color: rgba(79, 70, 229, 0.2); border: 1px solid var(--brand-primary);"></span>
+                      <span>Vacation</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-1">
+                      <span class="d-inline-block rounded-circle" style="width: 10px; height: 10px; background-color: rgba(239, 68, 68, 0.2); border: 1px solid var(--brand-danger);"></span>
+                      <span>Medical</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-1">
+                      <span class="d-inline-block rounded-circle" style="width: 10px; height: 10px; background-color: rgba(6, 182, 212, 0.2); border: 1px solid var(--brand-info);"></span>
+                      <span>Casual</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-1">
+                      <span class="d-inline-block rounded-circle" style="width: 10px; height: 10px; border: 1px dashed var(--brand-warning); background-color: rgba(245, 158, 11, 0.1);"></span>
+                      <span>Pending Review</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- Dynamic Gantt grid canvas -->
+                <div id="leave-calendar-grid">
+                  <!-- Generated dynamically in leaveTracker.js -->
+                </div>
+              </div>
+            </div>
+
+            <!-- Overlapping Staffing Conflicts Widget -->
+            <div class="enterprise-card mb-4" style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-top: 3px solid var(--brand-danger);">
+              <div class="card-header-clean d-flex align-items-center gap-2">
+                <h5 class="card-title-clean m-0 font-bold" style="font-size: 0.95rem; color: var(--text-primary);">
+                  <i class="fa-solid fa-circle-exclamation text-danger"></i> Conflict Detection & Understaffed Windows
+                </h5>
+              </div>
+              <div class="p-3" id="leave-conflicts-list">
+                <!-- Generated dynamically in leaveTracker.js -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- LOWER SECTION: COMPREHENSIVE LEAVE HISTORY TABLE REGISTRY -->
+        <div class="enterprise-card" style="background-color: var(--bg-card); border: 1px solid var(--border-color); margin-top: 24px;">
+          <div class="table-panel-header p-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-3" style="background-color: var(--bg-light);">
+            <h5 class="card-title-clean font-bold m-0" style="font-size: 0.95rem; color: var(--text-primary);">
+              <i class="fa-solid fa-list-check text-primary me-1"></i> Time Off Registry Log
+            </h5>
+            <div class="search-bar" style="margin: 0; min-width: 250px;">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="leave-search-input" placeholder="Search employee name, type, reason, status..." />
+            </div>
+          </div>
+
+          <!-- Table Grid Container -->
+          <div class="table-responsive-container">
+            <table class="table-enterprise w-100" style="font-size: 0.85rem;">
+              <thead>
+                <tr style="border-bottom: 2px solid var(--border-color); background-color: var(--bg-main);">
+                  <th style="width: 100px; padding: 12px 16px;">Req ID</th>
+                  <th style="width: 200px;">Employee & Reason</th>
+                  <th style="width: 180px;">Absence Category</th>
+                  <th style="width: 200px;">Scheduled Date Range</th>
+                  <th>Duration & Affected Projects</th>
+                  <th style="width: 160px; text-align: right;">Approval Decision</th>
+                </tr>
+              </thead>
+              <tbody id="leaves-table-body">
+                <!-- Dynamic Rows inside leaveTracker.js -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+
+      <!-- 7. WEEKEND PLANNER PAGE -->
+      <section id="page-weekend-planner" class="page-container">
+        <div class="page-header d-flex flex-wrap justify-content-between align-items-center gap-3">
+          <div>
+            <h1 class="page-title">Weekend Delivery Planner</h1>
+            <p class="page-description">Coordinate and schedule off-business hour code release windows and standby support matrices</p>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <button id="weekend-btn-load-sample" class="btn-enterprise btn-enterprise-secondary d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px;">
+              <i class="fa-solid fa-wand-magic-sparkles text-primary"></i> Load Sample Roster
+            </button>
+            <button id="weekend-btn-reset" class="btn-enterprise btn-enterprise-secondary text-danger d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px; border-color: rgba(239, 68, 68, 0.2);">
+              <i class="fa-solid fa-trash-can"></i> Clear Ledger
+            </button>
+          </div>
+        </div>
+
+        <!-- WEEKEND KPI CARDS -->
+        <div class="stats-grid mb-4">
+          <!-- Total Support Hours -->
+          <div class="kpi-card" style="border: 1px solid var(--border-color); border-radius: var(--border-radius-md); background-color: var(--bg-card);">
+            <div class="kpi-header">
+              <span class="kpi-title">Scheduled Support</span>
+              <div class="kpi-icon-wrapper kpi-icon-primary" style="background-color: rgba(79, 70, 229, 0.1); color: var(--brand-primary);">
+                <i class="fa-solid fa-business-time"></i>
+              </div>
+            </div>
+            <div>
+              <h3 id="weekend-kpi-hours" class="kpi-value mb-0">0 Hours</h3>
+              <div class="text-xs text-secondary mt-1">Total approved weekend efforts logged</div>
+            </div>
+          </div>
+
+          <!-- Active Engineers -->
+          <div class="kpi-card" style="border: 1px solid var(--border-color); border-radius: var(--border-radius-md); background-color: var(--bg-card);">
+            <div class="kpi-header">
+              <span class="kpi-title">Active Workforce</span>
+              <div class="kpi-icon-wrapper kpi-icon-success" style="background-color: rgba(16, 185, 129, 0.1); color: var(--brand-success);">
+                <i class="fa-solid fa-user-shield"></i>
+              </div>
+            </div>
+            <div>
+              <h3 id="weekend-kpi-workforce" class="kpi-value mb-0">0 Standby</h3>
+              <div class="text-xs text-secondary mt-1">Unique engineers scheduled on standby</div>
+            </div>
+          </div>
+
+          <!-- Accelerated Projects -->
+          <div class="kpi-card" style="border: 1px solid var(--border-color); border-radius: var(--border-radius-md); background-color: var(--bg-card);">
+            <div class="kpi-header">
+              <span class="kpi-title">Projects Accelerated</span>
+              <div class="kpi-icon-wrapper kpi-icon-info" style="background-color: rgba(6, 182, 212, 0.1); color: var(--brand-info);">
+                <i class="fa-solid fa-gauge-high"></i>
+              </div>
+            </div>
+            <div>
+              <h3 id="weekend-kpi-accelerated" class="kpi-value mb-0">0 Projects</h3>
+              <div class="text-xs text-secondary mt-1">Schedules driving earlier delivery</div>
+            </div>
+          </div>
+
+          <!-- Approval Queue -->
+          <div class="kpi-card" style="border: 1px solid var(--border-color); border-radius: var(--border-radius-md); background-color: var(--bg-card);">
+            <div class="kpi-header">
+              <span class="kpi-title">Approval Queue</span>
+              <div class="kpi-icon-wrapper kpi-icon-warning" style="background-color: rgba(245, 158, 11, 0.1); color: var(--brand-warning);">
+                <i class="fa-solid fa-hourglass-half"></i>
+              </div>
+            </div>
+            <div>
+              <h3 id="weekend-kpi-pending" class="kpi-value mb-0">0 Pending</h3>
+              <div class="text-xs text-secondary mt-1">Awaiting compliance review</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MAIN WEEKEND LAYOUT -->
+        <div class="row g-4">
+          <!-- Left Column: Form & Real-time Impact Simulator -->
+          <div class="col-lg-4 col-md-12">
+            <!-- Schedule Form Card -->
+            <div class="enterprise-card mb-4" style="background-color: var(--bg-card); border: 1px solid var(--border-color);">
+              <div class="card-header-clean">
+                <h5 class="card-title-clean font-bold m-0" style="font-size: 0.95rem; color: var(--text-primary);">
+                  <i class="fa-solid fa-calendar-plus text-primary me-1"></i> Schedule Weekend Support
+                </h5>
+              </div>
+              <div class="p-3">
+                <form id="schedule-weekend-form" class="row g-3">
+                  <div class="col-12">
+                    <label class="form-label font-bold text-xs text-secondary mb-1">Weekend Date (Saturday/Sunday)</label>
+                    <input type="date" class="form-control select-enterprise w-100" id="m-weekend-date" required />
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label font-bold text-xs text-secondary mb-1">Employee Name</label>
+                    <select class="form-select select-enterprise w-100" id="m-weekend-employee" required>
+                      <!-- Populated dynamically -->
+                    </select>
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label font-bold text-xs text-secondary mb-1">Assigned Project</label>
+                    <select class="form-select select-enterprise w-100" id="m-weekend-project" required>
+                      <!-- Populated dynamically -->
+                    </select>
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label font-bold text-xs text-secondary mb-1">Support Hours Scheduled</label>
+                    <input type="number" class="form-control select-enterprise w-100" id="m-weekend-hours" min="1" max="24" value="8" required />
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label font-bold text-xs text-secondary mb-1">Task Deliverable Description</label>
+                    <textarea class="form-control select-enterprise w-100" id="m-weekend-task" rows="2" placeholder="Describe deployment, testing, or standby hotfix task..." required></textarea>
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label font-bold text-xs text-secondary mb-1">Approval Compliance</label>
+                    <select class="form-select select-enterprise w-100" id="m-weekend-approval" required>
+                      <option value="Approved" selected>Approved</option>
+                      <option value="Pending Review">Pending Review</option>
+                      <option value="Rejected">Rejected</option>
+                    </select>
+                  </div>
+                  <div class="col-12 mt-3">
+                    <button type="submit" class="btn-enterprise btn-enterprise-primary w-100 py-2 font-bold d-flex align-items-center justify-content-center gap-2">
+                      <i class="fa-solid fa-business-time"></i> Schedule Support Log
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <!-- Auto-Impact Predictor Card -->
+            <div class="enterprise-card" style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-top: 3px solid var(--brand-info);">
+              <div class="p-3 border-bottom d-flex justify-content-between align-items-center" style="background-color: var(--bg-light);">
+                <span class="font-bold text-xs text-primary uppercase tracking-wider">
+                  <i class="fa-solid fa-wand-magic-sparkles text-info me-1"></i> Auto-Impact Assessment
+                </span>
+                <span class="badge bg-info-subtle text-info px-2 py-0.5" style="font-size: 0.7rem;">Active Simulator</span>
+              </div>
+              <div class="p-3">
+                <!-- Forecast Completion Date Impact -->
+                <div class="mb-3">
+                  <label class="text-xs text-secondary font-bold d-block mb-1">FORECAST COMPLETION IMPACT:</label>
+                  <div class="d-flex align-items-center gap-2">
+                    <span id="weekend-impact-forecast" class="font-bold text-primary" style="font-size: 0.85rem;">-0 Business Days (No Change)</span>
+                  </div>
+                </div>
+
+                <!-- Remaining Hours Impact -->
+                <div class="mb-3">
+                  <label class="text-xs text-secondary font-bold d-block mb-1">REMAINING HOURS REDUCTION:</label>
+                  <div class="d-flex align-items-center gap-2">
+                    <span id="weekend-impact-remaining" class="font-bold text-primary" style="font-size: 0.85rem;">-0 Hrs on Selected Project</span>
+                  </div>
+                </div>
+
+                <!-- Resource Utilization Impact -->
+                <div class="mb-3">
+                  <label class="text-xs text-secondary font-bold d-block mb-1">RESOURCE UTILIZATION SHIFT:</label>
+                  <div class="d-flex align-items-center gap-2">
+                    <span id="weekend-impact-utilization" class="font-bold text-primary" style="font-size: 0.85rem;">0% (Base Weekday Load Only)</span>
+                  </div>
+                </div>
+
+                <!-- Project Health Impact -->
+                <div class="mb-3">
+                  <label class="text-xs text-secondary font-bold d-block mb-1">PROJECT HEALTH IMPROVEMENT:</label>
+                  <div id="weekend-impact-health" class="font-bold" style="font-size: 0.85rem; color: var(--text-secondary);">
+                    No Project Selected
+                  </div>
+                </div>
+
+                <div class="mt-3 p-2.5 rounded border border-info-subtle bg-info-subtle" style="font-size: 0.75rem; color: #0c5460; display: block;">
+                  <div class="font-bold"><i class="fa-solid fa-circle-info me-1"></i> Simulator Logic Log:</div>
+                  <div id="weekend-impact-explanation" class="mt-1">
+                    Select an employee, project, and scheduled hours to run real-time impact simulation.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Column: Visual Timeline Calendar & Acceleration Needs -->
+          <div class="col-lg-8 col-md-12">
+            <!-- Weekend Standby Matrix Timeline -->
+            <div class="enterprise-card mb-4" style="background-color: var(--bg-card); border: 1px solid var(--border-color);">
+              <div class="p-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-3" style="background-color: var(--bg-light);">
+                <h5 class="card-title-clean font-bold m-0" style="font-size: 0.95rem; color: var(--text-primary);">
+                  <i class="fa-solid fa-calendar-days text-primary me-1"></i> Weekend Standby & Release Timeline
+                </h5>
+                <span class="badge bg-secondary-subtle text-secondary font-semibold" style="font-size: 0.75rem;">August 2026 Roster</span>
+              </div>
+              <div class="p-3">
+                <div id="weekend-timeline-grid" class="d-flex flex-column gap-3">
+                  <!-- Generated dynamically in weekendPlanner.js -->
+                </div>
+              </div>
+            </div>
+
+            <!-- Acceleration Suggestions for Behind-Schedule Projects -->
+            <div class="enterprise-card" style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-top: 3px solid var(--brand-warning);">
+              <div class="p-3 border-bottom d-flex align-items-center gap-2" style="background-color: var(--bg-light);">
+                <h5 class="card-title-clean m-0 font-bold" style="font-size: 0.95rem; color: var(--text-primary);">
+                  <i class="fa-solid fa-lightbulb text-warning"></i> Delayed Projects Acceleration Recommendations
+                </h5>
+              </div>
+              <div class="p-3" id="weekend-recommendations-list">
+                <!-- Generated dynamically in weekendPlanner.js -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- LOWER SECTION: COMPREHENSIVE HISTORY HISTORY LEDGER -->
+        <div class="enterprise-card" style="background-color: var(--bg-card); border: 1px solid var(--border-color); margin-top: 24px;">
+          <div class="table-panel-header p-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-3" style="background-color: var(--bg-light);">
+            <h5 class="card-title-clean font-bold m-0" style="font-size: 0.95rem; color: var(--text-primary);">
+              <i class="fa-solid fa-list-check text-primary me-1"></i> Weekend Support Ledger History
+            </h5>
+            <div class="search-bar" style="margin: 0; min-width: 250px;">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="weekend-search-input" placeholder="Search employee, project, task, status..." />
+            </div>
+          </div>
+
+          <!-- Table Grid Container -->
+          <div class="table-responsive-container">
+            <table class="table-enterprise w-100" style="font-size: 0.85rem;">
+              <thead>
+                <tr style="border-bottom: 2px solid var(--border-color); background-color: var(--bg-main);">
+                  <th style="width: 140px; padding: 12px 16px;">Weekend Date</th>
+                  <th style="width: 200px;">Resource Name</th>
+                  <th style="width: 220px;">Assigned Project</th>
+                  <th style="width: 120px;">Support Hours</th>
+                  <th>Task Deliverable</th>
+                  <th style="width: 160px; text-align: right; padding-right: 20px;">Approval Status</th>
+                  <th style="width: 120px; text-align: center;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="weekend-table-body">
+                <!-- Dynamic Rows inside weekendPlanner.js -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 8. DYNAMIC AUTOMATIC RISK ENGINE PAGE -->
+      <section id="page-risks" class="page-container">
+        <div class="page-header d-flex flex-wrap justify-content-between align-items-center gap-3">
+          <div>
+            <h1 class="page-title">Enterprise Risk Engine</h1>
+            <p class="page-description">Real-time automatic portfolio audits scanning schedule slip, resource strain, and escalation vectors</p>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <button id="risk-btn-audit" class="btn-enterprise btn-enterprise-primary d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px;">
+              <i class="fa-solid fa-arrows-spin fa-spin-hover"></i> Trigger Portfolio Scan
+            </button>
+            <button id="risk-btn-reset" class="btn-enterprise btn-enterprise-secondary text-danger d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px; border-color: rgba(239, 68, 68, 0.2);">
+              <i class="fa-solid fa-rotate-left"></i> Reset Defaults
+            </button>
+          </div>
+        </div>
+
+        <!-- PORTFOLIO RISK KPI CARDS -->
+        <div class="stats-grid mb-4">
+          <!-- Avg Risk Score -->
+          <div class="kpi-card" style="border: 1px solid var(--border-color); border-radius: var(--border-radius-md); background-color: var(--bg-card);">
+            <div class="kpi-header">
+              <span class="kpi-title">Avg Risk Score</span>
+              <div class="kpi-icon-wrapper kpi-icon-danger" id="risk-kpi-score-color" style="background-color: rgba(239, 68, 68, 0.1); color: var(--brand-danger);">
+                <i class="fa-solid fa-gauge-high"></i>
+              </div>
+            </div>
+            <div>
+              <h3 id="risk-kpi-avg-score" class="kpi-value mb-0">0</h3>
+              <div class="text-xs text-secondary mt-1">Average portfolio exposure index (0-100)</div>
+            </div>
+          </div>
+
+          <!-- Active Blocker Count -->
+          <div class="kpi-card" style="border: 1px solid var(--border-color); border-radius: var(--border-radius-md); background-color: var(--bg-card);">
+            <div class="kpi-header">
+              <span class="kpi-title">Critical & High Exposure</span>
+              <div class="kpi-icon-wrapper kpi-icon-warning" style="background-color: rgba(245, 158, 11, 0.1); color: var(--brand-warning);">
+                <i class="fa-solid fa-shield-halved"></i>
+              </div>
+            </div>
+            <div>
+              <h3 id="risk-kpi-severe-count" class="kpi-value mb-0">0 Projects</h3>
+              <div class="text-xs text-secondary mt-1">Projects demanding urgent compliance mitigation</div>
+            </div>
+          </div>
+
+          <!-- Capacity Strain Count -->
+          <div class="kpi-card" style="border: 1px solid var(--border-color); border-radius: var(--border-radius-md); background-color: var(--bg-card);">
+            <div class="kpi-header">
+              <span class="kpi-title">Resource Constrained</span>
+              <div class="kpi-icon-wrapper kpi-icon-primary" style="background-color: rgba(79, 70, 229, 0.1); color: var(--brand-primary);">
+                <i class="fa-solid fa-users-slash"></i>
+              </div>
+            </div>
+            <div>
+              <h3 id="risk-kpi-resource-strain" class="kpi-value mb-0">0 Failures</h3>
+              <div class="text-xs text-secondary mt-1">Unassigned roles or leaves affecting active timelines</div>
+            </div>
+          </div>
+
+          <!-- Total Scanned Triggers -->
+          <div class="kpi-card" style="border: 1px solid var(--border-color); border-radius: var(--border-radius-md); background-color: var(--bg-card);">
+            <div class="kpi-header">
+              <span class="kpi-title">Audit Compliance Index</span>
+              <div class="kpi-icon-wrapper kpi-icon-success" style="background-color: rgba(16, 185, 129, 0.1); color: var(--brand-success);">
+                <i class="fa-solid fa-square-poll-horizontal"></i>
+              </div>
+            </div>
+            <div>
+              <h3 id="risk-kpi-compliance-rate" class="kpi-value mb-0">100%</h3>
+              <div class="text-xs text-secondary mt-1">SLA-compliant active portfolio ratio</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ROW: HEATMAP & INDICATORS BREAKDOWN -->
+        <div class="row g-4 mb-4">
+          <!-- 5x5 Likelihood vs Impact Risk Heatmap Matrix -->
+          <div class="col-lg-7 col-md-12">
+            <div class="enterprise-card h-100" style="background-color: var(--bg-card); border: 1px solid var(--border-color);">
+              <div class="p-3 border-bottom d-flex justify-content-between align-items-center" style="background-color: var(--bg-light);">
+                <h5 class="card-title-clean font-bold m-0" style="font-size: 0.95rem; color: var(--text-primary);">
+                  <i class="fa-solid fa-border-all text-danger me-1"></i> Interactive Risk Heatmap Matrix
+                </h5>
+                <span class="text-xs text-secondary font-semibold">Hover projects to inspect exposure grid</span>
+              </div>
+              <div class="p-3">
+                <div class="d-flex" style="font-size: 0.75rem;">
+                  <!-- Left Y-Axis Label -->
+                  <div class="d-flex flex-column justify-content-center align-items-center font-bold text-secondary text-uppercase pe-2" style="writing-mode: vertical-lr; transform: rotate(180deg); width: 25px;">
+                    Project Impact / Financial Stake &rarr;
+                  </div>
+
+                  <div class="flex-grow-1">
+                    <!-- Heatmap Grid -->
+                    <div id="risk-heatmap-grid" class="d-grid" style="grid-template-rows: repeat(5, 1fr); gap: 6px; height: 320px;">
+                      <!-- Populated Dynamically with 25 cells (Impact 5 down to 1, Probability 1 up to 5) -->
+                    </div>
+
+                    <!-- Bottom X-Axis Label -->
+                    <div class="text-center font-bold text-secondary text-uppercase mt-2">
+                      Likelihood / Failure Probability &rarr;
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Heatmap Legend -->
+                <div class="d-flex flex-wrap justify-content-center gap-3 mt-3 pt-2 border-top text-xs font-semibold">
+                  <div class="d-flex align-items-center gap-1.5">
+                    <span style="display: inline-block; width: 12px; height: 12px; background-color: rgba(16, 185, 129, 0.25); border: 1.5px solid var(--brand-success); border-radius: 2px;"></span>
+                    <span>Low Risk (0-29)</span>
+                  </div>
+                  <div class="d-flex align-items-center gap-1.5">
+                    <span style="display: inline-block; width: 12px; height: 12px; background-color: rgba(245, 158, 11, 0.25); border: 1.5px solid var(--brand-warning); border-radius: 2px;"></span>
+                    <span>Medium Risk (30-59)</span>
+                  </div>
+                  <div class="d-flex align-items-center gap-1.5">
+                    <span style="display: inline-block; width: 12px; height: 12px; background-color: rgba(249, 115, 22, 0.25); border: 1.5px solid #f97316; border-radius: 2px;"></span>
+                    <span>High Risk (60-79)</span>
+                  </div>
+                  <div class="d-flex align-items-center gap-1.5">
+                    <span style="display: inline-block; width: 12px; height: 12px; background-color: rgba(239, 68, 68, 0.25); border: 1.5px solid var(--brand-danger); border-radius: 2px;"></span>
+                    <span>Critical Risk (80-100)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 10 Audit Failure Breakdown Chart / Indicators Checklist -->
+          <div class="col-lg-5 col-md-12">
+            <div class="enterprise-card h-100" style="background-color: var(--bg-card); border: 1px solid var(--border-color);">
+              <div class="p-3 border-bottom d-flex justify-content-between align-items-center" style="background-color: var(--bg-light);">
+                <h5 class="card-title-clean font-bold m-0" style="font-size: 0.95rem; color: var(--text-primary);">
+                  <i class="fa-solid fa-list-check text-primary me-1"></i> Trigger Diagnostics Audit
+                </h5>
+                <span class="badge bg-secondary-subtle text-secondary font-semibold" style="font-size: 0.75rem;">10 Scans Active</span>
+              </div>
+              <div class="p-3" id="risk-trigger-checklist-container">
+                <!-- Populated dynamically with the 10 failure scans and failure progress bars -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- LOWER SECTION: COMPREHENSIVE COMPLIANCE REGISTER -->
+        <div class="enterprise-card" style="background-color: var(--bg-card); border: 1px solid var(--border-color);">
+          <div class="table-panel-header p-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-3" style="background-color: var(--bg-light);">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <h5 class="card-title-clean font-bold m-0" style="font-size: 0.95rem; color: var(--text-primary); margin-right: 15px !important;">
+                <i class="fa-solid fa-list-check text-primary me-1"></i> Portfolio Risk Audit Report
+              </h5>
+              <!-- Filter Pill Buttons -->
+              <div class="d-flex align-items-center gap-1.5" id="risk-filters-severity-pills">
+                <button class="btn-enterprise btn-enterprise-secondary active btn-sm font-bold" data-severity="all" style="font-size: 0.75rem; padding: 4px 10px;">All</button>
+                <button class="btn-enterprise btn-enterprise-secondary btn-sm font-bold border-danger-subtle text-danger" data-severity="Critical" style="font-size: 0.75rem; padding: 4px 10px; background-color: rgba(239, 68, 68, 0.05);">Critical</button>
+                <button class="btn-enterprise btn-enterprise-secondary btn-sm font-bold border-warning-subtle text-warning" data-severity="High" style="font-size: 0.75rem; padding: 4px 10px; background-color: rgba(245, 158, 11, 0.05);">High</button>
+                <button class="btn-enterprise btn-enterprise-secondary btn-sm font-bold text-primary" data-severity="Medium" style="font-size: 0.75rem; padding: 4px 10px;">Medium</button>
+                <button class="btn-enterprise btn-enterprise-secondary btn-sm font-bold text-success" data-severity="Low" style="font-size: 0.75rem; padding: 4px 10px;">Low</button>
+              </div>
+            </div>
+            <div class="search-bar" style="margin: 0; min-width: 250px;">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="risk-search-input" placeholder="Search project, manager, client..." />
+            </div>
+          </div>
+
+          <!-- Table Grid Container -->
+          <div class="table-responsive-container">
+            <table class="table-enterprise w-100" style="font-size: 0.85rem;">
+              <thead>
+                <tr style="border-bottom: 2px solid var(--border-color); background-color: var(--bg-main);">
+                  <th style="width: 180px; padding: 12px 16px;">Project / Customer</th>
+                  <th style="width: 120px;">Manager</th>
+                  <th style="width: 110px; text-align: center;">Risk Score</th>
+                  <th style="width: 110px;">Severity</th>
+                  <th>Failed Audit Triggers</th>
+                  <th style="width: 140px; text-align: center;">Stories Overdue</th>
+                  <th style="width: 140px; text-align: right; padding-right: 15px;">Client Escalation</th>
+                  <th style="width: 110px; text-align: center;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="risk-table-body">
+                <!-- Dynamic Rows inside riskEngine.js -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 8.5. DYNAMIC AUTOMATIC FORECAST ENGINE PAGE -->
+      <section id="page-forecast" class="page-container">
+        <div class="page-header d-flex flex-wrap justify-content-between align-items-center gap-3">
+          <div>
+            <h1 class="page-title">Enterprise Forecast Engine</h1>
+            <p class="page-description">Automated schedule forecasting based on remaining effort, daily capacity parameters, approved resource leaves, and weekend standby hours</p>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <button id="forecast-btn-run-all" class="btn-enterprise btn-enterprise-primary d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px;">
+              <i class="fa-solid fa-calculator"></i> Run Portfolio Forecast
+            </button>
+            <button id="forecast-btn-reset" class="btn-enterprise btn-enterprise-secondary text-danger d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px; border-color: rgba(239, 68, 68, 0.2);">
+              <i class="fa-solid fa-rotate-left"></i> Restore Defaults
+            </button>
+          </div>
+        </div>
+
+        <!-- FORECAST KPI SUMMARY CARDS -->
+        <div class="stats-grid mb-4">
+          <!-- Avg Burn Rate -->
+          <div class="kpi-card" style="border: 1px solid var(--border-color); border-radius: var(--border-radius-md); background-color: var(--bg-card);">
+            <div class="kpi-header">
+              <span class="kpi-title">Average Burn Rate</span>
+              <div class="kpi-icon-wrapper kpi-icon-primary" style="background-color: rgba(79, 70, 229, 0.1); color: var(--brand-primary);">
+                <i class="fa-solid fa-fire-flame-curved"></i>
+              </div>
+            </div>
+            <div>
+              <h3 id="forecast-kpi-avg-burn" class="kpi-value mb-0">0.0 hrs/day</h3>
+              <div class="text-xs text-secondary mt-1">Portfolio average daily burn progress speed</div>
+            </div>
+          </div>
+
+          <!-- Total Backlog Hours -->
+          <div class="kpi-card" style="border: 1px solid var(--border-color); border-radius: var(--border-radius-md); background-color: var(--bg-card);">
+            <div class="kpi-header">
+              <span class="kpi-title">Total Portfolio Backlog</span>
+              <div class="kpi-icon-wrapper kpi-icon-warning" style="background-color: rgba(245, 158, 11, 0.1); color: var(--brand-warning);">
+                <i class="fa-solid fa-database"></i>
+              </div>
+            </div>
+            <div>
+              <h3 id="forecast-kpi-total-backlog" class="kpi-value mb-0">0 Hours</h3>
+              <div class="text-xs text-secondary mt-1">Aggregated remaining hours across all projects</div>
+            </div>
+          </div>
+
+          <!-- At Risk Projects Count -->
+          <div class="kpi-card" style="border: 1px solid var(--border-color); border-radius: var(--border-radius-md); background-color: var(--bg-card);">
+            <div class="kpi-header">
+              <span class="kpi-title">Delayed Schedules</span>
+              <div class="kpi-icon-wrapper kpi-icon-danger" style="background-color: rgba(239, 68, 68, 0.1); color: var(--brand-danger);">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+              </div>
+            </div>
+            <div>
+              <h3 id="forecast-kpi-delayed" class="kpi-value mb-0">0 Project(s)</h3>
+              <div class="text-xs text-secondary mt-1">Active projects exceeding target deadlines</div>
+            </div>
+          </div>
+
+          <!-- Total Weekend Benefit Days -->
+          <div class="kpi-card" style="border: 1px solid var(--border-color); border-radius: var(--border-radius-md); background-color: var(--bg-card);">
+            <div class="kpi-header">
+              <span class="kpi-title">Weekend Benefit</span>
+              <div class="kpi-icon-wrapper kpi-icon-success" style="background-color: rgba(16, 185, 129, 0.1); color: var(--brand-success);">
+                <i class="fa-solid fa-gauge-high"></i>
+              </div>
+            </div>
+            <div>
+              <h3 id="forecast-kpi-weekend-days" class="kpi-value mb-0">0 Days saved</h3>
+              <div class="text-xs text-secondary mt-1">Calendar days recovered via weekend support</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MAIN FORECAST CONTENT GRID -->
+        <div class="row g-4 mb-4">
+          <!-- LEFT COLUMN: SIMULATOR CONTROL FORM -->
+          <div class="col-lg-5 col-md-12">
+            <div class="enterprise-card h-100" style="background-color: var(--bg-card); border: 1px solid var(--border-color);">
+              <div class="p-3 border-bottom d-flex justify-content-between align-items-center" style="background-color: var(--bg-light);">
+                <h5 class="card-title-clean font-bold m-0" style="font-size: 0.95rem; color: var(--text-primary);">
+                  <i class="fa-solid fa-sliders text-primary me-1"></i> Forecast Simulator Controls
+                </h5>
+                <span class="badge bg-secondary-subtle text-secondary font-semibold" style="font-size: 0.75rem;">Active Sandbox</span>
+              </div>
+              <div class="p-3">
+                <form id="forecast-simulator-form" class="row g-3">
+                  <!-- Select Project -->
+                  <div class="col-12">
+                    <label class="form-label font-bold text-xs text-secondary mb-1">Select Project to Forecast</label>
+                    <select class="form-select select-enterprise w-100 font-bold" id="forecast-sim-project" required>
+                      <!-- Populated dynamically -->
+                    </select>
+                  </div>
+
+                  <!-- Remaining Hours -->
+                  <div class="col-md-6 col-12">
+                    <label class="form-label font-bold text-xs text-secondary mb-1">Remaining Hours (Effort)</label>
+                    <div class="input-group">
+                      <input type="number" class="form-control select-enterprise" id="forecast-sim-rem-hours" min="0" value="80" required />
+                      <span class="input-group-text bg-light text-muted border" style="font-size: 0.8rem;">Hrs</span>
+                    </div>
+                    <div class="text-xs text-muted mt-1" id="forecast-sim-auto-hours">Auto-derived: 80 hrs</div>
+                  </div>
+
+                  <!-- Daily Weekday Capacity -->
+                  <div class="col-md-6 col-12">
+                    <label class="form-label font-bold text-xs text-secondary mb-1">Weekday Daily Capacity</label>
+                    <div class="input-group">
+                      <input type="number" class="form-control select-enterprise" id="forecast-sim-capacity" min="1" max="24" value="8" required />
+                      <span class="input-group-text bg-light text-muted border" style="font-size: 0.8rem;">Hrs/day</span>
+                    </div>
+                    <div class="text-xs text-muted mt-1">Resource weekday work limit</div>
+                  </div>
+
+                  <!-- Assigned Resource & Leave Check -->
+                  <div class="col-12 p-2.5 rounded border mb-2" style="background-color: var(--bg-main); border-color: var(--border-color);">
+                    <div class="d-flex justify-content-between align-items-center mb-1.5">
+                      <span class="font-bold text-xs text-primary"><i class="fa-solid fa-umbrella-beach"></i> Resource Out-of-Office (Leaves)</span>
+                      <div class="form-check form-switch p-0 m-0">
+                        <input class="form-check-input ms-0" type="checkbox" role="switch" id="forecast-sim-respect-leaves" checked style="cursor: pointer;" />
+                        <label class="form-check-label text-xs font-semibold text-secondary ms-1.5" for="forecast-sim-respect-leaves" style="cursor: pointer;">Respect Leaves</label>
+                      </div>
+                    </div>
+                    <div id="forecast-sim-resource-details" class="text-xs text-secondary font-semibold">
+                      Developer: Bob Johnson (No approved leaves found in forecast window)
+                    </div>
+                  </div>
+
+                  <!-- Weekend Standby & Work check -->
+                  <div class="col-12 p-2.5 rounded border" style="background-color: var(--bg-main); border-color: var(--border-color);">
+                    <div class="d-flex justify-content-between align-items-center mb-1.5">
+                      <span class="font-bold text-xs text-primary"><i class="fa-solid fa-business-time"></i> Weekend Standby Support</span>
+                      <div class="form-check form-switch p-0 m-0">
+                        <input class="form-check-input ms-0" type="checkbox" role="switch" id="forecast-sim-utilize-weekends" checked style="cursor: pointer;" />
+                        <label class="form-check-label text-xs font-semibold text-secondary ms-1.5" for="forecast-sim-utilize-weekends" style="cursor: pointer;">Utilize Weekend Work</label>
+                      </div>
+                    </div>
+                    <div id="forecast-sim-weekend-details" class="text-xs text-secondary font-semibold">
+                      Weekend Logs: WK001, WK003 scheduled for this project (16 total hrs)
+                    </div>
+                  </div>
+
+                  <div class="col-12 mt-3.5">
+                    <button type="submit" class="btn-enterprise btn-enterprise-primary w-100 py-2.5 font-bold d-flex align-items-center justify-content-center gap-2" style="font-size: 0.9rem;">
+                      <i class="fa-solid fa-circle-play"></i> Recalculate Forecast
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT COLUMN: FORECAST METRICS SIMULATION RESULTS -->
+          <div class="col-lg-7 col-md-12">
+            <div class="enterprise-card h-100" style="background-color: var(--bg-card); border: 1px solid var(--border-color);">
+              <div class="p-3 border-bottom d-flex justify-content-between align-items-center" style="background-color: var(--bg-light);">
+                <h5 class="card-title-clean font-bold m-0" style="font-size: 0.95rem; color: var(--text-primary);">
+                  <i class="fa-solid fa-chart-line text-success me-1"></i> Forecast Results & Projected Metrics
+                </h5>
+                <span id="forecast-result-health-badge" class="badge bg-success-subtle text-success px-2.5 py-1 font-bold" style="font-size: 0.75rem;">ON TRACK</span>
+              </div>
+              <div class="p-3">
+                <!-- Highlight Box: Forecast Completion Date -->
+                <div class="p-3.5 rounded border mb-4 d-flex justify-content-between align-items-center flex-wrap gap-3" style="background-color: rgba(16, 185, 129, 0.05); border-color: rgba(16, 185, 129, 0.15); border-left: 5px solid var(--brand-success);" id="forecast-date-highlight-box">
+                  <div>
+                    <span class="text-xs text-secondary font-bold uppercase tracking-wider d-block">Simulated Forecast Completion Date</span>
+                    <h2 class="mb-0 font-bold text-success" id="forecast-res-date" style="font-size: 1.85rem; letter-spacing: -0.5px;">August 14, 2026</h2>
+                  </div>
+                  <div class="text-end">
+                    <span class="text-xs text-secondary font-bold uppercase tracking-wider d-block" id="forecast-label-variance">Schedule Variance</span>
+                    <h4 class="mb-0 font-bold text-success" id="forecast-res-variance">+15 Business Days</h4>
+                  </div>
+                </div>
+
+                <!-- 3x3 Grid of Forecasted Parameters -->
+                <div class="row g-3 mb-4">
+                  <!-- Days Remaining -->
+                  <div class="col-6 col-md-4">
+                    <div class="p-2.5 rounded border" style="background-color: var(--bg-main); border-color: var(--border-color);">
+                      <span class="text-xs text-secondary font-bold d-block uppercase" style="font-size: 0.7rem;">Calendar Days Left</span>
+                      <span id="forecast-res-days-rem" class="font-bold text-primary" style="font-size: 1.15rem; color: var(--text-primary);">18 Days</span>
+                    </div>
+                  </div>
+
+                  <!-- Hours Remaining -->
+                  <div class="col-6 col-md-4">
+                    <div class="p-2.5 rounded border" style="background-color: var(--bg-main); border-color: var(--border-color);">
+                      <span class="text-xs text-secondary font-bold d-block uppercase" style="font-size: 0.7rem;">Hours Remaining</span>
+                      <span id="forecast-res-hours-rem" class="font-bold text-primary" style="font-size: 1.15rem; color: var(--text-primary);">80 Hrs</span>
+                    </div>
+                  </div>
+
+                  <!-- Daily Burn Rate -->
+                  <div class="col-6 col-md-4">
+                    <div class="p-2.5 rounded border" style="background-color: var(--bg-main); border-color: var(--border-color);">
+                      <span class="text-xs text-secondary font-bold d-block uppercase" style="font-size: 0.7rem;">Daily Burn Rate</span>
+                      <span id="forecast-res-burn-rate" class="font-bold text-primary" style="font-size: 1.15rem; color: var(--text-primary);">4.4 hrs/day</span>
+                    </div>
+                  </div>
+
+                  <!-- Effort Variance -->
+                  <div class="col-6 col-md-4">
+                    <div class="p-2.5 rounded border" style="background-color: var(--bg-main); border-color: var(--border-color);">
+                      <span class="text-xs text-secondary font-bold d-block uppercase" style="font-size: 0.7rem;">Effort Variance</span>
+                      <span id="forecast-res-effort-variance" class="font-bold text-primary" style="font-size: 1.15rem; color: var(--text-primary);">-10 hrs</span>
+                    </div>
+                  </div>
+
+                  <!-- Projected Delay -->
+                  <div class="col-6 col-md-4">
+                    <div class="p-2.5 rounded border" style="background-color: var(--bg-main); border-color: var(--border-color);">
+                      <span class="text-xs text-secondary font-bold d-block uppercase" style="font-size: 0.7rem;">Projected Delay</span>
+                      <span id="forecast-res-delay" class="font-bold text-success" style="font-size: 1.15rem;">0 Days</span>
+                    </div>
+                  </div>
+
+                  <!-- Capacity Requirement -->
+                  <div class="col-6 col-md-4">
+                    <div class="p-2.5 rounded border" style="background-color: var(--bg-main); border-color: var(--border-color);">
+                      <span class="text-xs text-secondary font-bold d-block uppercase" style="font-size: 0.7rem;">Req. Weekday Cap</span>
+                      <span id="forecast-res-req-capacity" class="font-bold text-primary" style="font-size: 1.15rem; color: var(--text-primary);">6.5 hrs/day</span>
+                    </div>
+                  </div>
+
+                  <!-- Weekend Benefit -->
+                  <div class="col-12 col-md-6">
+                    <div class="p-2.5 rounded border" style="background-color: var(--bg-main); border-color: var(--border-color);">
+                      <span class="text-xs text-secondary font-bold d-block uppercase" style="font-size: 0.7rem;"><i class="fa-solid fa-business-time text-success me-1"></i> Weekend Benefit (Timeline Gain)</span>
+                      <span id="forecast-res-weekend-benefit" class="font-bold text-success" style="font-size: 1.1rem;">Accelerated delivery by 2 working days</span>
+                    </div>
+                  </div>
+
+                  <!-- Forecast Health Details -->
+                  <div class="col-12 col-md-6">
+                    <div class="p-2.5 rounded border" style="background-color: var(--bg-main); border-color: var(--border-color);">
+                      <span class="text-xs text-secondary font-bold d-block uppercase" style="font-size: 0.7rem;"><i class="fa-solid fa-square-poll-horizontal text-primary me-1"></i> Forecast Health Status</span>
+                      <span id="forecast-res-health-explanation" class="font-bold text-secondary" style="font-size: 0.85rem; line-height: 1.4;">Project completion satisfies target SLA.</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Simulation Timeline Step-by-Step logs -->
+                <div class="border rounded p-2.5" style="background-color: var(--bg-main); border-color: var(--border-color);">
+                  <div class="d-flex justify-content-between align-items-center mb-1.5">
+                    <span class="font-bold text-xs uppercase text-secondary tracking-wider"><i class="fa-solid fa-clock-rotate-left"></i> Simulated Timeline Milestones</span>
+                    <span class="text-xs text-muted" id="forecast-timeline-step-count">Calculated in 14 steps</span>
+                  </div>
+                  <div id="forecast-timeline-log" class="d-flex gap-2 overflow-x-auto py-1.5" style="scrollbar-width: thin;">
+                    <!-- Populated dynamically with step badges -->
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- LOWER SECTION: COMPREHENSIVE MULTI-PROJECT FORECAST REGISTRY TABLE -->
+        <div class="enterprise-card" style="background-color: var(--bg-card); border: 1px solid var(--border-color);">
+          <div class="table-panel-header p-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-3" style="background-color: var(--bg-light);">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <h5 class="card-title-clean font-bold m-0" style="font-size: 0.95rem; color: var(--text-primary); margin-right: 15px !important;">
+                <i class="fa-solid fa-list-check text-primary me-1"></i> Portfolio-Wide Schedule Forecast Report
+              </h5>
+              <!-- Filter Pill Buttons -->
+              <div class="d-flex align-items-center gap-1.5" id="forecast-table-health-filters">
+                <button class="btn-enterprise btn-enterprise-secondary active btn-sm font-bold" data-health="all" style="font-size: 0.75rem; padding: 4px 10px;">All</button>
+                <button class="btn-enterprise btn-enterprise-secondary btn-sm font-bold border-danger-subtle text-danger" data-health="Critical" style="font-size: 0.75rem; padding: 4px 10px; background-color: rgba(239, 68, 68, 0.05);">Critical / Overrun</button>
+                <button class="btn-enterprise btn-enterprise-secondary btn-sm font-bold border-warning-subtle text-warning" data-health="At Risk" style="font-size: 0.75rem; padding: 4px 10px; background-color: rgba(245, 158, 11, 0.05);">At Risk</button>
+                <button class="btn-enterprise btn-enterprise-secondary btn-sm font-bold text-success border-success-subtle" data-health="On Track" style="font-size: 0.75rem; padding: 4px 10px; background-color: rgba(16, 185, 129, 0.05);">On Track</button>
+              </div>
+            </div>
+            <div class="search-bar" style="margin: 0; min-width: 250px;">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="forecast-search-input" placeholder="Search project, manager, client..." />
+            </div>
+          </div>
+
+          <!-- Table Grid Container -->
+          <div class="table-responsive-container">
+            <table class="table-enterprise w-100" style="font-size: 0.85rem;">
+              <thead>
+                <tr style="border-bottom: 2px solid var(--border-color); background-color: var(--bg-main);">
+                  <th style="width: 170px; padding: 12px 16px;">Project / Customer</th>
+                  <th style="width: 130px;">Manager / Developer</th>
+                  <th style="width: 110px; text-align: center;">Target End</th>
+                  <th style="width: 120px; text-align: center;">Forecast End</th>
+                  <th style="width: 100px; text-align: center;">Effort Left</th>
+                  <th style="width: 100px; text-align: center;">Burn Rate</th>
+                  <th style="width: 120px; text-align: center;">Variance</th>
+                  <th style="width: 120px; text-align: center;">Req. Capacity</th>
+                  <th style="width: 110px; text-align: center;">Health</th>
+                  <th style="width: 110px; text-align: center;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="forecast-table-body">
+                <!-- Dynamic Rows inside forecastEngine.js -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- GANTT CHART INTERACTIVE WORKSPACE -->
+      <section id="page-gantt" class="page-container">
+        <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-3">
+          <div>
+            <h1 class="page-title">Interactive Gantt Workspace</h1>
+            <p class="page-description">Interactive portfolio timeline visualizer tracking project bounds, progress updates, critical paths, and milestone dependencies.</p>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <button id="gantt-btn-export" class="btn-enterprise btn-enterprise-primary btn-sm d-flex align-items-center gap-1.5" style="font-weight: 700;">
+              <i class="fa-solid fa-file-image"></i> Export Image
+            </button>
+          </div>
+        </div>
+
+        <!-- FILTERS & OPTIONS CONTROL PANEL -->
+        <div class="enterprise-card mb-4">
+          <div class="p-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2" style="background-color: var(--bg-light);">
+            <h5 class="card-title-clean font-bold m-0" style="font-size: 0.95rem; color: var(--text-primary);">
+              <i class="fa-solid fa-sliders text-danger me-1"></i> Timeline Filters & Visualization Layers
+            </h5>
+            
+            <!-- Zoom buttons -->
+            <div class="d-flex align-items-center gap-1" id="gantt-zoom-controls">
+              <span class="text-xs text-muted font-bold uppercase me-2">Zoom:</span>
+              <button class="btn-gantt-zoom active btn-sm font-bold text-xs" data-zoom="month">Month</button>
+              <button class="btn-gantt-zoom btn-sm font-bold text-xs" data-zoom="quarter">Quarter</button>
+              <button class="btn-gantt-zoom btn-sm font-bold text-xs" data-zoom="year">Year</button>
+            </div>
+          </div>
+          <div class="p-3">
+            <div class="row g-3">
+              <!-- Filter: Customer -->
+              <div class="col-12 col-md-4">
+                <label class="form-label font-bold text-xs text-secondary mb-1">Filter by Customer</label>
+                <select class="form-select select-enterprise w-100 text-sm font-semibold" id="gantt-filter-customer">
+                  <option value="all">All Customers</option>
+                </select>
+              </div>
+
+              <!-- Filter: Developer -->
+              <div class="col-12 col-md-4">
+                <label class="form-label font-bold text-xs text-secondary mb-1">Filter by Developer</label>
+                <select class="form-select select-enterprise w-100 text-sm font-semibold" id="gantt-filter-resource">
+                  <option value="all">All Developers</option>
+                </select>
+              </div>
+
+              <!-- Filter: Project -->
+              <div class="col-12 col-md-4">
+                <label class="form-label font-bold text-xs text-secondary mb-1">Filter by Project</label>
+                <select class="form-select select-enterprise w-100 text-sm font-semibold" id="gantt-filter-project">
+                  <option value="all">All Active Projects</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- LAYER VISIBILITY TOGGLES -->
+            <div class="border-top mt-3 pt-3">
+              <div class="d-flex flex-wrap gap-x-4 gap-y-2 text-xs font-semibold text-secondary" id="gantt-layer-toggles">
+                <div class="form-check form-switch m-0 d-flex align-items-center gap-1">
+                  <input class="form-check-input" type="checkbox" role="switch" id="gantt-layer-estimated" checked style="cursor: pointer;" />
+                  <label class="form-check-label" for="gantt-layer-estimated" style="cursor: pointer; padding-left: 4px;">Estimated Bar</label>
+                </div>
+                <div class="form-check form-switch m-0 d-flex align-items-center gap-1">
+                  <input class="form-check-input" type="checkbox" role="switch" id="gantt-layer-actual" checked style="cursor: pointer;" />
+                  <label class="form-check-label" for="gantt-layer-actual" style="cursor: pointer; padding-left: 4px;">Actual Bar</label>
+                </div>
+                <div class="form-check form-switch m-0 d-flex align-items-center gap-1">
+                  <input class="form-check-input" type="checkbox" role="switch" id="gantt-layer-progress" checked style="cursor: pointer;" />
+                  <label class="form-check-label" for="gantt-layer-progress" style="cursor: pointer; padding-left: 4px;">Progress overlay</label>
+                </div>
+                <div class="form-check form-switch m-0 d-flex align-items-center gap-1">
+                  <input class="form-check-input" type="checkbox" role="switch" id="gantt-layer-dependencies" checked style="cursor: pointer;" />
+                  <label class="form-check-label" for="gantt-layer-dependencies" style="cursor: pointer; padding-left: 4px;">Dependencies</label>
+                </div>
+                <div class="form-check form-switch m-0 d-flex align-items-center gap-1">
+                  <input class="form-check-input" type="checkbox" role="switch" id="gantt-layer-milestones" checked style="cursor: pointer;" />
+                  <label class="form-check-label" for="gantt-layer-milestones" style="cursor: pointer; padding-left: 4px;">Milestones</label>
+                </div>
+                <div class="form-check form-switch m-0 d-flex align-items-center gap-1">
+                  <input class="form-check-input" type="checkbox" role="switch" id="gantt-layer-today" checked style="cursor: pointer;" />
+                  <label class="form-check-label" for="gantt-layer-today" style="cursor: pointer; padding-left: 4px;">Today Line</label>
+                </div>
+                <div class="form-check form-switch m-0 d-flex align-items-center gap-1">
+                  <input class="form-check-input" type="checkbox" role="switch" id="gantt-layer-critical" checked style="cursor: pointer;" />
+                  <label class="form-check-label" for="gantt-layer-critical" style="cursor: pointer; padding-left: 4px; color: var(--brand-danger);">Critical Path</label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- MAIN GANTT WORKSPACE GRID (SIDE-BY-SIDE PANELS) -->
+        <div class="row g-4 mb-4">
+          <div class="col-12">
+            <div class="gantt-workspace-container rounded border overflow-hidden" style="background-color: var(--bg-card); border-color: var(--border-color);">
+              
+              <!-- Gantt Toolbar / Legend -->
+              <div class="p-2 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2 text-xs" style="background-color: var(--bg-light); border-color: var(--border-color) !important;">
+                <div class="d-flex align-items-center gap-2">
+                  <button class="btn btn-xs btn-outline-secondary font-bold" id="gantt-btn-toggle-inputs" style="padding: 4px 8px; font-size: 0.725rem;">
+                    <i class="fa-solid fa-left-right"></i> Toggle Task Inputs
+                  </button>
+                  <button class="btn btn-xs btn-outline-secondary font-bold" id="gantt-btn-add-project" style="padding: 4px 8px; font-size: 0.725rem;">
+                    <i class="fa-solid fa-plus text-success"></i> Add Task Project
+                  </button>
+                </div>
+                
+                <!-- Legend items -->
+                <div class="d-flex align-items-center gap-3 font-semibold text-secondary">
+                  <div class="d-flex align-items-center gap-1.5 text-nowrap">
+                    <span class="gantt-legend-box" style="border: 1px solid var(--brand-primary); background-color: rgba(59, 130, 246, 0.15);"></span>
+                    <span>Estimated</span>
+                  </div>
+                  <div class="d-flex align-items-center gap-1.5 text-nowrap">
+                    <span class="gantt-legend-box" style="border: 1px solid var(--brand-success); background-color: rgba(16, 185, 129, 0.15);"></span>
+                    <span>Actual</span>
+                  </div>
+                  <div class="d-flex align-items-center gap-1.5 text-nowrap">
+                    <span class="gantt-legend-box" style="border: 2px dashed #ef4444; background-color: rgba(239, 68, 68, 0.05);"></span>
+                    <span class="text-danger">Critical Path</span>
+                  </div>
+                  <div class="d-flex align-items-center gap-1.5 text-nowrap">
+                    <i class="fa-solid fa-diamond text-warning" style="font-size: 0.65rem;"></i>
+                    <span>Milestone</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Dual Pane Display -->
+              <div class="d-flex position-relative flex-wrap flex-md-nowrap" id="gantt-dual-wrapper">
+                
+                <!-- LEFT TASK CONTROL PANEL -->
+                <div id="gantt-task-sidebar" class="border-end" style="width: 380px; flex-shrink: 0; background-color: var(--bg-card); transition: width 0.25s ease-out; overflow-x: hidden; border-color: var(--border-color) !important;">
+                  <div class="gantt-sidebar-header p-2.5 bg-body-tertiary font-bold text-xs uppercase border-bottom" style="letter-spacing: 0.05em; border-color: var(--border-color) !important;">
+                    Task Records Registry
+                  </div>
+                  <div class="gantt-sidebar-list" id="gantt-sidebar-tasks-list" style="max-height: 520px; overflow-y: auto;">
+                    <!-- Injected dynamically in gantt.js -->
+                  </div>
+                </div>
+
+                <!-- RIGHT TIMELINE CONTAINER -->
+                <div id="gantt-timeline-pane" class="flex-grow-1 position-relative" style="overflow-x: auto; background-color: var(--bg-card);">
+                  <div id="gantt-canvas-container" class="position-relative" style="min-width: 800px; height: 550px;">
+                    <!-- Injected canvas content, vertical grids, and SVG arrows -->
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- EXECUTIVE ACTION CENTER -->
+      <section id="page-action-center" class="page-container d-none">
+        <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+          <div>
+            <h1 class="page-title d-flex align-items-center gap-2">
+              <i class="fa-solid fa-bolt text-warning"></i> Executive Action Center
+            </h1>
+            <p class="page-description">Real-time risk radar, automated recommendations engine, and multi-domain action cards across 13 enterprise metrics.</p>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <div class="input-group input-group-sm" style="width: 260px;">
+              <span class="input-group-text bg-card text-muted" style="border-color: var(--border-color);"><i class="fa-solid fa-magnifying-glass"></i></span>
+              <input type="text" id="action-center-search-input" class="form-control form-control-sm" placeholder="Search action cards..." aria-label="Search action cards">
+            </div>
+          </div>
+        </div>
+
+        <!-- TOP EXECUTIVE RECOMMENDATIONS BANNER & AI HIGHLIGHTS -->
+        <div id="action-center-banner" class="mb-4">
+          <!-- Injected dynamically in actionCenter.js -->
+        </div>
+
+        <!-- CONTROLS & PRIORITY TABS PANEL -->
+        <div class="enterprise-card mb-4 p-3">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3 pb-2 border-bottom">
+            <div class="d-flex align-items-center gap-2">
+              <span class="text-xs font-bold uppercase text-secondary">Filter Priority:</span>
+              <div id="action-center-priority-tabs" class="d-flex flex-wrap gap-1.5">
+                <!-- Injected priority tabs -->
+              </div>
+            </div>
+          </div>
+
+          <!-- 13 CATEGORY CHIPS ROW -->
+          <div>
+            <div class="text-xxs font-bold uppercase text-muted mb-2" style="letter-spacing: 0.05em;">Metrics Filter:</div>
+            <div id="action-center-category-chips" class="d-flex flex-wrap gap-2">
+              <!-- Injected category pills -->
+            </div>
+          </div>
+        </div>
+
+        <!-- ACTION CARDS GRID -->
+        <div class="row g-3 mb-4" id="action-center-cards-grid">
+          <!-- Injected cards dynamically -->
+        </div>
+
+      </section>
+
+      <!-- 9. EXECUTIVE REPORTS & EXCEL ENGINE -->
+      <section id="page-reports" class="page-container">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Enterprise Reporting & Excel Workspace</h1>
+            <p class="page-description">Compile premium printable analytics reports across 10 categories or manage raw spreadsheet matrices using SheetJS</p>
+          </div>
+        </div>
+
+        <!-- TAB NAVIGATION -->
+        <div class="enterprise-tabs-container mb-4">
+          <div class="d-flex border-bottom border-secondary-subtle gap-2" style="border-width: 2px !important;">
+            <button class="btn-enterprise-tab active py-2.5 px-4 font-bold text-sm" id="btn-tab-excel-workspace">
+              <i class="fa-solid fa-file-excel me-1.5 text-success"></i> Spreadsheet Workspace
+            </button>
+            <button class="btn-enterprise-tab py-2.5 px-4 font-bold text-sm" id="btn-tab-report-hub">
+              <i class="fa-solid fa-print me-1.5 text-primary"></i> Analytical Reports Hub
+            </button>
+          </div>
+        </div>
+
+        <!-- WRAPPER CONTAINER FOR SHEET WORKSPACE -->
+        <div id="reports-excel-workspace-container">
+          <!-- Excel Overview KPI mini-cards -->
+          <div class="row g-3 mb-4">
+            <div class="col-6 col-md-3">
+              <div class="kpi-card" style="padding: 16px; border: 1px solid var(--border-color); border-radius: var(--border-radius-md);">
+                <span class="text-muted" style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase;">Imported Rows</span>
+                <h3 class="font-semibold mb-0" id="excel-stat-rows" style="margin-top: 4px; color: var(--text-primary);">0</h3>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="kpi-card" style="padding: 16px; border: 1px solid var(--border-color); border-radius: var(--border-radius-md);">
+                <span class="text-muted" style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase;">Unique Customers</span>
+                <h3 class="font-semibold mb-0" id="excel-stat-customers" style="margin-top: 4px; color: var(--text-primary);">0</h3>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="kpi-card" style="padding: 16px; border: 1px solid var(--border-color); border-radius: var(--border-radius-md);">
+                <span class="text-muted" style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase;">Sum Logged Hrs</span>
+                <h3 class="font-semibold mb-0" id="excel-stat-logged" style="margin-top: 4px; color: var(--text-primary);">0</h3>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="kpi-card" style="padding: 16px; border: 1px solid var(--border-color); border-radius: var(--border-radius-md);">
+                <span class="text-muted" style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase;">High/Critical Risks</span>
+                <h3 class="font-semibold mb-0" id="excel-stat-risks" style="margin-top: 4px; color: var(--text-primary);">0</h3>
+              </div>
+            </div>
+          </div>
+
+          <div class="enterprise-card mb-4">
+            <div class="card-header-clean d-flex justify-content-between align-items-center flex-wrap gap-2">
+              <h3 class="card-title-clean"><i class="fa-solid fa-file-excel text-success"></i> Spreadsheet Operations Control</h3>
+              <div class="excel-actions-row">
+                <button class="btn-enterprise btn-enterprise-primary btn-sm" id="excel-btn-create"><i class="fa-solid fa-plus"></i> Create Row</button>
+                <button class="btn-enterprise btn-enterprise-success btn-sm" id="excel-btn-export" style="background-color: var(--brand-success); border-color: var(--brand-success); color: white;"><i class="fa-solid fa-file-export"></i> Export Excel</button>
+                <button class="btn-enterprise btn-enterprise-secondary btn-sm" id="excel-btn-template"><i class="fa-solid fa-download"></i> Download Template</button>
+                <button class="btn-enterprise btn-enterprise-info btn-sm" id="excel-btn-sample" style="background-color: var(--brand-info); border-color: var(--brand-info); color: white;"><i class="fa-solid fa-cloud-arrow-down"></i> Load Sample Data</button>
+              </div>
+            </div>
+            <div class="p-4">
+              <!-- Hidden input for file picking -->
+              <input type="file" id="excel-file-input" accept=".xlsx, .xls, .csv" style="display: none;" />
+              <div class="excel-dropzone" id="excel-drop-area">
+                <i class="fa-solid fa-file-arrow-up excel-dropzone-icon"></i>
+                <h5 class="font-semibold mb-1" style="color: var(--text-primary);">Drag and Drop your Excel file here</h5>
+                <p class="text-muted mb-0 small">Supports .xlsx, .xls, and .csv spreadsheets. Or click to browse folders.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Excel Data Table Card -->
+          <div class="enterprise-card">
+            <div class="card-header-clean d-flex justify-content-between align-items-center flex-wrap gap-2">
+              <h3 class="card-title-clean"><i class="fa-solid fa-table-list text-primary"></i> Live Excel Registry Database</h3>
+              <div class="d-flex align-items-center gap-2">
+                <input type="text" id="excel-search-input" class="select-enterprise" placeholder="Search registry..." style="min-width: 220px;" />
+                <button class="btn-enterprise btn-enterprise-danger btn-sm" id="excel-btn-clear"><i class="fa-solid fa-trash-can"></i> Clear All</button>
+              </div>
+            </div>
+            <div class="p-0">
+              <div class="table-spreadsheet-container">
+                <table class="table-spreadsheet">
+                  <thead>
+                    <tr id="excel-table-headers">
+                      <!-- Dynamic Headers -->
+                    </tr>
+                  </thead>
+                  <tbody id="excel-table-body">
+                    <tr>
+                      <td colspan="41" class="text-center py-5 text-muted">
+                        <i class="fa-solid fa-folder-open mb-2 d-block" style="font-size: 2rem; opacity: 0.4;"></i>
+                        No Excel data currently imported. Upload a file or load sample data to begin.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div> <!-- End reports-excel-workspace-container -->
+
+        <!-- WRAPPER CONTAINER FOR REPORT GENERATOR HUB -->
+        <div id="reports-generator-hub-container" class="d-none animate-fade-in">
+          <div class="row g-4">
+            <!-- LEFT COLUMN: CONTROLS & COMPILING PARAMETERS -->
+            <div class="col-lg-4 col-md-12">
+              <div class="enterprise-card h-100" style="background-color: var(--bg-card); border: 1px solid var(--border-color);">
+                <div class="p-3 border-bottom d-flex justify-content-between align-items-center" style="background-color: var(--bg-light);">
+                  <h5 class="card-title-clean font-bold m-0" style="font-size: 0.95rem; color: var(--text-primary);">
+                    <i class="fa-solid fa-sliders text-primary me-1"></i> Report Configuration
+                  </h5>
+                  <span class="badge bg-primary-subtle text-primary font-semibold" style="font-size: 0.725rem;">Live Compiler</span>
+                </div>
+                <div class="p-3">
+                  <form id="report-config-form" class="row g-3">
+                    <!-- Report Category -->
+                    <div class="col-12">
+                      <label class="form-label font-bold text-xs text-secondary mb-1">Select Report Category</label>
+                      <select class="form-select select-enterprise w-100 font-bold text-sm" id="report-select-category" required>
+                        <option value="executive" selected>Executive Portfolio Overview</option>
+                        <option value="customer">Customer / Client Business Report</option>
+                        <option value="project">Project Status & Delivery Report</option>
+                        <option value="resource">Resource Allocation & Logged Hours</option>
+                        <option value="leave">Out-of-Office & Approved Leaves</option>
+                        <option value="risk">Risk Register & Mitigation Compliance</option>
+                        <option value="weekend">Weekend Standby & Support Logs</option>
+                        <option value="forecast">Automated Project Forecast & Timeline</option>
+                        <option value="department">Department Estimates & Logged Overruns</option>
+                        <option value="timesheet">Timesheet Log Audit Trail</option>
+                      </select>
+                      <div class="text-xs text-muted mt-1.5" id="report-category-desc" style="line-height: 1.4;">
+                        Consolidated high-level health parameters, aggregated financials, and operational status overview.
+                      </div>
+                    </div>
+
+                    <!-- Context Filter: Customer -->
+                    <div class="col-12" id="div-report-filter-customer">
+                      <label class="form-label font-bold text-xs text-secondary mb-1">Filter by Customer</label>
+                      <select class="form-select select-enterprise w-100 text-sm" id="report-filter-customer">
+                        <option value="all">All Customers / Clients</option>
+                      </select>
+                    </div>
+
+                    <!-- Context Filter: Project -->
+                    <div class="col-12" id="div-report-filter-project">
+                      <label class="form-label font-bold text-xs text-secondary mb-1">Filter by Project</label>
+                      <select class="form-select select-enterprise w-100 text-sm" id="report-filter-project">
+                        <option value="all">All Active Projects</option>
+                      </select>
+                    </div>
+
+                    <!-- Context Filter: Resource -->
+                    <div class="col-12" id="div-report-filter-resource">
+                      <label class="form-label font-bold text-xs text-secondary mb-1">Filter by Team Member</label>
+                      <select class="form-select select-enterprise w-100 text-sm" id="report-filter-resource">
+                        <option value="all">All Team Members</option>
+                      </select>
+                    </div>
+
+                    <!-- Context Filter: Department -->
+                    <div class="col-12" id="div-report-filter-department">
+                      <label class="form-label font-bold text-xs text-secondary mb-1">Filter by Department</label>
+                      <select class="form-select select-enterprise w-100 text-sm" id="report-filter-department">
+                        <option value="all">All Departments</option>
+                        <option value="Engineering">Engineering</option>
+                        <option value="Design">Design</option>
+                        <option value="QA / Test">QA / Test</option>
+                        <option value="Product">Product</option>
+                      </select>
+                    </div>
+
+                    <!-- Compile Action Button -->
+                    <div class="col-12 pt-2">
+                      <button type="button" id="report-btn-compile" class="btn-enterprise btn-enterprise-primary w-100 d-flex align-items-center justify-content-center gap-2">
+                        <i class="fa-solid fa-rotate"></i> Compile Report
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+
+            <!-- RIGHT COLUMN: REPORT PREVIEW & EXPORT ACTIONS -->
+            <div class="col-lg-8 col-md-12">
+              <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+                <span class="text-sm font-semibold text-secondary" style="font-size: 0.85rem;"><i class="fa-solid fa-eye text-muted me-1"></i> Interactive Print Layout Preview</span>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                  <button id="report-btn-print" class="btn-enterprise btn-enterprise-secondary btn-sm font-bold text-xs py-2 px-3 d-flex align-items-center gap-1.5">
+                    <i class="fa-solid fa-print text-primary"></i> Print Layout
+                  </button>
+                  <button id="report-btn-excel" class="btn-enterprise btn-enterprise-success btn-sm font-bold text-xs py-2 px-3 d-flex align-items-center gap-1.5" style="background-color: var(--brand-success); border-color: var(--brand-success); color: white;">
+                    <i class="fa-solid fa-file-excel"></i> Export Excel
+                  </button>
+                  <button id="report-btn-csv" class="btn-enterprise btn-enterprise-secondary btn-sm font-bold text-xs py-2 px-3 d-flex align-items-center gap-1.5">
+                    <i class="fa-solid fa-file-csv text-warning"></i> Export CSV
+                  </button>
+                  <button id="report-btn-pdf" class="btn-enterprise btn-enterprise-secondary btn-sm font-bold text-xs py-2 px-3 d-flex align-items-center gap-1.5">
+                    <i class="fa-solid fa-file-pdf text-danger"></i> Export PDF
+                  </button>
+                </div>
+              </div>
+
+              <!-- Live Report Canvas Sheet -->
+              <div class="report-canvas-wrapper" style="overflow-x: auto; border: 1px solid var(--border-color); border-radius: var(--border-radius-md); background-color: #f1f5f9; padding: 24px; min-height: 580px;">
+                <div id="report-preview-canvas" class="report-paper-sheet bg-white p-5 text-slate-800" style="min-width: 750px; border-radius: 4px; box-shadow: 0 4px 15px rgba(0,0,0,0.06); font-family: var(--font-body); color: #1e293b; background-color: #ffffff;">
+                  <!-- Dynamic Report Content -->
+                  <div class="text-center py-5 text-muted">
+                    <i class="fa-solid fa-spinner fa-spin d-block mb-3" style="font-size: 2.5rem; color: var(--brand-primary);"></i>
+                    <p class="mb-0">Preparing Report Generator Engine...</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 10. PORTAL SETTINGS PLACEHOLDER -->
+      <section id="page-settings" class="page-container">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Portal Configuration</h1>
+            <p class="page-description">Personal settings, regional parameters, and account features</p>
+          </div>
+        </div>
+
+        <div class="row g-4">
+          <div class="col-md-6">
+            <div class="enterprise-card">
+              <div class="card-header-clean">
+                <h3 class="card-title-clean"><i class="fa-solid fa-user-gear text-primary"></i> Account Information</h3>
+              </div>
+              <form class="row g-3" onsubmit="event.preventDefault();">
+                <div class="col-12">
+                  <label class="form-label font-semibold">Display Full Name</label>
+                  <input type="text" class="form-control select-enterprise w-100" value="Prashanth K" readonly />
+                </div>
+                <div class="col-12">
+                  <label class="form-label font-semibold">Designated Role</label>
+                  <input type="text" class="form-control select-enterprise w-100" value="Admin Lead" readonly />
+                </div>
+                <div class="col-12">
+                  <label class="form-label font-semibold">User Email Address</label>
+                  <input type="email" class="form-control select-enterprise w-100" value="surya.prashanth.kp@gmail.com" readonly />
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <div class="enterprise-card">
+              <div class="card-header-clean">
+                <h3 class="card-title-clean"><i class="fa-solid fa-bell-concierge text-warning"></i> Platform Settings</h3>
+              </div>
+              <ul class="list-group list-group-flush text-secondary">
+                <li class="list-group-item d-flex justify-content-between align-items-center bg-transparent border-color">
+                  <div>
+                    <h6 class="mb-0 font-semibold text-primary-custom" style="color: var(--text-primary);">Email notifications</h6>
+                    <small class="text-muted">Receive summaries of critical risks weekly</small>
+                  </div>
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" role="switch" checked />
+                  </div>
+                </li>
+                <li class="list-group-item d-flex justify-content-between align-items-center bg-transparent border-color">
+                  <div>
+                    <h6 class="mb-0 font-semibold text-primary-custom" style="color: var(--text-primary);">Theme Override Mode</h6>
+                    <small class="text-muted">Locks current display style independently</small>
+                  </div>
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" role="switch" id="theme-switch-settings" />
+                  </div>
+                </li>
+                <li class="list-group-item d-flex justify-content-between align-items-center bg-transparent border-color border-0">
+                  <button class="btn-enterprise btn-enterprise-primary w-100" id="btn-save-settings">Save Configurations</button>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- STICKY FOOTER -->
+      <footer id="footer">
+        <div>&copy; 2026 Enterprise PM Portal. All rights reserved.</div>
+        <div class="d-none d-sm-block">Version 1.0.0 (Phase 1 UI Framework) | <a href="#" onclick="alert('Demo License - Enterprise Version'); return false;">License agreement</a></div>
+      </footer>
+
+    </main>
+  </div>
+
+  <!-- JS Bootstrapper dependencies -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  
+  <!-- Custom Master Application Controller -->
+  <script type="module" src="js/app.js"></script>
+
+  <!-- Interactive Demo Simulation Add-ons -->
+  <script type="module">
+    import { Storage } from './js/storage.js';
+    import { Calculations } from './js/calculations.js';
+    import { Excel } from './js/excel.js';
+    
+    // Quick listener attachments to make placeholder buttons completely interactive
+    document.addEventListener('DOMContentLoaded', () => {
+      // Planner Demo
+      const btnPlanner = document.getElementById('btn-demo-allocate');
+      if (btnPlanner) {
+        btnPlanner.addEventListener('click', () => {
+          const app = window.portalAppInstance || document.querySelector('script[src="js/app.js"]')._appInstance;
+          const msg = "Allocating David Miller with QA automation projects at 100% load index.";
+          if (app) app.showToast(msg, 'success');
+          else alert(msg);
+        });
+      }
+
+      // Weekend Notif Demo
+      const btnWeekend = document.getElementById('btn-weekend-notif');
+      if (btnWeekend) {
+        btnWeekend.addEventListener('click', () => {
+          const app = window.portalAppInstance || document.querySelector('script[src="js/app.js"]')._appInstance;
+          const msg = "Alert: Initiating weekend delivery backup logs check. 2 notifications queued.";
+          if (app) app.showToast(msg, 'warning');
+          else alert(msg);
+        });
+      }
+
+      // Report Demo export CSV
+      const btnReport = document.getElementById('btn-demo-report');
+      if (btnReport) {
+        btnReport.addEventListener('click', () => {
+          const headers = ['Financial Parameter', 'Allocated ($)', 'Spent ($)', 'Variance ($)'];
+          const rows = [
+            { param: 'Human Capital', allocated: 500000, spent: 480000, variance: 20000 },
+            { param: 'Software Licences', allocated: 45000, spent: 47000, variance: -2000 },
+            { param: 'Infrastructure Hosting', allocated: 120000, spent: 115000, variance: 5000 },
+            { param: 'Governance & Auditing', allocated: 35000, spent: 30000, variance: 5000 }
+          ];
+          const keys = ['param', 'allocated', 'spent', 'variance'];
+          Excel.exportToCSV(headers, rows, keys, 'Executive_Financials');
+        });
+      }
+
+      // Settings Save demo
+      const btnSaveSettings = document.getElementById('btn-save-settings');
+      if (btnSaveSettings) {
+        btnSaveSettings.addEventListener('click', () => {
+          const app = window.portalAppInstance || document.querySelector('script[src="js/app.js"]')._appInstance;
+          if (app) app.showToast('Configurations saved and synced with cloud security profile', 'success');
+        });
+      }
+
+      // Settings Theme Switch sync
+      const themeSwitch = document.getElementById('theme-switch-settings');
+      if (themeSwitch) {
+        themeSwitch.checked = Storage.getTheme() === 'dark';
+        themeSwitch.addEventListener('change', (e) => {
+          const targetTheme = e.target.checked ? 'dark' : 'light';
+          document.getElementById('theme-toggle-btn').click();
+        });
+        
+        // Listen to external toggles to sync switch position
+        document.getElementById('theme-toggle-btn').addEventListener('click', () => {
+          themeSwitch.checked = Storage.getTheme() === 'dark';
+        });
+      }
+    });
+  </script>
+</body>
+</html>
