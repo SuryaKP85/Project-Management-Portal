@@ -2,6 +2,7 @@
 
 import { Storage } from './storage.js';
 import { Calculations } from './calculations.js';
+import { Excel } from './excel.js';
 
 export const TimeLoggingModule = {
   app: null,
@@ -218,6 +219,126 @@ export const TimeLoggingModule = {
         }
       });
     }
+
+    // Excel Template, Import & Export event handlers
+    const templateBtn = document.getElementById('tl-btn-template');
+    if (templateBtn) {
+      templateBtn.addEventListener('click', () => this.downloadTemplate());
+    }
+
+    const exportBtn = document.getElementById('tl-btn-export');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', () => this.exportToExcel());
+    }
+
+    const importBtn = document.getElementById('tl-btn-import');
+    const fileInput = document.getElementById('tl-file-input');
+    if (importBtn && fileInput) {
+      importBtn.addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          this.importFromExcel(e.target.files[0]);
+          fileInput.value = '';
+        }
+      });
+    }
+  },
+
+  /**
+   * Download blank/sample Excel template for Daily Time Logging
+   */
+  downloadTemplate() {
+    const headers = ['Work Date', 'Employee Name', 'Project ID', 'HD#', 'JIRA#', 'Department', 'Task Description', 'Hours Worked', 'Remarks'];
+    const sampleRow = ['2026-07-28', 'Alice Smith', 'PRJ001', 'HD-1024', 'ARES-101', 'Dev', 'Backend schema optimization and index updates', 8, 'Completed on schedule'];
+    Excel.downloadCustomTemplate(headers, sampleRow, 'Daily_Time_Log_Template', 'daily_time_logging_template');
+    this.app.showToast('Downloaded Daily Time Logging Excel Template', 'info');
+  },
+
+  /**
+   * Export all logged time entries to Excel workbook
+   */
+  exportToExcel() {
+    if (!this.logs || this.logs.length === 0) {
+      this.app.showToast('No time log entries to export', 'warning');
+      return;
+    }
+
+    const headers = ['Work Date', 'Employee Name', 'Project ID', 'HD#', 'JIRA#', 'Department', 'Task Description', 'Hours Worked', 'Remarks'];
+    const keys = ['date', 'employee', 'projectId', 'hdNumber', 'jiraNumber', 'department', 'task', 'hours', 'remarks'];
+
+    const success = Excel.exportCustomToExcel(headers, this.logs, keys, 'Daily_Time_Logs', 'daily_time_logs_export');
+    if (success) {
+      this.app.showToast(`Exported ${this.logs.length} time log records to Excel`, 'success');
+    } else {
+      this.app.showToast('Failed to export time logs', 'danger');
+    }
+  },
+
+  /**
+   * Import time logs from Excel file
+   */
+  importFromExcel(file) {
+    Excel.parseCustomExcelFile(file, (rows, err) => {
+      if (err || !rows) {
+        this.app.showToast(`Import Error: ${err || 'Invalid file format'}`, 'danger');
+        return;
+      }
+
+      let importedCount = 0;
+      rows.forEach(r => {
+        // Find property values flexibly
+        const getVal = (possibleKeys) => {
+          for (let k of possibleKeys) {
+            const found = Object.keys(r).find(key => key.trim().toLowerCase() === k.trim().toLowerCase());
+            if (found && r[found] !== undefined) return r[found];
+          }
+          return '';
+        };
+
+        const workDate = getVal(['Work Date', 'date', 'Date']) || new Date().toISOString().split('T')[0];
+        const empName = getVal(['Employee Name', 'employee', 'Employee', 'Name']);
+        const projId = getVal(['Project ID', 'Project', 'projectId', 'Project Code']);
+        const hdNum = getVal(['HD#', 'hdNumber', 'HD Number', 'Helpdesk']);
+        const jiraNum = getVal(['JIRA#', 'jiraNumber', 'JIRA', 'Jira']);
+        const dept = getVal(['Department', 'department', 'Dept']) || 'Dev';
+        const taskDesc = getVal(['Task Description', 'task', 'Task', 'Description']) || 'Imported Task';
+        const hoursWorked = parseFloat(getVal(['Hours Worked', 'hours', 'Hours'])) || 0;
+        const remarksStr = getVal(['Remarks', 'remarks', 'Comments']);
+
+        if (empName && projId && hoursWorked > 0) {
+          const proj = (this.app.projectsList || []).find(p => p.id === projId || p.name === projId);
+          const actualProjId = proj ? proj.id : projId;
+          const actualProjName = proj ? proj.name : projId;
+
+          const newLog = {
+            id: `TL-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 1000)}`,
+            date: workDate,
+            employee: empName,
+            projectId: actualProjId,
+            projectName: actualProjName,
+            hdNumber: hdNum,
+            jiraNumber: jiraNum,
+            department: dept,
+            task: taskDesc,
+            hours: hoursWorked,
+            remarks: remarksStr
+          };
+
+          this.logs.unshift(newLog);
+          importedCount++;
+        }
+      });
+
+      if (importedCount > 0) {
+        Storage.set('time_logs', this.logs);
+        this.recalculateAndRender();
+        this.updateEmployeeCapacity();
+        this.syncWithDashboard();
+        this.app.showToast(`Successfully imported ${importedCount} time log records!`, 'success');
+      } else {
+        this.app.showToast('No valid time log rows found in Excel file. Check column headers.', 'warning');
+      }
+    });
   },
 
   /**

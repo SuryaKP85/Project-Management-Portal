@@ -19,6 +19,9 @@ export const CustomersModule = {
     this.activeTab = 'cust-overview';
     this.activeCustomerId = null;
     
+    // Ensure customers dataset is loaded and persisted in storage
+    this.loadCustomers();
+
     // Set view back to list directory state
     this.showListView();
     
@@ -30,6 +33,25 @@ export const CustomersModule = {
   },
 
   /**
+   * Loads customer records from LocalStorage or syncs from initial list
+   */
+  loadCustomers() {
+    let stored = Storage.get('customers');
+    if (!stored || !Array.isArray(stored) || stored.length === 0) {
+      stored = this.app.customersList || [];
+      Storage.set('customers', stored);
+    }
+    this.app.customersList = stored;
+  },
+
+  /**
+   * Saves customer records to LocalStorage
+   */
+  saveCustomers() {
+    Storage.set('customers', this.app.customersList);
+  },
+
+  /**
    * Renders the master list of client accounts
    */
   renderDirectory() {
@@ -37,6 +59,7 @@ export const CustomersModule = {
     if (!listBody) return;
 
     listBody.innerHTML = '';
+    this.loadCustomers();
     const items = this.app.customersList || [];
     const query = document.getElementById('customer-search-input')?.value || '';
     const status = document.getElementById('customer-status-select')?.value || 'all';
@@ -44,15 +67,15 @@ export const CustomersModule = {
     // Refresh dynamic project count based on projects in localStorage
     const projects = this.app.projectsList || [];
     const enrichedCustomers = items.map(c => {
-      const pCount = projects.filter(p => p.client.toLowerCase().trim() === c.name.toLowerCase().trim()).length;
+      const pCount = projects.filter(p => (p.client || '').toLowerCase().trim() === (c.name || '').toLowerCase().trim()).length;
       return { ...c, projects: pCount };
     });
 
-    let filtered = Filters.bySearch(enrichedCustomers, query, ['id', 'name', 'industry', 'contact']);
+    let filtered = Filters.bySearch(enrichedCustomers, query, ['id', 'name', 'industry', 'contact', 'email', 'country', 'remarks']);
     filtered = Filters.byStatus(filtered, status, 'status');
 
     if (filtered.length === 0) {
-      listBody.innerHTML = `<tr><td colspan="5" class="text-center text-muted py-4">No customers match the active filter criteria.</td></tr>`;
+      listBody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-4">No customers match the active filter criteria.</td></tr>`;
       return;
     }
 
@@ -70,15 +93,54 @@ export const CustomersModule = {
           <div class="font-bold text-primary-custom" style="color: var(--brand-primary); font-size: 1rem;">${c.name}</div>
           <small class="text-muted d-block">${c.projects} active enterprise projects</small>
         </td>
-        <td><span class="text-secondary-custom font-semibold">${c.industry}</span></td>
+        <td><span class="text-secondary-custom font-semibold">${c.industry || 'General'}</span></td>
         <td>
-          <div class="font-semibold text-secondary-custom">${c.contact}</div>
-          <small class="text-muted d-block" style="font-size: 0.75rem;">Lead Partner</small>
+          <div class="font-semibold text-secondary-custom">${c.contact || 'N/A'}</div>
+          <small class="text-muted d-block" style="font-size: 0.75rem;">${c.email || 'No email registered'}</small>
         </td>
         <td><span class="status-badge rounded-pill px-3 py-1 font-bold ${statusClass}">${statusLabel}</span></td>
+        <td class="text-center" style="padding: 12px 16px;">
+          <div class="d-flex align-items-center justify-content-center gap-1">
+            <button class="btn btn-sm btn-outline-primary py-1 px-2 font-semibold btn-cust-edit" data-id="${c.id}" title="Edit Customer">
+              <i class="fa-solid fa-pen"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-info py-1 px-2 font-semibold btn-cust-dash" data-id="${c.id}" title="View Dashboard">
+              <i class="fa-solid fa-chart-line"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-danger py-1 px-2 font-semibold btn-cust-delete" data-id="${c.id}" title="Delete Customer">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        </td>
       `;
 
-      // Clicking a row opens the dashboard!
+      // Event listeners for action buttons
+      const editBtn = tr.querySelector('.btn-cust-edit');
+      const dashBtn = tr.querySelector('.btn-cust-dash');
+      const deleteBtn = tr.querySelector('.btn-cust-delete');
+
+      if (editBtn) {
+        editBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.openCustomerModal(c.id);
+        });
+      }
+
+      if (dashBtn) {
+        dashBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.openDashboard(c.id);
+        });
+      }
+
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.deleteCustomer(c.id);
+        });
+      }
+
+      // Row click opens dashboard
       tr.addEventListener('click', () => {
         this.openDashboard(c.id);
       });
@@ -88,7 +150,7 @@ export const CustomersModule = {
   },
 
   /**
-   * Set up filters and list table triggers
+   * Set up filters, buttons, and customer forms
    */
   setupEventListeners() {
     const searchInp = document.getElementById('customer-search-input');
@@ -96,6 +158,15 @@ export const CustomersModule = {
     const backBtn = document.getElementById('btn-back-to-cust-list');
     const tabBtns = document.querySelectorAll('.btn-cust-tab');
     const reportBtn = document.getElementById('btn-cust-summary-report');
+    const addCustBtn = document.getElementById('btn-add-customer');
+
+    if (addCustBtn) {
+      const newAddBtn = addCustBtn.cloneNode(true);
+      if (addCustBtn.parentNode) addCustBtn.parentNode.replaceChild(newAddBtn, addCustBtn);
+      newAddBtn.addEventListener('click', () => {
+        this.openCustomerModal();
+      });
+    }
 
     if (searchInp) {
       searchInp.addEventListener('input', () => {
@@ -1105,5 +1176,187 @@ export const CustomersModule = {
     document.body.removeChild(link);
 
     this.app.showToast('CSV Executive Report exported successfully', 'success');
+  },
+
+  /**
+   * Opens modal form for creating or editing a customer details record
+   * Validation: Customer Name mandatory, No duplicate names.
+   */
+  openCustomerModal(customerId = null) {
+    this.loadCustomers();
+    const items = this.app.customersList || [];
+    const target = customerId ? items.find(c => c.id === customerId) : null;
+    const isEdit = !!target;
+    const title = isEdit ? 'Edit Customer Directory Profile' : 'Add New Client / Customer Account';
+
+    const bodyHtml = `
+      <form id="customer-modal-form" class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label font-semibold">Customer Name *</label>
+          <input type="text" class="form-control select-enterprise w-100" id="cust-modal-name" value="${target ? (target.name || '') : ''}" required placeholder="Company / Client Name" />
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label font-semibold">Contact Person</label>
+          <input type="text" class="form-control select-enterprise w-100" id="cust-modal-contact" value="${target ? (target.contact || '') : ''}" placeholder="Primary Executive Contact" />
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label font-semibold">Email Address</label>
+          <input type="email" class="form-control select-enterprise w-100" id="cust-modal-email" value="${target ? (target.email || '') : ''}" placeholder="contact@company.com" />
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label font-semibold">Phone Number</label>
+          <input type="text" class="form-control select-enterprise w-100" id="cust-modal-phone" value="${target ? (target.phone || '') : ''}" placeholder="+1 (555) 012-3456" />
+        </div>
+
+        <div class="col-md-12">
+          <label class="form-label font-semibold">Street Address</label>
+          <input type="text" class="form-control select-enterprise w-100" id="cust-modal-address" value="${target ? (target.address || '') : ''}" placeholder="Corporate Headquarters Address" />
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label font-semibold">Country / Region</label>
+          <input type="text" class="form-control select-enterprise w-100" id="cust-modal-country" value="${target ? (target.country || 'USA') : 'USA'}" placeholder="e.g. United States, Germany, Japan" />
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label font-semibold">Industry Sector</label>
+          <input type="text" class="form-control select-enterprise w-100" id="cust-modal-industry" value="${target ? (target.industry || 'Defense & Aerospace') : 'Defense & Aerospace'}" placeholder="e.g. Defense, Logistics, Finance" />
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label font-semibold">Customer Contract Status</label>
+          <select class="form-select select-enterprise w-100" id="cust-modal-status">
+            <option value="active" ${!target || target.status === 'active' ? 'selected' : ''}>Active Account</option>
+            <option value="inactive" ${target && target.status !== 'active' ? 'selected' : ''}>Suspended / Inactive</option>
+          </select>
+        </div>
+
+        <div class="col-md-12">
+          <label class="form-label font-semibold">Remarks & Notes</label>
+          <textarea class="form-control select-enterprise w-100" id="cust-modal-remarks" rows="2" placeholder="Key enterprise notes or contract details...">${target ? (target.remarks || '') : ''}</textarea>
+        </div>
+      </form>
+    `;
+
+    this.app.openModal(title, bodyHtml, (overlay) => {
+      const name = overlay.querySelector('#cust-modal-name').value.trim();
+      const contact = overlay.querySelector('#cust-modal-contact').value.trim();
+      const email = overlay.querySelector('#cust-modal-email').value.trim();
+      const phone = overlay.querySelector('#cust-modal-phone').value.trim();
+      const address = overlay.querySelector('#cust-modal-address').value.trim();
+      const country = overlay.querySelector('#cust-modal-country').value.trim();
+      const industry = overlay.querySelector('#cust-modal-industry').value.trim();
+      const status = overlay.querySelector('#cust-modal-status').value;
+      const remarks = overlay.querySelector('#cust-modal-remarks').value.trim();
+
+      // Mandatory Validation
+      if (!name) {
+        if (this.app) this.app.showToast('Customer Name is mandatory.', 'warning');
+        return false;
+      }
+
+      // Duplicate Name Validation
+      const cleanName = name.toLowerCase();
+      const duplicate = items.find(c => c.name.toLowerCase().trim() === cleanName && (!isEdit || c.id !== target.id));
+      if (duplicate) {
+        if (this.app) this.app.showToast(`A customer with the name '${name}' already exists.`, 'danger');
+        return false;
+      }
+
+      if (isEdit) {
+        const idx = items.findIndex(c => c.id === target.id);
+        if (idx !== -1) {
+          items[idx] = {
+            ...items[idx],
+            name,
+            contact,
+            email,
+            phone,
+            address,
+            country,
+            industry,
+            status,
+            remarks
+          };
+          this.saveCustomers();
+          if (this.app) this.app.showToast(`Updated customer '${name}' successfully.`, 'success');
+        }
+      } else {
+        const newCust = {
+          id: `CUST00${items.length + 1}`,
+          name,
+          contact: contact || 'Lead Partner',
+          email: email || '',
+          phone: phone || '',
+          address: address || '',
+          country: country || 'USA',
+          industry: industry || 'Aerospace & Defense',
+          status,
+          remarks,
+          createdAt: new Date().toISOString()
+        };
+        items.push(newCust);
+        this.saveCustomers();
+        if (this.app) this.app.showToast(`Added customer '${name}' successfully.`, 'success');
+      }
+
+      this.renderDirectory();
+      return true;
+    });
+  },
+
+  /**
+   * Deletes a customer account with warning if projects are linked
+   */
+  deleteCustomer(customerId) {
+    this.loadCustomers();
+    const items = this.app.customersList || [];
+    const target = items.find(c => c.id === customerId);
+    if (!target) return;
+
+    // Check linked projects
+    const projects = this.app.projectsList || [];
+    const linkedProjects = projects.filter(p => (p.client || '').toLowerCase().trim() === target.name.toLowerCase().trim());
+    const hasLinked = linkedProjects.length > 0;
+
+    let warningNotice = '';
+    if (hasLinked) {
+      warningNotice = `
+        <div class="p-2.5 rounded bg-warning-subtle border border-warning text-warning-emphasis mb-3">
+          <div class="font-bold mb-1"><i class="fa-solid fa-triangle-exclamation me-1"></i> Linked Projects Warning</div>
+          <div style="font-size: 0.825rem;">Customer '<strong>${target.name}</strong>' is currently assigned to <strong>${linkedProjects.length} active enterprise project(s)</strong> (${linkedProjects.map(p => p.id).join(', ')}).</div>
+        </div>
+      `;
+    }
+
+    const bodyHtml = `
+      <div class="p-2">
+        ${warningNotice}
+        <p class="mb-1 text-danger font-semibold">Are you sure you want to delete customer <strong>${target.name}</strong> (${target.id})?</p>
+        <p class="text-secondary text-xs mb-0">This action cannot be undone.</p>
+      </div>
+    `;
+
+    const executeDelete = () => {
+      this.app.customersList = items.filter(c => c.id !== customerId);
+      this.saveCustomers();
+      if (this.app) this.app.showToast(`Customer '${target.name}' deleted successfully.`, 'info');
+      this.renderDirectory();
+    };
+
+    if (this.app && typeof this.app.confirmModal === 'function') {
+      this.app.confirmModal({
+        title: 'Delete Customer Account',
+        bodyHtml,
+        confirmText: 'Delete Customer',
+        confirmClass: 'btn-enterprise-danger',
+        onConfirm: executeDelete
+      });
+    } else {
+      executeDelete();
+    }
   }
 };

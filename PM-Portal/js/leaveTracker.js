@@ -3,6 +3,7 @@
 import { Storage } from './storage.js';
 import { Calculations } from './calculations.js';
 import { Filters } from './filters.js';
+import { Excel } from './excel.js';
 
 export const LeaveTrackerModule = {
   app: null,
@@ -223,6 +224,126 @@ export const LeaveTrackerModule = {
         }
       });
     }
+
+    // 8. Excel Template, Import & Export event handlers
+    const templateBtn = document.getElementById('leave-btn-template');
+    if (templateBtn) {
+      templateBtn.addEventListener('click', () => this.downloadTemplate());
+    }
+
+    const exportBtn = document.getElementById('leave-btn-export');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', () => this.exportToExcel());
+    }
+
+    const importBtn = document.getElementById('leave-btn-import');
+    const fileInput = document.getElementById('leave-file-input');
+    if (importBtn && fileInput) {
+      importBtn.addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          this.importFromExcel(e.target.files[0]);
+          fileInput.value = '';
+        }
+      });
+    }
+  },
+
+  /**
+   * Download Excel template for Leave Tracker
+   */
+  downloadTemplate() {
+    const headers = ['Employee Name', 'Leave Category', 'Start Date', 'End Date', 'Total Days', 'Reason'];
+    const sampleRow = ['Alice Smith', 'Annual Leave', '2026-08-10', '2026-08-15', 5, 'Annual family summer vacation'];
+    Excel.downloadCustomTemplate(headers, sampleRow, 'Leave_Tracker_Template', 'leave_tracker_template');
+    this.app.showToast('Downloaded Leave Tracker Excel Template', 'info');
+  },
+
+  /**
+   * Export leaves to Excel workbook
+   */
+  exportToExcel() {
+    if (!this.leaves || this.leaves.length === 0) {
+      this.app.showToast('No leave records to export', 'warning');
+      return;
+    }
+
+    const headers = ['Leave ID', 'Employee Name', 'Leave Category', 'Start Date', 'End Date', 'Total Days', 'Reason', 'Approval Status'];
+    const keys = ['id', 'name', 'type', 'start', 'end', 'days', 'reason', 'status'];
+
+    const success = Excel.exportCustomToExcel(headers, this.leaves, keys, 'Leave_Records', 'leave_tracker_export');
+    if (success) {
+      this.app.showToast(`Exported ${this.leaves.length} leave records to Excel`, 'success');
+    } else {
+      this.app.showToast('Failed to export leave records', 'danger');
+    }
+  },
+
+  /**
+   * Import leave records from Excel file
+   */
+  importFromExcel(file) {
+    Excel.parseCustomExcelFile(file, (rows, err) => {
+      if (err || !rows) {
+        this.app.showToast(`Import Error: ${err || 'Invalid file format'}`, 'danger');
+        return;
+      }
+
+      let importedCount = 0;
+      rows.forEach(r => {
+        const getVal = (possibleKeys) => {
+          for (let k of possibleKeys) {
+            const found = Object.keys(r).find(key => key.trim().toLowerCase() === k.trim().toLowerCase());
+            if (found && r[found] !== undefined) return r[found];
+          }
+          return '';
+        };
+
+        const empName = getVal(['Employee Name', 'employee', 'Employee', 'Name']);
+        const category = getVal(['Leave Category', 'type', 'Type', 'Category']) || 'Annual Leave';
+        const startDate = getVal(['Start Date', 'start', 'Start']) || new Date().toISOString().split('T')[0];
+        const endDate = getVal(['End Date', 'end', 'End']) || startDate;
+        let daysVal = parseInt(getVal(['Total Days', 'days', 'Days']), 10);
+        const reasonStr = getVal(['Reason', 'reason', 'Comments', 'Remarks']) || 'Imported leave request';
+
+        if (!daysVal || isNaN(daysVal)) {
+          const s = new Date(startDate);
+          const e = new Date(endDate);
+          daysVal = Math.max(1, Math.ceil((e - s) / (1000 * 60 * 60 * 24)) + 1);
+        }
+
+        if (empName && startDate && endDate) {
+          const impact = this.analyzeLeaveImpact(empName, startDate, endDate, category);
+
+          const newLeave = {
+            id: `LV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 1000)}`,
+            name: empName,
+            type: category,
+            start: startDate,
+            end: endDate,
+            days: daysVal,
+            reason: reasonStr,
+            status: 'Approved',
+            projectsAffected: impact.projectsAffected,
+            jirasAffected: impact.jirasAffected,
+            milestonesAffected: impact.milestonesAffected,
+            resourceShortage: impact.resourceShortage,
+            riskIncrease: impact.riskIncrease
+          };
+
+          this.leaves.unshift(newLeave);
+          importedCount++;
+        }
+      });
+
+      if (importedCount > 0) {
+        this.saveLeaves();
+        this.recalculateAndRender();
+        this.app.showToast(`Successfully imported ${importedCount} leave records!`, 'success');
+      } else {
+        this.app.showToast('No valid leave records found in Excel file. Check column headers.', 'warning');
+      }
+    });
   },
 
   /**

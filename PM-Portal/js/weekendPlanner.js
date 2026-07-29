@@ -3,6 +3,7 @@
 import { Storage } from './storage.js';
 import { Calculations } from './calculations.js';
 import { Filters } from './filters.js';
+import { Excel } from './excel.js';
 
 export const WeekendPlannerModule = {
   app: null,
@@ -197,6 +198,117 @@ export const WeekendPlannerModule = {
         }
       });
     }
+
+    // Excel Template, Import & Export event handlers
+    const templateBtn = document.getElementById('weekend-btn-template');
+    if (templateBtn) {
+      templateBtn.addEventListener('click', () => this.downloadTemplate());
+    }
+
+    const exportBtn = document.getElementById('weekend-btn-export');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', () => this.exportToExcel());
+    }
+
+    const importBtn = document.getElementById('weekend-btn-import');
+    const fileInput = document.getElementById('weekend-file-input');
+    if (importBtn && fileInput) {
+      importBtn.addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          this.importFromExcel(e.target.files[0]);
+          fileInput.value = '';
+        }
+      });
+    }
+  },
+
+  /**
+   * Download Excel template for Weekend Delivery Planner
+   */
+  downloadTemplate() {
+    const headers = ['Weekend Date', 'Employee Name', 'Project ID', 'Task Description', 'Planned Hours', 'Approval Status'];
+    const sampleRow = ['2026-08-01', 'Bob Johnson', 'PRJ001', 'Hotfix for core database replication sync and buffer optimization', 8, 'Approved'];
+    Excel.downloadCustomTemplate(headers, sampleRow, 'Weekend_Planner_Template', 'weekend_planner_template');
+    this.app.showToast('Downloaded Weekend Planner Excel Template', 'info');
+  },
+
+  /**
+   * Export weekend support records to Excel
+   */
+  exportToExcel() {
+    if (!this.weekendLogs || this.weekendLogs.length === 0) {
+      this.app.showToast('No weekend support entries to export', 'warning');
+      return;
+    }
+
+    const headers = ['Entry ID', 'Weekend Date', 'Employee Name', 'Project ID', 'Task Description', 'Planned Hours', 'Approval Status'];
+    const keys = ['id', 'date', 'employee', 'project', 'task', 'hours', 'status'];
+
+    const success = Excel.exportCustomToExcel(headers, this.weekendLogs, keys, 'Weekend_Roster', 'weekend_planner_export');
+    if (success) {
+      this.app.showToast(`Exported ${this.weekendLogs.length} weekend plan entries to Excel`, 'success');
+    } else {
+      this.app.showToast('Failed to export weekend plans', 'danger');
+    }
+  },
+
+  /**
+   * Import weekend support plans from Excel
+   */
+  importFromExcel(file) {
+    Excel.parseCustomExcelFile(file, (rows, err) => {
+      if (err || !rows) {
+        this.app.showToast(`Import Error: ${err || 'Invalid file format'}`, 'danger');
+        return;
+      }
+
+      let importedCount = 0;
+      rows.forEach(r => {
+        const getVal = (possibleKeys) => {
+          for (let k of possibleKeys) {
+            const found = Object.keys(r).find(key => key.trim().toLowerCase() === k.trim().toLowerCase());
+            if (found && r[found] !== undefined) return r[found];
+          }
+          return '';
+        };
+
+        const wkDate = getVal(['Weekend Date', 'date', 'Date']) || '2026-08-01';
+        const empName = getVal(['Employee Name', 'employee', 'Employee', 'Name']);
+        const projId = getVal(['Project ID', 'project', 'Project', 'projectId']);
+        const taskDesc = getVal(['Task Description', 'task', 'Task', 'Description']) || 'Imported Weekend Support';
+        const hrsVal = parseInt(getVal(['Planned Hours', 'hours', 'Hours']), 10) || 8;
+        const appStatus = getVal(['Approval Status', 'status', 'Status']) || 'Approved';
+
+        if (empName && projId && hrsVal > 0) {
+          const proj = this.projects.find(p => p.id === projId || p.name === projId);
+          const actualProjId = proj ? proj.id : projId;
+
+          const newEntry = {
+            id: `WK-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 1000)}`,
+            date: wkDate,
+            employee: empName,
+            project: actualProjId,
+            hours: hrsVal,
+            task: taskDesc,
+            status: appStatus
+          };
+
+          this.weekendLogs.unshift(newEntry);
+          importedCount++;
+        }
+      });
+
+      if (importedCount > 0) {
+        Storage.set('weekend_logs', this.weekendLogs);
+        this.app.weekendLogsList = this.weekendLogs;
+        this.recalculateAndRender();
+        this.triggerLiveImpactAnalysis();
+        this.app.showToast(`Successfully imported ${importedCount} weekend plan records!`, 'success');
+      } else {
+        this.app.showToast('No valid weekend plan entries found in Excel file. Check column headers.', 'warning');
+      }
+    });
   },
 
   /**

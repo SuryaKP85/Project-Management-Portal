@@ -1422,10 +1422,23 @@ export const ResourcePlannerModule = {
         </div>
 
         <div class="col-md-6">
+          <label class="form-label font-semibold">Work Category *</label>
+          <select class="form-select select-enterprise w-100" id="alloc-work-category">
+            <option value="New Features / Projects" ${targetAlloc && targetAlloc.workCategory === 'New Features / Projects' ? 'selected' : ''}>New Features / Projects</option>
+            <option value="Production Support" ${targetAlloc && targetAlloc.workCategory === 'Production Support' ? 'selected' : ''}>Production Support</option>
+            <option value="Bugs" ${targetAlloc && targetAlloc.workCategory === 'Bugs' ? 'selected' : ''}>Bugs</option>
+            <option value="Maintenance" ${targetAlloc && targetAlloc.workCategory === 'Maintenance' ? 'selected' : ''}>Maintenance</option>
+            <option value="Meetings" ${targetAlloc && targetAlloc.workCategory === 'Meetings' ? 'selected' : ''}>Meetings</option>
+            <option value="Training" ${targetAlloc && targetAlloc.workCategory === 'Training' ? 'selected' : ''}>Training</option>
+            <option value="Internal Activities" ${targetAlloc && targetAlloc.workCategory === 'Internal Activities' ? 'selected' : ''}>Internal Activities</option>
+          </select>
+        </div>
+
+        <div class="col-md-6">
           <label class="form-label font-semibold">Standard Weekly Allocation (Hours)</label>
           <input type="number" class="form-control select-enterprise w-100" id="alloc-hours-week" min="1" max="80"
                  value="${targetAlloc ? targetAlloc.hoursPerWeek : '40'}" placeholder="E.g. 40" required />
-          <div class="text-muted text-xs mt-1">Standard full-time is 40h/week.</div>
+          <div class="text-muted text-xs mt-1">Standard capacity is 8h/day (40h/week).</div>
         </div>
 
         <div class="col-md-6">
@@ -1473,6 +1486,7 @@ export const ResourcePlannerModule = {
       const role = overlay.querySelector('#alloc-role').value;
       const start = overlay.querySelector('#alloc-start').value;
       const end = overlay.querySelector('#alloc-end').value;
+      const workCategory = overlay.querySelector('#alloc-work-category')?.value || 'New Features / Projects';
       const weeklyHours = parseInt(overlay.querySelector('#alloc-hours-week').value, 10);
       const weekendHours = parseInt(overlay.querySelector('#alloc-hours-weekend').value, 10) || 0;
       const notes = overlay.querySelector('#alloc-notes').value;
@@ -1501,6 +1515,7 @@ export const ResourcePlannerModule = {
             role,
             startDate: start,
             endDate: end,
+            workCategory,
             hoursPerWeek: weeklyHours,
             weekendHours,
             notes
@@ -1518,6 +1533,7 @@ export const ResourcePlannerModule = {
           role,
           startDate: start,
           endDate: end,
+          workCategory,
           hoursPerWeek: weeklyHours,
           weekendHours,
           notes

@@ -54,6 +54,31 @@ export const Calculations = {
   },
 
   /**
+   * Calculates resource capacity and utilization metrics based on standard daily (8h) or weekly (40h) capacity
+   * @param {number} totalAllocatedHours 
+   * @param {number} standardCapacity - 8 for daily, 40 for weekly
+   */
+  calculateCapacityMetrics(totalAllocatedHours = 0, standardCapacity = 8) {
+    const allocated = Number(totalAllocatedHours) || 0;
+    const capacity = Number(standardCapacity) || 8;
+    const remaining = Math.max(0, capacity - allocated);
+    const utilization = capacity > 0 ? Math.round((allocated / capacity) * 100) : 0;
+    const overAllocation = allocated > capacity ? (allocated - capacity) : 0;
+    const underUtilization = allocated < capacity ? (capacity - allocated) : 0;
+
+    return {
+      allocated,
+      capacity,
+      remaining,
+      utilization,
+      overAllocation,
+      underUtilization,
+      isOverAllocated: allocated > capacity,
+      isUnderUtilized: allocated < capacity
+    };
+  },
+
+  /**
    * Sums a field inside an array of objects
    * @param {Array<object>} items 
    * @param {string} key 

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login - Enterprise Project Management Portal</title>
+  
+  <!-- Bootstrap 5 CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+  
+  <!-- Font Awesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  
+  <!-- Custom Stylesheets -->
+  <link rel="stylesheet" href="css/styles.css" />
+  
+  <style>
+    body {
+      background-color: var(--bg-main, #f8fafc);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    }
+    .login-card {
+      background-color: var(--bg-card, #ffffff);
+      border: 1px solid var(--border-color, #e2e8f0);
+      border-radius: 16px;
+      padding: 40px;
+      max-width: 440px;
+      width: 100%;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="login-card">
+    <div class="text-center mb-4">
+      <div class="d-inline-flex align-items-center justify-content-center p-3 rounded-circle bg-primary-subtle text-primary mb-3" style="width: 60px; height: 60px;">
+        <i class="fa-solid fa-chart-diagram fa-2x"></i>
+      </div>
+      <h2 class="font-bold text-primary mb-1" style="font-size: 1.5rem;">PM Portal Login</h2>
+      <p class="text-muted" style="font-size: 0.875rem;">Enterprise Project Management & Governance</p>
+    </div>
+
+    <!-- Alert Box for Error Messages -->
+    <div id="login-alert" class="alert alert-danger d-none py-2 px-3 font-semibold mb-3" style="font-size: 0.85rem;"></div>
+
+    <form id="login-form">
+      <div class="mb-3">
+        <label for="login-email" class="form-label font-semibold">User Email Address</label>
+        <div class="input-group">
+          <span class="input-group-text bg-light border-end-0 text-muted"><i class="fa-solid fa-envelope"></i></span>
+          <input type="email" id="login-email" class="form-control select-enterprise border-start-0" placeholder="admin@company.com" required />
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <label for="login-password" class="form-label font-semibold m-0">Password</label>
+          <a href="forgot-password.html" class="text-primary text-decoration-none font-semibold" style="font-size: 0.8rem;">Forgot Password?</a>
+        </div>
+        <div class="input-group">
+          <span class="input-group-text bg-light border-end-0 text-muted"><i class="fa-solid fa-lock"></i></span>
+          <input type="password" id="login-password" class="form-control select-enterprise border-start-0" placeholder="••••••••" required />
+          <button class="btn btn-outline-secondary" type="button" id="toggle-password-btn"><i class="fa-solid fa-eye"></i></button>
+        </div>
+      </div>
+
+      <div class="form-check mb-4">
+        <input class="form-check-input" type="checkbox" id="login-remember" />
+        <label class="form-check-label font-semibold text-secondary" for="login-remember" style="font-size: 0.85rem;">Remember my email</label>
+      </div>
+
+      <button type="submit" class="btn-enterprise btn-enterprise-primary w-100 py-2.5 font-bold mb-3 d-flex justify-content-center align-items-center gap-2">
+        <i class="fa-solid fa-right-to-bracket"></i> Sign In to Portal
+      </button>
+    </form>
+
+    <div class="p-3 bg-light rounded border mt-3" style="font-size: 0.775rem;">
+      <div class="font-bold text-dark mb-1"><i class="fa-solid fa-shield-halved text-primary me-1"></i> Default Admin Credentials:</div>
+      <div class="d-flex justify-content-between text-muted">
+        <span>Email: <strong>admin@company.com</strong></span>
+        <span>Pass: <strong>Admin@123</strong></span>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { Authentication } from './js/authentication.js';
+
+    document.addEventListener('DOMContentLoaded', () => {
+      Authentication.init();
+
+      // Auto-fill remembered email if present
+      const remembered = localStorage.getItem('pm_portal_remembered_email');
+      if (remembered) {
+        document.getElementById('login-email').value = remembered;
+        document.getElementById('login-remember').checked = true;
+      } else {
+        document.getElementById('login-email').value = 'admin@company.com';
+        document.getElementById('login-password').value = 'Admin@123';
+      }
+
+      // Toggle password visibility
+      const toggleBtn = document.getElementById('toggle-password-btn');
+      const passInp = document.getElementById('login-password');
+      if (toggleBtn && passInp) {
+        toggleBtn.addEventListener('click', () => {
+          const type = passInp.getAttribute('type') === 'password' ? 'text' : 'password';
+          passInp.setAttribute('type', type);
+          toggleBtn.innerHTML = type === 'password' ? '<i class="fa-solid fa-eye"></i>' : '<i class="fa-solid fa-eye-slash"></i>';
+        });
+      }
+
+      // Handle Form Submission
+      const form = document.getElementById('login-form');
+      const alertBox = document.getElementById('login-alert');
+
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        alertBox.classList.add('d-none');
+
+        const email = document.getElementById('login-email').value;
+        const password = document.getElementById('login-password').value;
+        const remember = document.getElementById('login-remember').checked;
+
+        const result = Authentication.login(email, password, remember);
+
+        if (!result.success) {
+          alertBox.textContent = result.message;
+          alertBox.classList.remove('d-none');
+          return;
+        }
+
+        if (result.mustChangePassword) {
+          window.location.href = 'change-password.html';
+        } else {
+          window.location.href = 'index.html';
+        }
+      });
+    });
+  </script>
+</body>
+</html>

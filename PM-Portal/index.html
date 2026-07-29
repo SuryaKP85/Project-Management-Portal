@@ -955,11 +955,14 @@
 
       <!-- 3. CUSTOMERS PAGE -->
       <section id="page-customers" class="page-container">
-        <div class="page-header">
+        <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-3">
           <div>
             <h1 class="page-title">Customers Directory</h1>
             <p class="page-description">Maintain client contacts, contracts, and active project counts</p>
           </div>
+          <button id="btn-add-customer" class="btn-enterprise btn-enterprise-primary d-flex align-items-center gap-2">
+            <i class="fa-solid fa-plus"></i> Add Customer
+          </button>
         </div>
 
         <!-- Customers List Directory View -->
@@ -968,7 +971,7 @@
           <div class="table-panel-header">
             <div class="search-bar">
               <i class="fa-solid fa-magnifying-glass"></i>
-              <input type="text" id="customer-search-input" placeholder="Search customer, industry..." />
+              <input type="text" id="customer-search-input" placeholder="Search customer name, contact, email, industry..." />
             </div>
             <div class="table-panel-actions">
               <span style="font-size: 0.85rem; font-weight: 500; color: var(--text-secondary);">Contract:</span>
@@ -985,11 +988,12 @@
             <table class="table-enterprise">
               <thead>
                 <tr>
-                  <th style="width: 140px;">Customer Code</th>
+                  <th style="width: 130px;">Customer Code</th>
                   <th>Company Name</th>
                   <th>Industry Sector</th>
                   <th>Primary Executive Contact</th>
-                  <th style="width: 140px;">Contract Status</th>
+                  <th style="width: 130px;">Contract Status</th>
+                  <th class="text-center" style="width: 160px;">Actions</th>
                 </tr>
               </thead>
               <tbody id="customers-table-body">
@@ -1354,11 +1358,21 @@
             <h1 class="page-title" style="font-size: 1.75rem; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">Daily Time Logging</h1>
             <p class="page-description" style="font-size: 0.9rem; color: var(--text-secondary); margin: 0;">Log daily employee effort, track project-department capacities, and monitor overruns in real-time</p>
           </div>
-          <div class="d-flex gap-2">
-            <button id="tl-btn-load-sample" class="btn-enterprise btn-enterprise-secondary d-flex align-items-center gap-2" style="font-size: 0.85rem; padding: 8px 16px;">
-              <i class="fa-solid fa-cloud-arrow-down text-info"></i> Load Sample Logs
+          <div class="d-flex gap-2 flex-wrap">
+            <button id="tl-btn-template" class="btn-enterprise btn-enterprise-secondary d-flex align-items-center gap-2" style="font-size: 0.85rem; padding: 8px 14px;" title="Download Blank Template">
+              <i class="fa-solid fa-file-excel text-success"></i> Download Template
             </button>
-            <button id="tl-btn-reset" class="btn-enterprise btn-enterprise-danger btn-sm d-flex align-items-center gap-2" style="background-color: var(--brand-danger); border-color: var(--brand-danger); color: white; font-size: 0.85rem; padding: 8px 16px;">
+            <input type="file" id="tl-file-input" accept=".xlsx, .xls, .csv" class="d-none" />
+            <button id="tl-btn-import" class="btn-enterprise btn-enterprise-secondary d-flex align-items-center gap-2" style="font-size: 0.85rem; padding: 8px 14px;" title="Import Logged Hours Excel">
+              <i class="fa-solid fa-file-import text-primary"></i> Import Excel
+            </button>
+            <button id="tl-btn-export" class="btn-enterprise btn-enterprise-secondary d-flex align-items-center gap-2" style="font-size: 0.85rem; padding: 8px 14px;" title="Export Ledger to Excel">
+              <i class="fa-solid fa-file-export text-info"></i> Export Excel
+            </button>
+            <button id="tl-btn-load-sample" class="btn-enterprise btn-enterprise-secondary d-flex align-items-center gap-2" style="font-size: 0.85rem; padding: 8px 14px;">
+              <i class="fa-solid fa-cloud-arrow-down text-info"></i> Sample Logs
+            </button>
+            <button id="tl-btn-reset" class="btn-enterprise btn-enterprise-danger btn-sm d-flex align-items-center gap-2" style="background-color: var(--brand-danger); border-color: var(--brand-danger); color: white; font-size: 0.85rem; padding: 8px 14px;">
               <i class="fa-solid fa-trash"></i> Reset Data
             </button>
           </div>
@@ -1745,9 +1759,19 @@
             <h1 class="page-title">Time Off & Leave Tracker</h1>
             <p class="page-description">Manage team absence plans, evaluate real-time capability risk, and coordinate delivery windows</p>
           </div>
-          <div class="d-flex align-items-center gap-2">
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <button id="leave-btn-template" class="btn-enterprise btn-enterprise-secondary d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px;" title="Download Blank Template">
+              <i class="fa-solid fa-file-excel text-success"></i> Download Template
+            </button>
+            <input type="file" id="leave-file-input" accept=".xlsx, .xls, .csv" class="d-none" />
+            <button id="leave-btn-import" class="btn-enterprise btn-enterprise-secondary d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px;" title="Import Leave Requests Excel">
+              <i class="fa-solid fa-file-import text-primary"></i> Import Excel
+            </button>
+            <button id="leave-btn-export" class="btn-enterprise btn-enterprise-secondary d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px;" title="Export Leaves to Excel">
+              <i class="fa-solid fa-file-export text-info"></i> Export Excel
+            </button>
             <button id="leave-btn-load-sample" class="btn-enterprise btn-enterprise-secondary d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px;">
-              <i class="fa-solid fa-wand-magic-sparkles text-primary"></i> Pre-populate Demo Logs
+              <i class="fa-solid fa-wand-magic-sparkles text-primary"></i> Demo Logs
             </button>
             <button id="leave-btn-reset" class="btn-enterprise btn-enterprise-secondary text-danger d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px; border-color: rgba(239, 68, 68, 0.2);">
               <i class="fa-solid fa-trash-can"></i> Clear Database
@@ -2007,9 +2031,19 @@
             <h1 class="page-title">Weekend Delivery Planner</h1>
             <p class="page-description">Coordinate and schedule off-business hour code release windows and standby support matrices</p>
           </div>
-          <div class="d-flex align-items-center gap-2">
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <button id="weekend-btn-template" class="btn-enterprise btn-enterprise-secondary d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px;" title="Download Blank Template">
+              <i class="fa-solid fa-file-excel text-success"></i> Download Template
+            </button>
+            <input type="file" id="weekend-file-input" accept=".xlsx, .xls, .csv" class="d-none" />
+            <button id="weekend-btn-import" class="btn-enterprise btn-enterprise-secondary d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px;" title="Import Weekend Schedule Excel">
+              <i class="fa-solid fa-file-import text-primary"></i> Import Excel
+            </button>
+            <button id="weekend-btn-export" class="btn-enterprise btn-enterprise-secondary d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px;" title="Export Roster to Excel">
+              <i class="fa-solid fa-file-export text-info"></i> Export Excel
+            </button>
             <button id="weekend-btn-load-sample" class="btn-enterprise btn-enterprise-secondary d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px;">
-              <i class="fa-solid fa-wand-magic-sparkles text-primary"></i> Load Sample Roster
+              <i class="fa-solid fa-wand-magic-sparkles text-primary"></i> Sample Roster
             </button>
             <button id="weekend-btn-reset" class="btn-enterprise btn-enterprise-secondary text-danger d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px; border-color: rgba(239, 68, 68, 0.2);">
               <i class="fa-solid fa-trash-can"></i> Clear Ledger

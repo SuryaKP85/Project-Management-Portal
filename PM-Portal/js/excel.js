@@ -356,6 +356,115 @@ export const Excel = {
   },
 
   /**
+   * Generic exporter for custom data structures with headers and key mappings
+   */
+  exportCustomToExcel(headers, data, keys, sheetName = "Export_Data", filename = "export_report") {
+    if (!this.checkLib()) return false;
+
+    try {
+      const XLSX = window.XLSX;
+      const dataAOA = [headers];
+
+      if (Array.isArray(data) && data.length > 0) {
+        data.forEach(item => {
+          dataAOA.push(keys.map(k => item[k] !== undefined ? item[k] : ""));
+        });
+      }
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(dataAOA);
+
+      // Auto-fit column widths
+      const colWidths = headers.map((h, i) => {
+        let maxLen = h.toString().length;
+        dataAOA.forEach(row => {
+          const cellVal = row[i] ? row[i].toString() : "";
+          if (cellVal.length > maxLen) maxLen = Math.min(cellVal.length, 50);
+        });
+        return { wch: maxLen + 3 };
+      });
+      ws['!cols'] = colWidths;
+
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      const safeFilename = filename.toLowerCase().replace(/[^a-z0-9]/gi, '_') + '.xlsx';
+      XLSX.writeFile(wb, safeFilename);
+      return true;
+    } catch (e) {
+      console.error("Custom Excel export failed:", e);
+      return false;
+    }
+  },
+
+  /**
+   * Generic downloadable template generator
+   */
+  downloadCustomTemplate(headers, sampleRow = null, sheetName = "Template", filename = "template") {
+    if (!this.checkLib()) return false;
+
+    try {
+      const XLSX = window.XLSX;
+      const dataAOA = [headers];
+      if (sampleRow && Array.isArray(sampleRow)) {
+        dataAOA.push(sampleRow);
+      }
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(dataAOA);
+
+      ws['!cols'] = headers.map(h => ({ wch: Math.max(h.length + 5, 15) }));
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+      const safeFilename = filename.toLowerCase().replace(/[^a-z0-9]/gi, '_') + '.xlsx';
+      XLSX.writeFile(wb, safeFilename);
+      return true;
+    } catch (e) {
+      console.error("Template download failed:", e);
+      return false;
+    }
+  },
+
+  /**
+   * Generic parser for custom Excel/CSV files
+   */
+  parseCustomExcelFile(file, callback) {
+    if (!this.checkLib()) {
+      callback(null, "SheetJS library not ready.");
+      return;
+    }
+
+    try {
+      const XLSX = window.XLSX;
+      const reader = new FileReader();
+
+      reader.onload = (e) => {
+        try {
+          const data = e.target.result;
+          const workbook = XLSX.read(data, { type: "binary" });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const rows = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+
+          if (!rows || rows.length === 0) {
+            callback(null, "Spreadsheet is empty.");
+            return;
+          }
+
+          callback(rows, null);
+        } catch (err) {
+          console.error("Parsing spreadsheet failed:", err);
+          callback(null, "Parsing failed. Ensure valid Excel workbook format.");
+        }
+      };
+
+      reader.onerror = () => callback(null, "FileReader failed to load file.");
+      reader.readAsBinaryString(file);
+    } catch (e) {
+      console.error("Custom Excel processor failed:", e);
+      callback(null, "File processing error.");
+    }
+  },
+
+  /**
    * Parses an excel / csv file using SheetJS and passes rows to the callback
    */
   parseExcelFile(file, callback) {
