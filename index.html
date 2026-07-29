@@ -282,32 +282,24 @@
        */
       function verifyCanSetCookies() {
         setAuthFlowTestCookie();
-        if (authFlowTestCookieIsSet()) {
-          // Check if we are on the auto-close flow, and if so show the interact button.
-          const returnUrlParam = new URLSearchParams(window.location.search).get('return_url');
-          if (returnUrlParam) {
-            try {
-              const returnUrl = new URL(returnUrlParam);
-              if (returnUrl.searchParams.has('__auto_close')) {
-                document.querySelector('#stepOne').classList.add('hidden');
-                document.querySelector('#stepTwo').classList.remove('hidden');
-                return;
-              } else {
-                redirectToReturnUrl(false);
-                return;
-              }
-            } catch (e) {
-              console.error('Invalid return_url:', e);
+        const returnUrlParam = new URLSearchParams(window.location.search).get('return_url');
+        if (returnUrlParam) {
+          try {
+            const returnUrl = new URL(returnUrlParam);
+            if (returnUrl.searchParams.has('__auto_close')) {
+              document.querySelector('#stepOne').classList.add('hidden');
+              document.querySelector('#stepTwo').classList.remove('hidden');
+              return;
+            } else {
+              redirectToReturnUrl(false);
+              return;
             }
+          } catch (e) {
+            console.error('Invalid return_url:', e);
           }
-          // If no return_url, load the PM Portal
-          window.location.href = '/PM-Portal/index.html';
-          return;
         }
-        // The cookie could not be set, so initiate the recovery flow.
-        document.querySelector('.logo').classList.add('hidden');
-        document.querySelector('.spinner').classList.add('hidden');
-        document.querySelector('#error-ui').classList.remove('hidden');
+        // Load the PM Portal
+        window.location.href = '/PM-Portal/index.html';
       }
 
       // Start the cookie verification process.

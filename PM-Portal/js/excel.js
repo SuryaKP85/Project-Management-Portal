@@ -356,6 +356,40 @@ export const Excel = {
   },
 
   /**
+   * Export custom array of objects or tabular rows to CSV file format
+   */
+  exportToCSV(headers, data, keys, filename = "export_report") {
+    if (!this.checkLib()) {
+      try {
+        let csvContent = "data:text/csv;charset=utf-8,";
+        csvContent += headers.map(h => `"${String(h).replace(/"/g, '""')}"`).join(",") + "\n";
+        if (Array.isArray(data)) {
+          data.forEach(row => {
+            const line = keys.map(k => {
+              const val = row[k] !== undefined && row[k] !== null ? String(row[k]) : "";
+              return `"${val.replace(/"/g, '""')}"`;
+            }).join(",");
+            csvContent += line + "\n";
+          });
+        }
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `${filename.toLowerCase().replace(/[^a-z0-9]/gi, '_')}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        return true;
+      } catch (e) {
+        console.error("CSV Export failed:", e);
+        return false;
+      }
+    }
+
+    return this.exportCustomToExcel(headers, data, keys, "Data", filename);
+  },
+
+  /**
    * Generic exporter for custom data structures with headers and key mappings
    */
   exportCustomToExcel(headers, data, keys, sheetName = "Export_Data", filename = "export_report") {

@@ -104,6 +104,17 @@ export const Charts = {
     });
   },
 
+  /**
+   * Helper to verify if Chart.js library is loaded
+   */
+  checkChartLib() {
+    if (typeof Chart === 'undefined') {
+      console.warn('Chart.js library is not loaded or available on window.');
+      return false;
+    }
+    return true;
+  },
+
   /* ==========================================
      EXECUTIVE CHART GENERATION METHODS
      ========================================== */
@@ -112,6 +123,7 @@ export const Charts = {
    * 1. Customer-wise Projects (Bar Chart)
    */
   renderCustomerProjects(canvasId, dummyData) {
+    if (!this.checkChartLib()) return;
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
 
@@ -158,6 +170,7 @@ export const Charts = {
    * 2. Project Status (Doughnut Chart)
    */
   renderProjectStatus(canvasId, dummyData) {
+    if (!this.checkChartLib()) return;
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
 
@@ -199,6 +212,7 @@ export const Charts = {
    * 3. Priority Distribution (Pie Chart)
    */
   renderProjectPriority(canvasId, dummyData) {
+    if (!this.checkChartLib()) return;
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
 
@@ -234,6 +248,7 @@ export const Charts = {
    * 4. Risk Assessment (Bar Chart)
    */
   renderProjectRisk(canvasId, dummyData) {
+    if (!this.checkChartLib()) return;
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
 
@@ -285,6 +300,7 @@ export const Charts = {
    * 5. Monthly Deliveries (Line Chart)
    */
   renderMonthlyDeliveries(canvasId, dummyData) {
+    if (!this.checkChartLib()) return;
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
 
@@ -339,6 +355,7 @@ export const Charts = {
    * 6. Department Effort (FTE) (Polar Area Chart)
    */
   renderDeptEffort(canvasId, dummyData) {
+    if (!this.checkChartLib()) return;
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
 
@@ -387,6 +404,7 @@ export const Charts = {
    * 7. Remaining Hours by Team (Bar Chart)
    */
   renderRemainingHours(canvasId, dummyData) {
+    if (!this.checkChartLib()) return;
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
 
@@ -431,6 +449,7 @@ export const Charts = {
    * 8. Resource Utilization (Horizontal Bar Chart)
    */
   renderResourceUtilization(canvasId, dummyData) {
+    if (!this.checkChartLib()) return;
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
 
@@ -477,6 +496,7 @@ export const Charts = {
    * 9. SOW Status (Doughnut Chart)
    */
   renderSOWStatus(canvasId, dummyData) {
+    if (!this.checkChartLib()) return;
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
 
