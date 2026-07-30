@@ -379,12 +379,20 @@ export const ExcelEngineModule = {
    * Opens an interactive multi-column wizard form to create custom spreadsheet records
    */
   openCreateRowModal() {
+    const registeredCusts = (Storage.getCustomers() || []).map(c => c.name).filter(Boolean);
+    const existingCusts = (this.currentData || []).map(r => r['Customer']).filter(Boolean);
+    const allCustNames = [...new Set([...registeredCusts, ...existingCusts])].sort();
+    const custOptions = allCustNames.map(c => `<option value="${c}">`).join('');
+
     const bodyHtml = `
       <form id="create-excel-row-form" class="row g-3" style="max-height: 480px; overflow-y: auto; padding: 4px;">
         <h6 class="text-primary font-semibold border-bottom pb-1 mb-2 col-12">Portfolio Identity & Coordinates</h6>
         <div class="col-md-6">
           <label class="form-label font-semibold">Customer / Client</label>
-          <input type="text" class="form-control select-enterprise w-100" id="xr-customer" placeholder="E.g. AeroSpace Inc." required />
+          <input type="text" class="form-control select-enterprise w-100" id="xr-customer" list="xr-customer-datalist" placeholder="E.g. AeroSpace Inc." required />
+          <datalist id="xr-customer-datalist">
+            ${custOptions}
+          </datalist>
         </div>
         <div class="col-md-6">
           <label class="form-label font-semibold">Project Title</label>
@@ -517,26 +525,26 @@ export const ExcelEngineModule = {
       // Fill in entered values
       newRow["Customer"] = customer;
       newRow["Project"] = project;
-      newRow["Module"] = overlay.querySelector('#xr-module').value;
-      newRow["Feature"] = overlay.querySelector('#xr-feature').value;
-      newRow["HD#"] = overlay.querySelector('#xr-hd').value;
-      newRow["JIRA#"] = overlay.querySelector('#xr-jira').value;
-      newRow["Sprint"] = overlay.querySelector('#xr-sprint').value;
+      newRow["Module"] = overlay.querySelector('#xr-module')?.value || '';
+      newRow["Feature"] = overlay.querySelector('#xr-feature')?.value || '';
+      newRow["HD#"] = overlay.querySelector('#xr-hd')?.value || '';
+      newRow["JIRA#"] = overlay.querySelector('#xr-jira')?.value || '';
+      newRow["Sprint"] = overlay.querySelector('#xr-sprint')?.value || '';
       
-      newRow["PM"] = overlay.querySelector('#xr-pm').value;
-      newRow["BA"] = overlay.querySelector('#xr-ba').value;
-      newRow["Developer"] = overlay.querySelector('#xr-developer').value;
-      newRow["QA"] = overlay.querySelector('#xr-qa').value;
+      newRow["PM"] = overlay.querySelector('#xr-pm')?.value || '';
+      newRow["BA"] = overlay.querySelector('#xr-ba')?.value || '';
+      newRow["Developer"] = overlay.querySelector('#xr-developer')?.value || '';
+      newRow["QA"] = overlay.querySelector('#xr-qa')?.value || '';
       
-      newRow["Estimated Start"] = overlay.querySelector('#xr-est-start').value;
-      newRow["Estimated End"] = overlay.querySelector('#xr-est-end').value;
-      newRow["Status"] = overlay.querySelector('#xr-status').value;
-      newRow["Completion %"] = overlay.querySelector('#xr-completion').value;
+      newRow["Estimated Start"] = overlay.querySelector('#xr-est-start')?.value || '';
+      newRow["Estimated End"] = overlay.querySelector('#xr-est-end')?.value || '';
+      newRow["Status"] = overlay.querySelector('#xr-status')?.value || 'Active';
+      newRow["Completion %"] = overlay.querySelector('#xr-completion')?.value || '0';
       
       // Developers hours allocation
-      const devEst = parseFloat(overlay.querySelector('#xr-dev-est').value) || 0;
-      const devAct = parseFloat(overlay.querySelector('#xr-dev-act').value) || 0;
-      const devRem = parseFloat(overlay.querySelector('#xr-dev-rem').value) || 0;
+      const devEst = parseFloat(overlay.querySelector('#xr-dev-est')?.value || '0') || 0;
+      const devAct = parseFloat(overlay.querySelector('#xr-dev-act')?.value || '0') || 0;
+      const devRem = parseFloat(overlay.querySelector('#xr-dev-rem')?.value || '0') || 0;
       
       newRow["DEV Estimated"] = devEst;
       newRow["DEV Actual"] = devAct;
@@ -555,10 +563,10 @@ export const ExcelEngineModule = {
       newRow["Total Actual"] = newRow["DEV Actual"] + newRow["BA Actual"] + newRow["QA Actual"];
       newRow["Total Remaining"] = newRow["DEV Remaining"] + newRow["BA Remaining"] + newRow["QA Remaining"];
       
-      newRow["SOW"] = overlay.querySelector('#xr-sow').value;
-      newRow["Risk"] = overlay.querySelector('#xr-risk').value;
-      newRow["Weekend"] = overlay.querySelector('#xr-weekend').value;
-      newRow["Remarks"] = overlay.querySelector('#xr-remarks').value;
+      newRow["SOW"] = overlay.querySelector('#xr-sow')?.value || '';
+      newRow["Risk"] = overlay.querySelector('#xr-risk')?.value || 'Low';
+      newRow["Weekend"] = overlay.querySelector('#xr-weekend')?.value || 'No';
+      newRow["Remarks"] = overlay.querySelector('#xr-remarks')?.value || '';
       newRow["Milestone"] = "Initiated";
 
       // Insert at the top of the data list

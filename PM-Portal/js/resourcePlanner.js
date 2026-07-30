@@ -207,9 +207,12 @@ export const ResourcePlannerModule = {
         this.activeTab = btn.getAttribute('data-tab');
         
         // Show/hide view sub-containers
-        document.getElementById('planner-heatmap-container').style.display = this.activeTab === 'heatmap' ? 'block' : 'none';
-        document.getElementById('planner-calendar-container').style.display = this.activeTab === 'calendar' ? 'block' : 'none';
-        document.getElementById('planner-matrix-container').style.display = this.activeTab === 'matrix' ? 'block' : 'none';
+        const hContainer = document.getElementById('planner-heatmap-container');
+        if (hContainer) hContainer.style.display = this.activeTab === 'heatmap' ? 'block' : 'none';
+        const cContainer = document.getElementById('planner-calendar-container');
+        if (cContainer) cContainer.style.display = this.activeTab === 'calendar' ? 'block' : 'none';
+        const mContainer = document.getElementById('planner-matrix-container');
+        if (mContainer) mContainer.style.display = this.activeTab === 'matrix' ? 'block' : 'none';
         
         this.render();
       });
@@ -1309,11 +1312,11 @@ export const ResourcePlannerModule = {
         });
       }
 
-      const name = overlay.querySelector('#res-name').value.trim();
-      const dept = overlay.querySelector('#res-dept').value;
-      const role = overlay.querySelector('#res-role').value.trim();
-      const weeklyCap = parseInt(overlay.querySelector('#res-weekly-cap').value, 10) || 40;
-      const dailyCap = parseInt(overlay.querySelector('#res-daily-cap').value, 10) || 8;
+      const name = overlay.querySelector('#res-name')?.value?.trim() || '';
+      const dept = overlay.querySelector('#res-dept')?.value || 'Dev';
+      const role = overlay.querySelector('#res-role')?.value?.trim() || '';
+      const weeklyCap = parseInt(overlay.querySelector('#res-weekly-cap')?.value || '40', 10) || 40;
+      const dailyCap = parseInt(overlay.querySelector('#res-daily-cap')?.value || '8', 10) || 8;
 
       if (!name || !role) {
         this.app.showToast('Please enter full name and role designation', 'warning');
@@ -1481,15 +1484,15 @@ export const ResourcePlannerModule = {
         });
       }
 
-      const resId = overlay.querySelector('#alloc-resource-id').value;
-      const projId = overlay.querySelector('#alloc-project-id').value;
-      const role = overlay.querySelector('#alloc-role').value;
-      const start = overlay.querySelector('#alloc-start').value;
-      const end = overlay.querySelector('#alloc-end').value;
+      const resId = overlay.querySelector('#alloc-resource-id')?.value || '';
+      const projId = overlay.querySelector('#alloc-project-id')?.value || '';
+      const role = overlay.querySelector('#alloc-role')?.value || '';
+      const start = overlay.querySelector('#alloc-start')?.value || '';
+      const end = overlay.querySelector('#alloc-end')?.value || '';
       const workCategory = overlay.querySelector('#alloc-work-category')?.value || 'New Features / Projects';
-      const weeklyHours = parseInt(overlay.querySelector('#alloc-hours-week').value, 10);
-      const weekendHours = parseInt(overlay.querySelector('#alloc-hours-weekend').value, 10) || 0;
-      const notes = overlay.querySelector('#alloc-notes').value;
+      const weeklyHours = parseInt(overlay.querySelector('#alloc-hours-week')?.value || '0', 10);
+      const weekendHours = parseInt(overlay.querySelector('#alloc-hours-weekend')?.value || '0', 10) || 0;
+      const notes = overlay.querySelector('#alloc-notes')?.value || '';
 
       if (!resId || !projId || !role || !start || !end || isNaN(weeklyHours) || weeklyHours <= 0) {
         this.app.showToast('Please complete all required fields with positive hours values.', 'warning');

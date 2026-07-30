@@ -1,6 +1,7 @@
 /* projects.js - Interactive Projects Module for Enterprise registers, filtering, bulk actions, and autosaving details */
 
 import { Storage } from './storage.js';
+import { Authentication } from './authentication.js';
 import { Filters } from './filters.js';
 import { Excel } from './excel.js';
 
@@ -499,7 +500,14 @@ export const ProjectsModule = {
     };
 
     // Populate advanced search dropdowns dynamically
-    populateDropdown('filter-customer', fetchUnique('client'), 'All Customers');
+    let registeredCusts = Storage.getCustomers();
+    if (!registeredCusts || registeredCusts.length === 0) {
+      registeredCusts = this.app?.customersList || [];
+    }
+    const customerNamesFromList = registeredCusts.map(c => c.name).filter(Boolean);
+    const allCustomers = [...new Set([...customerNamesFromList, ...fetchUnique('client')])].sort();
+
+    populateDropdown('filter-customer', allCustomers, 'All Customers');
     populateDropdown('filter-project', fetchUnique('id'), 'All Project IDs');
     populateDropdown('filter-sprint', fetchUnique('sprint'), 'All Sprints');
     populateDropdown('filter-developer', fetchUnique('developer'), 'All Developers');
@@ -697,7 +705,6 @@ export const ProjectsModule = {
           </div>
         </td>
         <td class="clickable-project-cell" data-id="${p.id}"><span class="text-secondary-custom font-semibold">${p.manager}</span></td>
-        <td class="clickable-project-cell" data-id="${p.id}"><span class="badge bg-light text-dark text-uppercase border" style="font-size: 0.7rem;">${p.sprint || 'N/A'}</span></td>
         <td class="clickable-project-cell" data-id="${p.id}"><span class="badge ${riskClass}" style="font-size: 0.725rem; font-weight: 600; padding: 4px 8px;">${p.risk || 'Low'}</span></td>
         <td class="clickable-project-cell" data-id="${p.id}">
           <div class="d-flex align-items-center gap-2">
@@ -1023,7 +1030,8 @@ export const ProjectsModule = {
     document.getElementById('edit-ba').value = proj.ba || '';
     document.getElementById('edit-developer').value = proj.developer || '';
     document.getElementById('edit-qa').value = proj.qa || '';
-    document.getElementById('edit-sprint').value = proj.sprint || '';
+    const sprintEl = document.getElementById('edit-sprint');
+    if (sprintEl) sprintEl.value = proj.sprint || '';
     document.getElementById('edit-risk').value = proj.risk || 'Low';
     document.getElementById('edit-status').value = proj.status || 'planning';
     
@@ -1042,74 +1050,127 @@ export const ProjectsModule = {
   },
 
   /**
+   * Retrieves all registered team members across User Management (Authentication) and Resource Planner
+   */
+  getTeamMembersList() {
+    const map = new Map();
+
+    // 1. System Users registered in User Management
+    const users = Authentication.getUsers() || this.app?.usersList || [];
+    users.forEach(u => {
+      const fullName = (u.name || `${u.firstName || ''} ${u.lastName || ''}`).trim();
+      if (fullName) {
+        map.set(fullName, {
+          name: fullName,
+          role: u.role || 'Team Member',
+          dept: u.department || 'Dev'
+        });
+      }
+    });
+
+    // 2. Staffing Resources from Storage or app.resourcesList
+    let resources = Storage.getResources();
+    if (!resources || resources.length === 0) {
+      resources = this.app?.resourcesList || [];
+    }
+    resources.forEach(r => {
+      if (r.name && !map.has(r.name)) {
+        map.set(r.name, {
+          name: r.name,
+          role: r.role || 'Resource',
+          dept: r.dept || 'Dev'
+        });
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  },
+
+  /**
    * Populates form dropdown selectors with current unique entries
    */
   populateFormSelects(activeProj) {
-    const clients = [...new Set(this.projects.map(p => p.client))];
+    let registeredCusts = Storage.getCustomers();
+    if (!registeredCusts || registeredCusts.length === 0) {
+      registeredCusts = this.app?.customersList || [];
+    }
+    const customerNamesFromList = registeredCusts.map(c => c.name).filter(Boolean);
+    const customerNamesFromProjects = (this.projects || []).map(p => p.client).filter(Boolean);
+    const clients = [...new Set([...customerNamesFromList, ...customerNamesFromProjects])].sort();
+
     const clientSelect = document.getElementById('edit-client');
-    clientSelect.innerHTML = '';
-    clients.forEach(c => {
-      clientSelect.innerHTML += `<option value="${c}">${c}</option>`;
-    });
+    if (clientSelect) {
+      clientSelect.innerHTML = '';
+      clients.forEach(c => {
+        clientSelect.innerHTML += `<option value="${c}">${c}</option>`;
+      });
+      if (activeProj && activeProj.client) {
+        clientSelect.value = activeProj.client;
+      }
+    }
 
     const pmSelect = document.getElementById('edit-manager');
     const baSelect = document.getElementById('edit-ba');
     const devSelect = document.getElementById('edit-developer');
     const qaSelect = document.getElementById('edit-qa');
-    const sprintSelect = document.getElementById('edit-sprint');
     
-    // Extract staffing resources from app list
-    const resources = this.app.resourcesList || [];
+    // Extract staffing resources from User Management and Resource Planner
+    const allMembers = this.getTeamMembersList();
     
-    pmSelect.innerHTML = `<option value="">Select Manager...</option>`;
-    baSelect.innerHTML = `<option value="">Select BA...</option>`;
-    devSelect.innerHTML = `<option value="">Select Developer...</option>`;
-    qaSelect.innerHTML = `<option value="">Select QA...</option>`;
-    
-    resources.forEach(r => {
-      pmSelect.innerHTML += `<option value="${r.name}">${r.name} (${r.role})</option>`;
-      baSelect.innerHTML += `<option value="${r.name}">${r.name} (${r.role})</option>`;
-      devSelect.innerHTML += `<option value="${r.name}">${r.name} (${r.role})</option>`;
-      qaSelect.innerHTML += `<option value="${r.name}">${r.name} (${r.role})</option>`;
-    });
+    if (pmSelect) {
+      pmSelect.innerHTML = `<option value="">Select Manager...</option>`;
+      allMembers.forEach(m => {
+        pmSelect.innerHTML += `<option value="${m.name}">${m.name} (${m.role})</option>`;
+      });
+      const uniquePMs = [...new Set(this.projects.map(p => p.manager))];
+      uniquePMs.forEach(pm => {
+        if (pm && !allMembers.some(m => m.name === pm)) {
+          pmSelect.innerHTML += `<option value="${pm}">${pm}</option>`;
+        }
+      });
+      if (activeProj?.manager) pmSelect.value = activeProj.manager;
+    }
 
-    // Make sure managers who are not in resources list are also selectable (like John Doe or Sarah Connor)
-    const uniquePMs = [...new Set(this.projects.map(p => p.manager))];
-    uniquePMs.forEach(pm => {
-      if (pm && !resources.some(r => r.name === pm)) {
-        pmSelect.innerHTML += `<option value="${pm}">${pm}</option>`;
-      }
-    });
+    if (baSelect) {
+      baSelect.innerHTML = `<option value="">Select BA...</option>`;
+      allMembers.forEach(m => {
+        baSelect.innerHTML += `<option value="${m.name}">${m.name} (${m.role})</option>`;
+      });
+      const uniqueBAs = [...new Set(this.projects.map(p => p.ba))];
+      uniqueBAs.forEach(ba => {
+        if (ba && !allMembers.some(m => m.name === ba)) {
+          baSelect.innerHTML += `<option value="${ba}">${ba}</option>`;
+        }
+      });
+      if (activeProj?.ba) baSelect.value = activeProj.ba;
+    }
 
-    const uniqueBAs = [...new Set(this.projects.map(p => p.ba))];
-    uniqueBAs.forEach(ba => {
-      if (ba && !resources.some(r => r.name === ba)) {
-        baSelect.innerHTML += `<option value="${ba}">${ba}</option>`;
-      }
-    });
+    if (devSelect) {
+      devSelect.innerHTML = `<option value="">Select Developer...</option>`;
+      allMembers.forEach(m => {
+        devSelect.innerHTML += `<option value="${m.name}">${m.name} (${m.role})</option>`;
+      });
+      const uniqueDevs = [...new Set(this.projects.map(p => p.developer))];
+      uniqueDevs.forEach(dev => {
+        if (dev && !allMembers.some(m => m.name === dev)) {
+          devSelect.innerHTML += `<option value="${dev}">${dev}</option>`;
+        }
+      });
+      if (activeProj?.developer) devSelect.value = activeProj.developer;
+    }
 
-    const uniqueDevs = [...new Set(this.projects.map(p => p.developer))];
-    uniqueDevs.forEach(dev => {
-      if (dev && !resources.some(r => r.name === dev)) {
-        devSelect.innerHTML += `<option value="${dev}">${dev}</option>`;
-      }
-    });
-
-    const uniqueQAs = [...new Set(this.projects.map(p => p.qa))];
-    uniqueQAs.forEach(qa => {
-      if (qa && !resources.some(r => r.name === qa)) {
-        qaSelect.innerHTML += `<option value="${qa}">${qa}</option>`;
-      }
-    });
-
-    // Sprints
-    const sprints = [...new Set(this.projects.map(p => p.sprint))].filter(Boolean);
-    sprintSelect.innerHTML = '<option value="">No Active Sprint</option>';
-    sprints.forEach(s => {
-      sprintSelect.innerHTML += `<option value="${s}">${s}</option>`;
-    });
-    if (activeProj.sprint && !sprints.includes(activeProj.sprint)) {
-      sprintSelect.innerHTML += `<option value="${activeProj.sprint}">${activeProj.sprint}</option>`;
+    if (qaSelect) {
+      qaSelect.innerHTML = `<option value="">Select QA...</option>`;
+      allMembers.forEach(m => {
+        qaSelect.innerHTML += `<option value="${m.name}">${m.name} (${m.role})</option>`;
+      });
+      const uniqueQAs = [...new Set(this.projects.map(p => p.qa))];
+      uniqueQAs.forEach(qa => {
+        if (qa && !allMembers.some(m => m.name === qa)) {
+          qaSelect.innerHTML += `<option value="${qa}">${qa}</option>`;
+        }
+      });
+      if (activeProj?.qa) qaSelect.value = activeProj.qa;
     }
   },
 
@@ -1141,23 +1202,24 @@ export const ProjectsModule = {
    * Executes form validation & saving
    */
   executeAutosave() {
-    const id = document.getElementById('edit-id').value;
-    const name = document.getElementById('edit-name').value;
-    const client = document.getElementById('edit-client').value;
-    const budget = document.getElementById('edit-budget').value;
-    const remarks = document.getElementById('edit-remarks').value;
-    const estStart = document.getElementById('edit-est-start').value;
-    const estEnd = document.getElementById('edit-est-end').value;
-    const actStart = document.getElementById('edit-act-start').value;
-    const actEnd = document.getElementById('edit-act-end').value;
-    const pm = document.getElementById('edit-manager').value;
-    const ba = document.getElementById('edit-ba').value;
-    const dev = document.getElementById('edit-developer').value;
-    const qa = document.getElementById('edit-qa').value;
-    const sprint = document.getElementById('edit-sprint').value;
-    const risk = document.getElementById('edit-risk').value;
-    const status = document.getElementById('edit-status').value;
-    const progress = document.getElementById('edit-progress').value;
+    const id = document.getElementById('edit-id')?.value || '';
+    const name = document.getElementById('edit-name')?.value || '';
+    const client = document.getElementById('edit-client')?.value || '';
+    const budget = document.getElementById('edit-budget')?.value || '0';
+    const remarks = document.getElementById('edit-remarks')?.value || '';
+    const estStart = document.getElementById('edit-est-start')?.value || '';
+    const estEnd = document.getElementById('edit-est-end')?.value || '';
+    const actStart = document.getElementById('edit-act-start')?.value || '';
+    const actEnd = document.getElementById('edit-act-end')?.value || '';
+    const pm = document.getElementById('edit-manager')?.value || '';
+    const ba = document.getElementById('edit-ba')?.value || '';
+    const dev = document.getElementById('edit-developer')?.value || '';
+    const qa = document.getElementById('edit-qa')?.value || '';
+    const sprintEl = document.getElementById('edit-sprint');
+    const sprint = sprintEl ? sprintEl.value : '';
+    const risk = document.getElementById('edit-risk')?.value || 'Low';
+    const status = document.getElementById('edit-status')?.value || 'planning';
+    const progress = document.getElementById('edit-progress')?.value || '0';
 
     // VALIDATION DECK
     let isValid = true;
@@ -1269,12 +1331,23 @@ export const ProjectsModule = {
    */
   openCreateProjectModal() {
     // Generate valid clients and staffing dropdown arrays
-    const clients = [...new Set(this.projects.map(p => p.client))];
-    const resources = this.app.resourcesList || [];
+    let registeredCusts = Storage.getCustomers();
+    if (!registeredCusts || registeredCusts.length === 0) {
+      registeredCusts = this.app?.customersList || [];
+    }
+    const customerNamesFromList = registeredCusts.map(c => c.name).filter(Boolean);
+    const customerNamesFromProjects = (this.projects || []).map(p => p.client).filter(Boolean);
+    const clients = [...new Set([...customerNamesFromList, ...customerNamesFromProjects])].sort();
+
+    const allMembers = this.getTeamMembersList();
     
-    const clientOptions = clients.map(c => `<option value="${c}">${c}</option>`).join('');
-    const pmOptions = resources.map(r => `<option value="${r.name}">${r.name}</option>`).join('');
-    const devOptions = resources.map(r => `<option value="${r.name}">${r.name}</option>`).join('');
+    const clientOptions = clients.length > 0 
+      ? clients.map(c => `<option value="${c}">${c}</option>`).join('')
+      : `<option value="Enterprise Corp.">Enterprise Corp.</option>`;
+    const pmOptions = allMembers.map(m => `<option value="${m.name}">${m.name} (${m.role})</option>`).join('');
+    const devOptions = allMembers.map(m => `<option value="${m.name}">${m.name} (${m.role})</option>`).join('');
+    const baOptions = allMembers.map(m => `<option value="${m.name}">${m.name} (${m.role})</option>`).join('');
+    const qaOptions = allMembers.map(m => `<option value="${m.name}">${m.name} (${m.role})</option>`).join('');
 
     const bodyHtml = `
       <form id="modal-project-create-form" class="row g-3 needs-validation" novalidate>
@@ -1293,9 +1366,27 @@ export const ProjectsModule = {
           <label class="form-label font-semibold" style="font-size: 0.85rem;">Project Manager (PM) <span class="text-danger">*</span></label>
           <select class="form-select select-enterprise w-100" id="mod-pm" required>
             ${pmOptions}
-            <option value="Alex Mercer">Alex Mercer</option>
-            <option value="Sarah Connor">Sarah Connor</option>
-            <option value="John Doe">John Doe</option>
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label font-semibold" style="font-size: 0.85rem;">Lead Developer</label>
+          <select class="form-select select-enterprise w-100" id="mod-dev">
+            <option value="">Select Developer...</option>
+            ${devOptions}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label font-semibold" style="font-size: 0.85rem;">Business Analyst (BA)</label>
+          <select class="form-select select-enterprise w-100" id="mod-ba">
+            <option value="">Select BA...</option>
+            ${baOptions}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label font-semibold" style="font-size: 0.85rem;">QA Analyst</label>
+          <select class="form-select select-enterprise w-100" id="mod-qa">
+            <option value="">Select QA...</option>
+            ${qaOptions}
           </select>
         </div>
         <div class="col-md-6">
@@ -1319,26 +1410,31 @@ export const ProjectsModule = {
     `;
 
     this.app.openModal('Initiate New Enterprise Project', bodyHtml, (overlay) => {
-      const name = overlay.querySelector('#mod-name').value;
-      const client = overlay.querySelector('#mod-client').value;
-      const pm = overlay.querySelector('#mod-pm').value;
-      const poc = overlay.querySelector('#mod-poc').value;
-      const budget = overlay.querySelector('#mod-budget').value;
-      const status = overlay.querySelector('#mod-status').value;
+      const name = overlay.querySelector('#mod-name')?.value || '';
+      const client = overlay.querySelector('#mod-client')?.value || '';
+      const pm = overlay.querySelector('#mod-pm')?.value || '';
+      const dev = overlay.querySelector('#mod-dev')?.value || '';
+      const ba = overlay.querySelector('#mod-ba')?.value || '';
+      const qa = overlay.querySelector('#mod-qa')?.value || '';
+      const poc = overlay.querySelector('#mod-poc')?.value || '';
+      const budget = overlay.querySelector('#mod-budget')?.value || '0';
+      const status = overlay.querySelector('#mod-status')?.value || 'planning';
 
       let isModalValid = true;
+      const nameEl = overlay.querySelector('#mod-name');
       if (!name || name.trim() === '') {
-        overlay.querySelector('#mod-name').classList.add('is-invalid');
+        if (nameEl) nameEl.classList.add('is-invalid');
         isModalValid = false;
       } else {
-        overlay.querySelector('#mod-name').classList.remove('is-invalid');
+        if (nameEl) nameEl.classList.remove('is-invalid');
       }
 
+      const budgetEl = overlay.querySelector('#mod-budget');
       if (!budget || Number(budget) <= 0) {
-        overlay.querySelector('#mod-budget').classList.add('is-invalid');
+        if (budgetEl) budgetEl.classList.add('is-invalid');
         isModalValid = false;
       } else {
-        overlay.querySelector('#mod-budget').classList.remove('is-invalid');
+        if (budgetEl) budgetEl.classList.remove('is-invalid');
       }
 
       if (!isModalValid) {
@@ -1358,11 +1454,10 @@ export const ProjectsModule = {
         progress: 0,
         budget: Number(budget),
         status,
-        sprint: 'Sprint 44',
         risk: 'Low',
-        developer: resources[0]?.name || 'Bob Johnson',
-        qa: resources[1]?.name || 'David Miller',
-        ba: 'Sarah Connor',
+        developer: dev || 'Bob Johnson',
+        qa: qa || 'David Miller',
+        ba: ba || 'Sarah Connor',
         estimatedStart: new Date().toISOString().split('T')[0],
         estimatedEnd: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         actualStart: '',

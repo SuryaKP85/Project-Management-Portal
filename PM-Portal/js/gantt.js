@@ -127,7 +127,9 @@ export const GanttModule = {
     prjSelect.innerHTML = '<option value="all">All Active Projects</option>';
 
     // Customers
-    const customers = [...new Set(this.projects.map(p => p.client))].filter(Boolean);
+    const registeredCusts = (Storage.getCustomers() || []).map(c => c.name).filter(Boolean);
+    const projCusts = (this.projects || []).map(p => p.client).filter(Boolean);
+    const customers = [...new Set([...registeredCusts, ...projCusts])].filter(Boolean).sort();
     customers.forEach(c => {
       custSelect.innerHTML += `<option value="${c}">${c}</option>`;
     });

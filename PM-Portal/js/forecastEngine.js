@@ -392,10 +392,14 @@ export const ForecastEngineModule = {
     if (!p) return;
 
     // 1. Get input parameter values
-    const remHours = parseFloat(document.getElementById('forecast-sim-rem-hours').value) || 0;
-    const dailyCapacity = parseFloat(document.getElementById('forecast-sim-capacity').value) || 8;
-    const respectLeaves = document.getElementById('forecast-sim-respect-leaves').checked;
-    const utilizeWeekends = document.getElementById('forecast-sim-utilize-weekends').checked;
+    const remHoursEl = document.getElementById('forecast-sim-rem-hours');
+    const remHours = remHoursEl ? parseFloat(remHoursEl.value) || 0 : 0;
+    const dailyCapEl = document.getElementById('forecast-sim-capacity');
+    const dailyCapacity = dailyCapEl ? parseFloat(dailyCapEl.value) || 8 : 8;
+    const respectLeavesEl = document.getElementById('forecast-sim-respect-leaves');
+    const respectLeaves = respectLeavesEl ? respectLeavesEl.checked : true;
+    const utilizeWeekendsEl = document.getElementById('forecast-sim-utilize-weekends');
+    const utilizeWeekends = utilizeWeekendsEl ? utilizeWeekendsEl.checked : false;
 
     // 2. Perform simulations (Both nominal and without weekends to derive benefits)
     const result = this.simulateProjectTimeline(p, remHours, dailyCapacity, respectLeaves, utilizeWeekends);

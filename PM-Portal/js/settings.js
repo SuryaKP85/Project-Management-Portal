@@ -242,9 +242,9 @@ export const SettingsModule = {
    * Save active user profile details
    */
   saveProfile() {
-    const name = document.getElementById('settings-user-name').value.trim();
-    const email = document.getElementById('settings-user-email').value.trim();
-    const dept = document.getElementById('settings-user-dept').value;
+    const name = document.getElementById('settings-user-name')?.value?.trim() || '';
+    const email = document.getElementById('settings-user-email')?.value?.trim() || '';
+    const dept = document.getElementById('settings-user-dept')?.value || 'Dev';
 
     if (!name || !email) {
       this.app.showToast('Please enter a valid name and email address', 'warning');
@@ -403,11 +403,11 @@ export const SettingsModule = {
     `;
 
     this.app.openModal(title, bodyHtml, (overlay) => {
-      const name = overlay.querySelector('#u-name').value.trim();
-      const email = overlay.querySelector('#u-email').value.trim();
-      const dept = overlay.querySelector('#u-dept').value;
-      const role = overlay.querySelector('#u-role').value;
-      const status = overlay.querySelector('#u-status').value;
+      const name = overlay.querySelector('#u-name')?.value?.trim() || '';
+      const email = overlay.querySelector('#u-email')?.value?.trim() || '';
+      const dept = overlay.querySelector('#u-dept')?.value || 'Dev';
+      const role = overlay.querySelector('#u-role')?.value || 'member';
+      const status = overlay.querySelector('#u-status')?.value || 'active';
 
       if (!name || !email) {
         this.app.showToast('Please enter name and email address', 'warning');

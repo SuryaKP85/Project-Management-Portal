@@ -646,5 +646,376 @@ export const DashboardModule = {
         }
       }, 250);
     });
+
+    // Wire drilldown click handlers on Executive Dashboard KPI cards
+    const kpiCards = document.querySelectorAll('.stats-grid-executive .kpi-card, .kpi-card');
+    kpiCards.forEach(card => {
+      const metricEl = card.querySelector('.kpi-value');
+      const metricId = metricEl ? metricEl.id : null;
+      if (metricId) {
+        card.style.cursor = 'pointer';
+        card.setAttribute('title', 'Click to view executive drill-down details');
+        card.onclick = () => {
+          this.openMetricDrilldown(metricId);
+        };
+      }
+    });
+  },
+
+  /**
+   * Generates and opens an interactive modal drilldown for executive KPI metrics
+   */
+  openMetricDrilldown(metricId) {
+    let title = 'Executive Metric Drilldown';
+    let bodyHtml = '';
+    
+    // Load live collections from Storage or app defaults
+    let projects = Storage.getProjects();
+    if (!projects || projects.length === 0) projects = this.app?.projectsList || [];
+    
+    let customers = Storage.getCustomers();
+    if (!customers || customers.length === 0) customers = this.app?.customersList || [];
+    
+    let timeLogs = Storage.getTimeLogs();
+    if (!timeLogs || timeLogs.length === 0) {
+      try {
+        const raw = localStorage.getItem('pm_portal_time_logs');
+        if (raw) timeLogs = JSON.parse(raw);
+      } catch (e) {}
+    }
+    
+    let leaves = Storage.getLeaves();
+    if (!leaves || leaves.length === 0) {
+      try {
+        const raw = localStorage.getItem('pm_portal_leaves') || localStorage.getItem('leaves');
+        if (raw) leaves = JSON.parse(raw);
+      } catch (e) {}
+    }
+    
+    let weekendLogs = Storage.getWeekendWork();
+    if (!weekendLogs || weekendLogs.length === 0) {
+      try {
+        const raw = localStorage.getItem('pm_portal_weekend_logs') || localStorage.getItem('weekend_logs');
+        if (raw) weekendLogs = JSON.parse(raw);
+      } catch (e) {}
+    }
+
+    if (metricId === 'metric-total-customers') {
+      title = 'Total Registered Customers Drilldown';
+      const rowsHtml = customers.map(c => `
+        <tr>
+          <td class="font-semibold text-primary">${c.id || 'CST'}</td>
+          <td class="font-bold">${c.name}</td>
+          <td><span class="badge bg-light text-dark border">${c.industry || 'General'}</span></td>
+          <td>${c.contact || 'N/A'}</td>
+          <td><span class="badge bg-success-subtle text-success">${c.status || 'Active'}</span></td>
+        </tr>
+      `).join('');
+      bodyHtml = `
+        <div class="mb-3 d-flex justify-content-between align-items-center">
+          <p class="text-muted m-0 font-semibold" style="font-size: 0.85rem;">Showing ${customers.length} registered customer accounts in portfolio.</p>
+        </div>
+        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+          <table class="table table-hover align-middle" style="font-size: 0.85rem;">
+            <thead class="table-light sticky-top">
+              <tr><th>Customer Code</th><th>Customer / Client Name</th><th>Industry</th><th>Primary Contact</th><th>Status</th></tr>
+            </thead>
+            <tbody>${rowsHtml || '<tr><td colspan="5" class="text-center py-3 text-muted">No customers found.</td></tr>'}</tbody>
+          </table>
+        </div>
+      `;
+    } else if (metricId === 'metric-total-projects') {
+      title = 'Total Portfolio Projects Drilldown';
+      const rowsHtml = projects.map(p => `
+        <tr>
+          <td class="font-semibold text-primary">${p.id}</td>
+          <td class="font-bold">${p.name}</td>
+          <td>${p.client}</td>
+          <td>${p.manager}</td>
+          <td><span class="badge bg-info-subtle text-info">${p.status}</span></td>
+          <td class="font-semibold">$${Number(p.budget || 0).toLocaleString()}</td>
+        </tr>
+      `).join('');
+      bodyHtml = `
+        <div class="mb-3 text-muted font-semibold" style="font-size: 0.85rem;">Total projects tracked across all accounts (${projects.length} total).</div>
+        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+          <table class="table table-hover align-middle" style="font-size: 0.85rem;">
+            <thead class="table-light sticky-top">
+              <tr><th>Code</th><th>Project Name</th><th>Client</th><th>Manager</th><th>Status</th><th>Budget</th></tr>
+            </thead>
+            <tbody>${rowsHtml || '<tr><td colspan="6" class="text-center py-3 text-muted">No projects found.</td></tr>'}</tbody>
+          </table>
+        </div>
+      `;
+    } else if (metricId === 'metric-projects-in-progress') {
+      title = 'Projects In Progress Drilldown';
+      const filtered = projects.filter(p => {
+        const s = (p.status || '').toLowerCase();
+        return s.includes('progress') || s === 'active';
+      });
+      const rowsHtml = filtered.map(p => `
+        <tr>
+          <td class="font-semibold text-primary">${p.id}</td>
+          <td class="font-bold">${p.name}</td>
+          <td>${p.client}</td>
+          <td>${p.manager}</td>
+          <td>
+            <div class="d-flex align-items-center gap-2">
+              <div class="progress w-100" style="height: 6px;">
+                <div class="progress-bar bg-primary" style="width: ${p.progress || 0}%;"></div>
+              </div>
+              <span class="font-bold">${p.progress || 0}%</span>
+            </div>
+          </td>
+          <td class="font-semibold">$${Number(p.budget || 0).toLocaleString()}</td>
+        </tr>
+      `).join('');
+      bodyHtml = `
+        <div class="mb-3 text-muted font-semibold" style="font-size: 0.85rem;">Currently active projects in execution (${filtered.length} active).</div>
+        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+          <table class="table table-hover align-middle" style="font-size: 0.85rem;">
+            <thead class="table-light sticky-top">
+              <tr><th>Code</th><th>Project Name</th><th>Client</th><th>Manager</th><th>Progress</th><th>Budget</th></tr>
+            </thead>
+            <tbody>${rowsHtml || '<tr><td colspan="6" class="text-center py-3 text-muted">No in-progress projects found.</td></tr>'}</tbody>
+          </table>
+        </div>
+      `;
+    } else if (metricId === 'metric-completed-projects') {
+      title = 'Completed Projects Drilldown';
+      const filtered = projects.filter(p => {
+        const s = (p.status || '').toLowerCase();
+        return s.includes('complete') || s === 'done';
+      });
+      const rowsHtml = filtered.map(p => `
+        <tr>
+          <td class="font-semibold text-primary">${p.id}</td>
+          <td class="font-bold">${p.name}</td>
+          <td>${p.client}</td>
+          <td>${p.manager}</td>
+          <td><span class="badge bg-success-subtle text-success">Completed (100%)</span></td>
+          <td class="font-semibold">$${Number(p.budget || 0).toLocaleString()}</td>
+        </tr>
+      `).join('');
+      bodyHtml = `
+        <div class="mb-3 text-muted font-semibold" style="font-size: 0.85rem;">Successfully completed portfolio deliverables (${filtered.length} completed).</div>
+        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+          <table class="table table-hover align-middle" style="font-size: 0.85rem;">
+            <thead class="table-light sticky-top">
+              <tr><th>Code</th><th>Project Name</th><th>Client</th><th>Manager</th><th>Status</th><th>Final Budget</th></tr>
+            </thead>
+            <tbody>${rowsHtml || '<tr><td colspan="6" class="text-center py-3 text-muted">No completed projects found.</td></tr>'}</tbody>
+          </table>
+        </div>
+      `;
+    } else if (metricId === 'metric-delayed-projects') {
+      title = 'Delayed Projects Drilldown';
+      const filtered = projects.filter(p => {
+        const s = (p.status || '').toLowerCase();
+        const r = (p.risk || '').toLowerCase();
+        return s.includes('delay') || r === 'high' || r === 'critical';
+      });
+      const rowsHtml = filtered.map(p => `
+        <tr>
+          <td class="font-semibold text-primary">${p.id}</td>
+          <td class="font-bold">${p.name}</td>
+          <td>${p.client}</td>
+          <td>${p.manager}</td>
+          <td><span class="badge bg-warning-subtle text-warning">${p.risk || 'Medium'} Risk</span></td>
+          <td><span class="badge bg-danger-subtle text-danger">${p.status}</span></td>
+        </tr>
+      `).join('');
+      bodyHtml = `
+        <div class="mb-3 text-muted font-semibold" style="font-size: 0.85rem;">Projects experiencing schedule delays or requiring governance intervention (${filtered.length} items).</div>
+        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+          <table class="table table-hover align-middle" style="font-size: 0.85rem;">
+            <thead class="table-light sticky-top">
+              <tr><th>Code</th><th>Project Name</th><th>Client</th><th>Manager</th><th>Risk Level</th><th>Status</th></tr>
+            </thead>
+            <tbody>${rowsHtml || '<tr><td colspan="6" class="text-center py-3 text-muted">No delayed projects found.</td></tr>'}</tbody>
+          </table>
+        </div>
+      `;
+    } else if (metricId === 'metric-critical-projects') {
+      title = 'Critical / On-Hold Projects Drilldown';
+      const filtered = projects.filter(p => {
+        const s = (p.status || '').toLowerCase();
+        const r = (p.risk || '').toLowerCase();
+        return s.includes('critical') || s.includes('hold') || r === 'critical';
+      });
+      const rowsHtml = filtered.map(p => `
+        <tr>
+          <td class="font-semibold text-primary">${p.id}</td>
+          <td class="font-bold">${p.name}</td>
+          <td>${p.client}</td>
+          <td>${p.manager}</td>
+          <td><span class="badge bg-danger text-white">${p.risk || 'Critical'}</span></td>
+          <td><span class="badge bg-secondary-subtle text-dark">${p.status}</span></td>
+        </tr>
+      `).join('');
+      bodyHtml = `
+        <div class="mb-3 text-muted font-semibold" style="font-size: 0.85rem;">Projects marked critical or placed on-hold (${filtered.length} items).</div>
+        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+          <table class="table table-hover align-middle" style="font-size: 0.85rem;">
+            <thead class="table-light sticky-top">
+              <tr><th>Code</th><th>Project Name</th><th>Client</th><th>Manager</th><th>Risk Level</th><th>Status</th></tr>
+            </thead>
+            <tbody>${rowsHtml || '<tr><td colspan="6" class="text-center py-3 text-muted">No critical projects found.</td></tr>'}</tbody>
+          </table>
+        </div>
+      `;
+    } else if (metricId === 'metric-pending-sow') {
+      title = 'Pending SOW Agreements Drilldown';
+      const rowsHtml = projects.map(p => `
+        <tr>
+          <td class="font-semibold text-primary">${p.id}</td>
+          <td class="font-bold">${p.name}</td>
+          <td>${p.client}</td>
+          <td>${p.manager}</td>
+          <td class="font-semibold">$${Number(p.budget || 0).toLocaleString()}</td>
+          <td><span class="badge bg-warning-subtle text-warning">Pending Sign-off</span></td>
+        </tr>
+      `).join('');
+      bodyHtml = `
+        <div class="mb-3 text-muted font-semibold" style="font-size: 0.85rem;">SOW agreements and contractual documentation pending sign-off.</div>
+        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+          <table class="table table-hover align-middle" style="font-size: 0.85rem;">
+            <thead class="table-light sticky-top">
+              <tr><th>Code</th><th>Project Name</th><th>Client</th><th>Manager</th><th>Budget</th><th>SOW Status</th></tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+      `;
+    } else if (metricId === 'metric-employees-on-leave') {
+      title = 'Employees on Leave Log Drilldown';
+      const rowsHtml = (leaves || []).map(l => `
+        <tr>
+          <td class="font-bold">${l.name || l.employee || 'Employee'}</td>
+          <td><span class="badge bg-light text-dark border">${l.type || 'Annual Leave'}</span></td>
+          <td>${l.start || 'N/A'} to ${l.end || 'N/A'}</td>
+          <td class="font-semibold">${l.days || 1} day(s)</td>
+          <td><span class="badge bg-success-subtle text-success">${l.status || 'Approved'}</span></td>
+        </tr>
+      `).join('');
+      bodyHtml = `
+        <div class="mb-3 text-muted font-semibold" style="font-size: 0.85rem;">Approved team member leave logs and time-off requests.</div>
+        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+          <table class="table table-hover align-middle" style="font-size: 0.85rem;">
+            <thead class="table-light sticky-top">
+              <tr><th>Employee</th><th>Leave Type</th><th>Dates</th><th>Duration</th><th>Status</th></tr>
+            </thead>
+            <tbody>${rowsHtml || '<tr><td colspan="5" class="text-center py-3 text-muted">No active leave records found.</td></tr>'}</tbody>
+          </table>
+        </div>
+      `;
+    } else if (metricId === 'metric-weekend-support') {
+      title = 'Weekend Standby Roster Drilldown';
+      const rowsHtml = (weekendLogs || []).map(w => `
+        <tr>
+          <td class="font-bold">${w.employee || w.name || 'Team Member'}</td>
+          <td>${w.project || w.projectName || 'General Support'}</td>
+          <td>${w.date || 'Upcoming Weekend'}</td>
+          <td>${w.task || 'On-call Standby'}</td>
+          <td><span class="badge bg-success-subtle text-success">${w.status || 'Approved'}</span></td>
+        </tr>
+      `).join('');
+      bodyHtml = `
+        <div class="mb-3 text-muted font-semibold" style="font-size: 0.85rem;">Active team roster assigned for weekend deployment & on-call support.</div>
+        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+          <table class="table table-hover align-middle" style="font-size: 0.85rem;">
+            <thead class="table-light sticky-top">
+              <tr><th>Team Member</th><th>Assigned Project</th><th>Date</th><th>Task / Responsibility</th><th>Status</th></tr>
+            </thead>
+            <tbody>${rowsHtml || '<tr><td colspan="5" class="text-center py-3 text-muted">No weekend support rosters scheduled.</td></tr>'}</tbody>
+          </table>
+        </div>
+      `;
+    } else if (metricId === 'metric-avg-project-health') {
+      title = 'Portfolio Project Health Matrix Drilldown';
+      const rowsHtml = projects.map(p => {
+        const prog = p.progress || 0;
+        let healthBadge = '<span class="badge bg-success-subtle text-success">Healthy (95+)</span>';
+        if (prog < 30) healthBadge = '<span class="badge bg-danger-subtle text-danger">At Risk</span>';
+        else if (prog < 70) healthBadge = '<span class="badge bg-warning-subtle text-warning">Needs Review</span>';
+        return `
+          <tr>
+            <td class="font-semibold text-primary">${p.id}</td>
+            <td class="font-bold">${p.name}</td>
+            <td>${p.client}</td>
+            <td>${p.manager}</td>
+            <td class="font-semibold">${prog}%</td>
+            <td>${healthBadge}</td>
+          </tr>
+        `;
+      }).join('');
+      bodyHtml = `
+        <div class="mb-3 text-muted font-semibold" style="font-size: 0.85rem;">Detailed breakdown of progress ratings and health indicators across all projects.</div>
+        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+          <table class="table table-hover align-middle" style="font-size: 0.85rem;">
+            <thead class="table-light sticky-top">
+              <tr><th>Code</th><th>Project Name</th><th>Client</th><th>Manager</th><th>Completion</th><th>Health Indicator</th></tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+      `;
+    } else if (metricId === 'metric-remaining-hours') {
+      title = 'Remaining Estimated Hours Drilldown';
+      const rowsHtml = projects.map(p => {
+        const est = (p.budget || 150000) / 1000;
+        const prog = (p.progress || 0) / 100;
+        const rem = Math.round(est * (1 - prog));
+        return `
+          <tr>
+            <td class="font-semibold text-primary">${p.id}</td>
+            <td class="font-bold">${p.name}</td>
+            <td>${p.client}</td>
+            <td>${Math.round(est)} hrs</td>
+            <td class="font-semibold text-warning">${rem} hrs remaining</td>
+          </tr>
+        `;
+      }).join('');
+      bodyHtml = `
+        <div class="mb-3 text-muted font-semibold" style="font-size: 0.85rem;">Project-level breakdown of allocated vs remaining capacity hours.</div>
+        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+          <table class="table table-hover align-middle" style="font-size: 0.85rem;">
+            <thead class="table-light sticky-top">
+              <tr><th>Code</th><th>Project Name</th><th>Client</th><th>Total Estimated</th><th>Remaining Effort</th></tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+      `;
+    } else if (metricId === 'metric-logged-hours') {
+      title = 'Timesheet Logged Hours Ledger Drilldown';
+      const rowsHtml = (timeLogs || []).map(t => `
+        <tr>
+          <td class="font-mono text-muted">${t.date || '2026-07-29'}</td>
+          <td class="font-bold">${t.employee || 'Team Member'}</td>
+          <td>${t.projectName || t.projectId || 'PRJ'}</td>
+          <td><span class="badge bg-light text-dark border">${t.department || 'Dev'}</span></td>
+          <td>${t.task || 'Development'}</td>
+          <td class="font-bold text-primary">${t.hours} hrs</td>
+        </tr>
+      `).join('');
+      bodyHtml = `
+        <div class="mb-3 text-muted font-semibold" style="font-size: 0.85rem;">Timesheet entries logged in the system (${timeLogs.length} entries).</div>
+        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+          <table class="table table-hover align-middle" style="font-size: 0.85rem;">
+            <thead class="table-light sticky-top">
+              <tr><th>Date</th><th>Employee</th><th>Project</th><th>Department</th><th>Task Description</th><th>Hours</th></tr>
+            </thead>
+            <tbody>${rowsHtml || '<tr><td colspan="6" class="text-center py-3 text-muted">No time logs recorded.</td></tr>'}</tbody>
+          </table>
+        </div>
+      `;
+    } else {
+      bodyHtml = `<p class="text-muted py-3">No detailed drilldown data available for this metric.</p>`;
+    }
+
+    if (this.app && typeof this.app.openModal === 'function') {
+      this.app.openModal(title, bodyHtml);
+    }
   }
 };

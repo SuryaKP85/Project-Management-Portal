@@ -211,7 +211,9 @@ export const ReportsHubModule = {
     if (custSelect) {
       const selected = custSelect.value;
       custSelect.innerHTML = '<option value="all">All Customers / Clients</option>';
-      const uniqueClients = [...new Set(projects.map(p => p.client).filter(Boolean))].sort();
+      const registeredCusts = (Storage.getCustomers() || []).map(c => c.name).filter(Boolean);
+      const projCusts = (projects || []).map(p => p.client).filter(Boolean);
+      const uniqueClients = [...new Set([...registeredCusts, ...projCusts])].filter(Boolean).sort();
       uniqueClients.forEach(c => {
         const opt = document.createElement('option');
         opt.value = c;

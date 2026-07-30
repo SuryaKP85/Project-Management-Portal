@@ -1,6 +1,7 @@
 /* userManagement.js - Enterprise User Management, Roles & Access Control Module */
 
 import { Authentication } from './authentication.js';
+import { Storage } from './storage.js';
 import { EmailGeneratorModule } from './emailGenerator.js';
 
 export const UserManagementModule = {
@@ -19,12 +20,40 @@ export const UserManagementModule = {
 
   loadUsers() {
     this.users = Authentication.getUsers() || [];
+    this.saveUsers();
   },
 
   saveUsers() {
     Authentication.saveUsers(this.users);
     if (this.app) {
       this.app.usersList = this.users;
+      
+      // Also sync new users into resources list so they appear across staffing & dropdowns
+      let resList = Storage.getResources();
+      if (!resList || resList.length === 0) {
+        resList = this.app.resourcesList || [];
+      }
+      
+      let updated = false;
+      this.users.forEach((u, idx) => {
+        const uName = (u.name || `${u.firstName || ''} ${u.lastName || ''}`).trim();
+        if (uName && !resList.some(r => r.name === uName)) {
+          resList.push({
+            id: u.id || `RES${300 + idx}`,
+            name: uName,
+            role: u.role || 'Team Member',
+            dept: u.department || 'Dev',
+            allocation: 100,
+            status: 'allocated'
+          });
+          updated = true;
+        }
+      });
+      
+      if (updated) {
+        Storage.saveResources(resList);
+        this.app.resourcesList = resList;
+      }
     }
   },
 

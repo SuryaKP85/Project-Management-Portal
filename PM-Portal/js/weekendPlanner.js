@@ -452,12 +452,12 @@ export const WeekendPlannerModule = {
    * Handle scheduling form submission
    */
   handleFormSubmit() {
-    const dateVal = document.getElementById('m-weekend-date').value;
-    const empVal = document.getElementById('m-weekend-employee').value;
-    const projVal = document.getElementById('m-weekend-project').value;
-    const hoursVal = parseInt(document.getElementById('m-weekend-hours').value) || 8;
-    const taskVal = document.getElementById('m-weekend-task').value;
-    const approvalVal = document.getElementById('m-weekend-approval').value;
+    const dateVal = document.getElementById('m-weekend-date')?.value || '';
+    const empVal = document.getElementById('m-weekend-employee')?.value || '';
+    const projVal = document.getElementById('m-weekend-project')?.value || '';
+    const hoursVal = parseInt(document.getElementById('m-weekend-hours')?.value || '8', 10) || 8;
+    const taskVal = document.getElementById('m-weekend-task')?.value || '';
+    const approvalVal = document.getElementById('m-weekend-approval')?.value || 'Pending';
 
     if (!dateVal || !empVal || !projVal || !taskVal) {
       this.app.showToast('Please complete all form inputs before submitting', 'warning');

@@ -385,13 +385,13 @@ export const TimeLoggingModule = {
    * Handle log submission form
    */
   handleFormSubmit() {
-    const date = document.getElementById('tl-date').value;
-    const employee = document.getElementById('tl-employee').value;
-    const projectId = document.getElementById('tl-project').value;
-    const department = document.getElementById('tl-dept').value;
-    const task = document.getElementById('tl-task').value;
-    const hours = parseFloat(document.getElementById('tl-hours').value);
-    const remarks = document.getElementById('tl-remarks').value;
+    const date = document.getElementById('tl-date')?.value || '';
+    const employee = document.getElementById('tl-employee')?.value || '';
+    const projectId = document.getElementById('tl-project')?.value || '';
+    const department = document.getElementById('tl-dept')?.value || '';
+    const task = document.getElementById('tl-task')?.value || '';
+    const hours = parseFloat(document.getElementById('tl-hours')?.value || '0');
+    const remarks = document.getElementById('tl-remarks')?.value || '';
 
     if (!date || !employee || !projectId || !department || !task || isNaN(hours) || hours <= 0) {
       this.app.showToast('Please fill out all required logging parameters', 'warning');
@@ -441,9 +441,12 @@ export const TimeLoggingModule = {
     }
 
     // Clear inputs except Date and Employee (for rapid consecutive logs!)
-    document.getElementById('tl-task').value = '';
-    document.getElementById('tl-hours').value = '';
-    document.getElementById('tl-remarks').value = '';
+    const taskEl = document.getElementById('tl-task');
+    if (taskEl) taskEl.value = '';
+    const hoursEl = document.getElementById('tl-hours');
+    if (hoursEl) hoursEl.value = '';
+    const remarksEl = document.getElementById('tl-remarks');
+    if (remarksEl) remarksEl.value = '';
 
     // Recalculate and update the screen
     this.recalculateAndRender();

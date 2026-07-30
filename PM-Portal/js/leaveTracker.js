@@ -606,11 +606,11 @@ export const LeaveTrackerModule = {
    * Handle form submission to insert a leave request
    */
   handleFormSubmit() {
-    const employee = document.getElementById('m-leave-name').value;
-    const type = document.getElementById('m-leave-type').value;
-    const start = document.getElementById('m-leave-start').value;
-    const end = document.getElementById('m-leave-end').value;
-    const reason = document.getElementById('m-leave-reason').value;
+    const employee = document.getElementById('m-leave-name')?.value || '';
+    const type = document.getElementById('m-leave-type')?.value || 'Annual Leave';
+    const start = document.getElementById('m-leave-start')?.value || '';
+    const end = document.getElementById('m-leave-end')?.value || '';
+    const reason = document.getElementById('m-leave-reason')?.value || '';
 
     if (!employee || !start || !end || !reason) {
       this.app.showToast('Please fill out all leave request fields', 'warning');
@@ -663,7 +663,8 @@ export const LeaveTrackerModule = {
     this.app.showToast(`Time off log ${leaveId} created (${impact.status})`, 'success');
 
     // Clear inputs
-    document.getElementById('m-leave-reason').value = '';
+    const reasonEl = document.getElementById('m-leave-reason');
+    if (reasonEl) reasonEl.value = '';
 
     // Refresh everything
     this.recalculateAndRender();
