@@ -65,54 +65,9 @@ export const ProjectsModule = {
    */
   loadProjects() {
     let stored = Storage.get('projects');
-    if (!stored || !Array.isArray(stored) || stored.length === 0) {
-      // Map and enrich the initial projects list with required fields for filters/forms
-      const defaultList = this.app.projectsList || [];
-      const enriched = defaultList.map((p, index) => {
-        // Derive or mock clean values for advanced features
-        const mockSprints = ['Sprint 42', 'Sprint 43', 'Sprint 41', 'Sprint 44', 'Sprint 40'];
-        const mockRisks = ['Low', 'Medium', 'Low', 'High', 'Critical'];
-        const mockDevs = ['Bob Johnson', 'Alice Smith', 'Bob Johnson', 'Alice Smith', 'Bob Johnson'];
-        const mockQAs = ['David Miller', 'David Miller', 'David Miller', 'David Miller', 'David Miller'];
-        const mockBAs = ['Sarah Connor', 'John Doe', 'Pam Beesly', 'John Doe', 'Sarah Connor'];
-        
-        // Months and Quarters mapped to 2026
-        const mockDates = [
-          { start: '2026-07-01', end: '2026-07-15', m: 'July', q: 'Q3', y: '2026' },
-          { start: '2026-07-10', end: '2026-08-05', m: 'July', q: 'Q3', y: '2026' },
-          { start: '2026-06-15', end: '2026-07-10', m: 'June', q: 'Q2', y: '2026' },
-          { start: '2026-07-20', end: '2026-08-20', m: 'July', q: 'Q3', y: '2026' },
-          { start: '2026-05-10', end: '2026-06-15', m: 'May', q: 'Q2', y: '2026' }
-        ];
-        
-        const dateConf = mockDates[index % mockDates.length];
-
-        return {
-          id: p.id || `PRJ00${index + 1}`,
-          name: p.name || 'Enriched Enterprise Project',
-          client: p.client || 'Enterprise Corp.',
-          manager: p.manager || 'Alex Mercer',
-          progress: p.progress !== undefined ? p.progress : 50,
-          budget: p.budget || 150000,
-          status: p.status || 'in-progress',
-          sprint: p.sprint || mockSprints[index % mockSprints.length],
-          risk: p.risk || mockRisks[index % mockRisks.length],
-          developer: p.developer || mockDevs[index % mockDevs.length],
-          qa: p.qa || mockQAs[index % mockQAs.length],
-          ba: p.ba || mockBAs[index % mockBAs.length],
-          estimatedStart: p.estimatedStart || dateConf.start,
-          estimatedEnd: p.estimatedEnd || dateConf.end,
-          actualStart: p.actualStart || '',
-          actualEnd: p.actualEnd || '',
-          remarks: p.remarks || '',
-          month: p.month || dateConf.m,
-          quarter: p.quarter || dateConf.q,
-          year: p.year || dateConf.y
-        };
-      });
-      
-      this.projects = enriched;
-      Storage.set('projects', enriched);
+    if (!stored || !Array.isArray(stored)) {
+      this.projects = [];
+      Storage.set('projects', []);
     } else {
       this.projects = stored;
     }

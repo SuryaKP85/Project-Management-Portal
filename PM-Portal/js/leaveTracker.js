@@ -50,54 +50,8 @@ export const LeaveTrackerModule = {
   loadData() {
     // 1. Leaves List
     let storedLeaves = Storage.get('leaves');
-    if (!storedLeaves || !Array.isArray(storedLeaves) || storedLeaves.length === 0) {
-      storedLeaves = [
-        { 
-          id: 'LV001', 
-          name: 'Alice Smith', 
-          type: 'Annual Leave', 
-          start: '2026-08-10', 
-          end: '2026-08-15', 
-          days: 5, 
-          reason: 'Annual family summer vacation', 
-          status: 'Approved',
-          projectsAffected: ['PRJ001', 'PRJ002'],
-          jirasAffected: ['ARES-310', 'ZEUS-405'],
-          milestonesAffected: ['Database Cluster Upgrade Milestone', 'Security Gateway Audit'],
-          resourceShortage: 'Engineering department at 50% capacity',
-          riskIncrease: 'Medium'
-        },
-        { 
-          id: 'LV002', 
-          name: 'David Miller', 
-          type: 'Sick Leave', 
-          start: '2026-07-28', 
-          end: '2026-07-30', 
-          days: 3, 
-          reason: 'Wisdom teeth surgery recovery', 
-          status: 'Pending Review',
-          projectsAffected: ['PRJ001'],
-          jirasAffected: ['ARES-212'],
-          milestonesAffected: ['Jest test suites preparation'],
-          resourceShortage: 'QA / Test department at 0% capacity (CRITICAL)',
-          riskIncrease: 'High'
-        },
-        { 
-          id: 'LV003', 
-          name: 'Elena Rostova', 
-          type: 'Personal Day', 
-          start: '2026-08-01', 
-          end: '2026-08-01', 
-          days: 1, 
-          reason: 'Personal administrative errands', 
-          status: 'Approved',
-          projectsAffected: ['PRJ001'],
-          jirasAffected: ['ARES-104'],
-          milestonesAffected: ['Sprint 42 Retrospective'],
-          resourceShortage: 'Product department at 50% capacity',
-          riskIncrease: 'Low'
-        }
-      ];
+    if (!storedLeaves || !Array.isArray(storedLeaves)) {
+      storedLeaves = [];
       Storage.set('leaves', storedLeaves);
     }
     this.leaves = storedLeaves;

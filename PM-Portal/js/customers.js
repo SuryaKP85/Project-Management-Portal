@@ -37,8 +37,8 @@ export const CustomersModule = {
    */
   loadCustomers() {
     let stored = Storage.get('customers');
-    if (!stored || !Array.isArray(stored) || stored.length === 0) {
-      stored = this.app.customersList || [];
+    if (!stored || !Array.isArray(stored)) {
+      stored = [];
       Storage.set('customers', stored);
     }
     this.app.customersList = stored;
@@ -711,6 +711,14 @@ export const CustomersModule = {
     // --- CHART 1: PROJECT HEALTH & STATUS (DOUGHNUT) ---
     const healthCanvas = document.getElementById('chart-cust-project-health');
     if (healthCanvas) {
+      if (this.charts['project-health']) {
+        try { this.charts['project-health'].destroy(); } catch(e){}
+      }
+      if (typeof Chart !== 'undefined' && Chart.getChart) {
+        const existing = Chart.getChart(healthCanvas);
+        if (existing) { try { existing.destroy(); } catch(e){} }
+      }
+
       // Aggregate project status
       const statusCounts = { 'In Progress': 0, 'Completed': 0, 'Planning': 0, 'On Hold': 0 };
       clientProjects.forEach(p => {
@@ -759,6 +767,14 @@ export const CustomersModule = {
     // --- CHART 2: TICKETS BACKLOG (BAR CHART) ---
     const ticketsCanvas = document.getElementById('chart-cust-tickets');
     if (ticketsCanvas) {
+      if (this.charts['tickets-backlog']) {
+        try { this.charts['tickets-backlog'].destroy(); } catch(e){}
+      }
+      if (typeof Chart !== 'undefined' && Chart.getChart) {
+        const existing = Chart.getChart(ticketsCanvas);
+        if (existing) { try { existing.destroy(); } catch(e){} }
+      }
+
       const projectNames = [];
       const jiraCounts = [];
       const hdCounts = [];

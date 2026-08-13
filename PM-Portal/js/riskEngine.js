@@ -51,13 +51,7 @@ export const RiskEngineModule = {
     // 5. Overdue Backlog Stories
     let storedStories = Storage.get('risk_overdue_stories');
     if (!storedStories || typeof storedStories !== 'object') {
-      storedStories = {
-        'PRJ001': 3,
-        'PRJ002': 0,
-        'PRJ003': 0,
-        'PRJ004': 5,
-        'PRJ005': 1
-      };
+      storedStories = {};
       Storage.set('risk_overdue_stories', storedStories);
     }
     this.stories = storedStories;
@@ -65,7 +59,7 @@ export const RiskEngineModule = {
     // 6. Client Escalation Flags
     let storedEscalations = Storage.get('risk_escalations');
     if (!storedEscalations || !Array.isArray(storedEscalations)) {
-      storedEscalations = ['PRJ004']; // Default escalation seed
+      storedEscalations = [];
       Storage.set('risk_escalations', storedEscalations);
     }
     this.escalations = storedEscalations;

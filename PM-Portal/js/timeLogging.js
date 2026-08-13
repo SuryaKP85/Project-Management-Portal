@@ -46,15 +46,8 @@ export const TimeLoggingModule = {
    */
   loadEstimates() {
     let stored = Storage.get('project_dept_estimates');
-    if (!stored || typeof stored !== 'object' || Object.keys(stored).length === 0 || stored['PRJ001']?.['Engineering']) {
-      // Seed default project department estimates (Total matches project budgeted/estimated hrs)
-      stored = {
-        'PRJ001': { 'Dev': 120, 'QA': 50, 'BA': 60, 'Product Manager': 30 },
-        'PRJ002': { 'Dev': 220, 'QA': 80, 'BA': 100, 'Product Manager': 50 },
-        'PRJ003': { 'Dev': 80, 'QA': 30, 'BA': 30, 'Product Manager': 20 },
-        'PRJ004': { 'Dev': 180, 'QA': 60, 'BA': 70, 'Product Manager': 40 },
-        'PRJ005': { 'Dev': 100, 'QA': 40, 'BA': 50, 'Product Manager': 20 }
-      };
+    if (!stored || typeof stored !== 'object') {
+      stored = {};
       Storage.set('project_dept_estimates', stored);
     }
     this.estimates = stored;

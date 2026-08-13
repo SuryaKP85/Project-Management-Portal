@@ -47,11 +47,11 @@ export const Storage = {
   },
 
   /**
-   * Clear all app-specific localStorage keys
+   * Clear all app-specific localStorage keys and imported spreadsheets
    */
   clear() {
     Object.keys(localStorage).forEach(key => {
-      if (key.startsWith('pm_portal_')) {
+      if (key.startsWith('pm_portal_') || key === 'excel_imported_data' || key === 'leaves' || key === 'weekend_logs') {
         localStorage.removeItem(key);
       }
     });

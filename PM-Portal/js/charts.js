@@ -83,12 +83,34 @@ export const Charts = {
   },
 
   /**
+   * Helper to destroy a Chart.js instance by ID or canvas element
+   */
+  destroyChart(id) {
+    if (this.instances[id]) {
+      try {
+        this.instances[id].destroy();
+      } catch (e) {
+        // ignore
+      }
+      delete this.instances[id];
+    }
+    const canvas = typeof id === 'string' ? document.getElementById(id) : id;
+    if (canvas && typeof Chart !== 'undefined' && Chart.getChart) {
+      const existingChart = Chart.getChart(canvas);
+      if (existingChart) {
+        try {
+          existingChart.destroy();
+        } catch (e) {
+          // ignore
+        }
+      }
+    }
+  },
+
+  /**
    * Helper to register a new Chart.js instance safely destroying pre-existing ones
    */
   registerInstance(id, chart) {
-    if (this.instances[id]) {
-      this.instances[id].destroy();
-    }
     this.instances[id] = chart;
   },
 
@@ -97,11 +119,9 @@ export const Charts = {
    */
   destroyAll() {
     Object.keys(this.instances).forEach(key => {
-      if (this.instances[key]) {
-        this.instances[key].destroy();
-        this.instances[key] = null;
-      }
+      this.destroyChart(key);
     });
+    this.instances = {};
   },
 
   /**
@@ -126,6 +146,8 @@ export const Charts = {
     if (!this.checkChartLib()) return;
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
+
+    this.destroyChart(canvasId);
 
     const config = this.getThemeConfig();
     const labels = dummyData ? dummyData.map(d => d.label) : ['AeroSpace Inc.', 'Defense Lab', 'Speedy Delivery', 'Global Bank Corp.', 'GreenField Farms'];
@@ -174,6 +196,8 @@ export const Charts = {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
 
+    this.destroyChart(canvasId);
+
     const config = this.getThemeConfig();
     const labels = dummyData ? dummyData.map(d => d.label) : ['In Progress', 'Completed', 'Planning', 'On Hold', 'Delayed', 'Critical'];
     const values = dummyData ? dummyData.map(d => d.value) : [18, 20, 10, 4, 3, 1];
@@ -216,6 +240,8 @@ export const Charts = {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
 
+    this.destroyChart(canvasId);
+
     const config = this.getThemeConfig();
     const labels = dummyData ? dummyData.map(d => d.label) : ['High Priority', 'Medium Priority', 'Low Priority'];
     const values = dummyData ? dummyData.map(d => d.value) : [15, 20, 7];
@@ -251,6 +277,8 @@ export const Charts = {
     if (!this.checkChartLib()) return;
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
+
+    this.destroyChart(canvasId);
 
     const config = this.getThemeConfig();
     const labels = dummyData ? dummyData.map(d => d.label) : ['Critical', 'High', 'Medium', 'Low'];
@@ -303,6 +331,8 @@ export const Charts = {
     if (!this.checkChartLib()) return;
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
+
+    this.destroyChart(canvasId);
 
     const config = this.getThemeConfig();
     const labels = dummyData ? dummyData.map(d => d.label) : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -359,6 +389,8 @@ export const Charts = {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
 
+    this.destroyChart(canvasId);
+
     const config = this.getThemeConfig();
     const labels = dummyData ? dummyData.map(d => d.label) : ['Engineering', 'Design', 'QA / Test', 'Product', 'Operations'];
     const values = dummyData ? dummyData.map(d => d.value) : [45, 15, 25, 10, 12];
@@ -408,6 +440,8 @@ export const Charts = {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
 
+    this.destroyChart(canvasId);
+
     const config = this.getThemeConfig();
     const labels = dummyData ? dummyData.map(d => d.label) : ['Engineering', 'Design', 'QA / Test', 'Operations'];
     const values = dummyData ? dummyData.map(d => d.value) : [540, 180, 320, 200];
@@ -452,6 +486,8 @@ export const Charts = {
     if (!this.checkChartLib()) return;
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
+
+    this.destroyChart(canvasId);
 
     const config = this.getThemeConfig();
     const labels = dummyData ? dummyData.map(d => d.label) : ['Lead Architects', 'Fullstack Devs', 'UX Designers', 'QA Engineers', 'Product Managers'];
@@ -499,6 +535,8 @@ export const Charts = {
     if (!this.checkChartLib()) return;
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
+
+    this.destroyChart(canvasId);
 
     const config = this.getThemeConfig();
     const labels = dummyData ? dummyData.map(d => d.label) : ['Approved', 'Pending Sign-off', 'Under Draft', 'In Review'];

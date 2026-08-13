@@ -61,100 +61,29 @@ export const ResourcePlannerModule = {
       return 'Dev';
     };
 
-    if (stored && Array.isArray(stored) && stored.length > 0) {
+    if (stored && Array.isArray(stored)) {
       this.resources = stored.map(r => ({
         ...r,
         dept: mapDept(r.dept)
       }));
-      Storage.set('resources', this.resources);
     } else {
-      // Map initial ones with capacity information
-      this.resources = (this.app.resourcesList || []).map(r => ({
-        ...r,
-        dept: mapDept(r.dept),
-        baseWeeklyCapacity: 40, // standard hours
-        baseDailyCapacity: 8, // hours per weekday
-        loggedHours: r.id === 'RES201' ? 130 : r.id === 'RES202' ? 142 : r.id === 'RES203' ? 70 : r.id === 'RES205' ? 110 : 0,
-        weekendHours: r.id === 'RES202' ? 6 : 0
-      }));
-      Storage.set('resources', this.resources);
+      this.resources = [];
+      Storage.set('resources', []);
     }
     // Keep app resources list synced
     this.app.resourcesList = this.resources;
   },
 
   /**
-   * Loads allocations from storage or sets up high-fidelity default values
+   * Loads allocations from storage
    */
   loadAllocations() {
     let stored = Storage.get('resource_allocations');
-    if (stored && Array.isArray(stored) && stored.length > 0) {
+    if (stored && Array.isArray(stored)) {
       this.allocations = stored;
     } else {
-      // High-fidelity default allocations for July & August 2026
-      this.allocations = [
-        {
-          id: 'ALC001',
-          resourceId: 'RES201', // Alice Smith
-          projectId: 'PRJ001', // Ares Core
-          projectName: 'Project Ares Core Upgrade',
-          role: 'Lead Architect',
-          startDate: '2026-07-01',
-          endDate: '2026-08-31',
-          hoursPerWeek: 30, // 30 hrs/week
-          weekendHours: 0,
-          notes: 'Architecting core system schemas and replication queues.'
-        },
-        {
-          id: 'ALC002',
-          resourceId: 'RES201', // Alice Smith
-          projectId: 'PRJ002', // Zeus Shield
-          projectName: 'Zeus Security Shield Framework',
-          role: 'Security Advisor',
-          startDate: '2026-07-15',
-          endDate: '2026-08-15',
-          hoursPerWeek: 15, // Total 45 hrs/week (Over-allocated!)
-          weekendHours: 0,
-          notes: 'Auditing secure gateway micro-endpoints.'
-        },
-        {
-          id: 'ALC003',
-          resourceId: 'RES202', // Bob Johnson
-          projectId: 'PRJ001', // Ares Core
-          projectName: 'Project Ares Core Upgrade',
-          role: 'Fullstack Dev',
-          startDate: '2026-07-01',
-          endDate: '2026-07-31',
-          hoursPerWeek: 40,
-          weekendHours: 6, // 6 hrs weekend release
-          notes: 'React UI scaffolding and integration workflows.'
-        },
-        {
-          id: 'ALC004',
-          resourceId: 'RES203', // Clara Oswald
-          projectId: 'PRJ003', // Hermes API
-          projectName: 'Hermes Logistic Router API',
-          role: 'UX Designer',
-          startDate: '2026-06-15',
-          endDate: '2026-07-15',
-          hoursPerWeek: 20,
-          weekendHours: 0,
-          notes: 'Interactive prototyping and figma handoff.'
-        },
-        {
-          id: 'ALC005',
-          resourceId: 'RES205', // Elena Rostova
-          projectId: 'PRJ001', // Ares Core
-          projectName: 'Project Ares Core Upgrade',
-          role: 'Product Manager',
-          startDate: '2026-07-01',
-          endDate: '2026-09-30',
-          hoursPerWeek: 32,
-          weekendHours: 0,
-          notes: 'Backlog pruning and stakeholder sync meetings.'
-        }
-      ];
-      Storage.set('resource_allocations', this.allocations);
+      this.allocations = [];
+      Storage.set('resource_allocations', []);
     }
   },
 

@@ -26,36 +26,11 @@ class EnterprisePortalApp {
     this.currentTheme = 'light';
     this.currentPage = 'dashboard';
     
-    // Core Collections to show interactive filters and excel exports
-    this.projectsList = [
-      { id: 'PRJ001', name: 'Project Ares Core Upgrade', client: 'AeroSpace Inc.', manager: 'John Doe', progress: 75, budget: 120000, status: 'in-progress' },
-      { id: 'PRJ002', name: 'Zeus Security Shield Framework', client: 'Defense Lab', manager: 'Sarah Connor', progress: 95, budget: 450000, status: 'in-progress' },
-      { id: 'PRJ003', name: 'Hermes Logistic Router API', client: 'Speedy Delivery', manager: 'Alex Mercer', progress: 100, budget: 85000, status: 'completed' },
-      { id: 'PRJ004', name: 'Chronos Real-time Scheduler', client: 'Global Bank Corp.', manager: 'Michael Scott', progress: 15, budget: 310000, status: 'planning' },
-      { id: 'PRJ005', name: 'Demeter Agro-Sensors Cloud', client: 'GreenField Farms', manager: 'Pam Beesly', progress: 0, budget: 95000, status: 'on-hold' }
-    ];
-    
-    this.customersList = [
-      { id: 'CST101', name: 'AeroSpace Inc.', industry: 'Aviation', contact: 'William Vance', projects: 2, status: 'active' },
-      { id: 'CST102', name: 'Defense Lab', industry: 'Government', contact: 'Richard Winters', projects: 1, status: 'active' },
-      { id: 'CST103', name: 'Speedy Delivery', industry: 'Logistics', contact: 'James Cole', projects: 3, status: 'active' },
-      { id: 'CST104', name: 'Global Bank Corp.', industry: 'Finance', contact: 'Linus Larrabee', projects: 1, status: 'active' },
-      { id: 'CST105', name: 'GreenField Farms', industry: 'Agriculture', contact: 'Dwight Schrute', projects: 1, status: 'inactive' }
-    ];
-    
-    this.resourcesList = [
-      { id: 'RES201', name: 'Alice Smith', role: 'Lead Developer', dept: 'Dev', allocation: 100, status: 'allocated' },
-      { id: 'RES202', name: 'Bob Johnson', role: 'Fullstack Dev', dept: 'Dev', allocation: 100, status: 'allocated' },
-      { id: 'RES203', name: 'Clara Oswald', role: 'QA Lead', dept: 'QA', allocation: 50, status: 'allocated' },
-      { id: 'RES204', name: 'David Miller', role: 'Business Analyst', dept: 'BA', allocation: 0, status: 'pending' },
-      { id: 'RES205', name: 'Elena Rostova', role: 'Product Manager', dept: 'Product Manager', allocation: 80, status: 'allocated' }
-    ];
-    
-    this.leavesList = [
-      { id: 'LV001', name: 'Alice Smith', type: 'Annual Leave', start: '2026-08-10', end: '2026-08-15', days: 5, status: 'approved' },
-      { id: 'LV002', name: 'David Miller', type: 'Sick Leave', start: '2026-07-28', end: '2026-07-30', days: 2, status: 'pending' },
-      { id: 'LV003', name: 'Elena Rostova', type: 'Personal Day', start: '2026-08-01', end: '2026-08-01', days: 1, status: 'approved' }
-    ];
+    // Core Collections initialized empty for fresh start
+    this.projectsList = [];
+    this.customersList = [];
+    this.resourcesList = [];
+    this.leavesList = [];
   }
 
   /**

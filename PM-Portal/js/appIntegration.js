@@ -61,21 +61,14 @@ export const AppIntegrationModule = {
       });
     }
 
-    // Add search command shortcut button to search bar
-    const searchBar = document.querySelector('#top-navbar .search-bar');
-    if (searchBar && !document.getElementById('cmd-k-badge')) {
-      const kbd = document.createElement('kbd');
-      kbd.id = 'cmd-k-badge';
-      kbd.className = 'ms-auto text-xxs font-mono text-muted bg-body-tertiary border px-1.5 py-0.5 rounded';
-      kbd.style.fontSize = '0.65rem';
-      kbd.textContent = 'Ctrl K';
-      searchBar.appendChild(kbd);
-
-      searchBar.style.cursor = 'pointer';
-      searchBar.addEventListener('click', () => {
-        this.openCommandPalette();
-      });
-    }
+      // Search bar click handler for command palette
+      const searchBar = document.querySelector('#top-navbar .search-bar');
+      if (searchBar) {
+        searchBar.style.cursor = 'pointer';
+        searchBar.addEventListener('click', () => {
+          this.openCommandPalette();
+        });
+      }
   },
 
   /**
@@ -374,7 +367,7 @@ export const AppIntegrationModule = {
     floatBtn.className = 'btn btn-primary shadow-lg position-fixed bottom-0 end-0 m-4 rounded-circle d-flex align-items-center justify-content-center';
     floatBtn.style.cssText = 'width: 58px; height: 58px; z-index: 99990; border: 2px solid rgba(255,255,255,0.4); cursor: pointer; transition: transform 0.2s ease;';
     floatBtn.setAttribute('aria-label', 'Open AI Decision Support Assistant');
-    floatBtn.setAttribute('title', 'AI Assistant (Click or press Ctrl+K)');
+    floatBtn.setAttribute('title', 'AI Assistant (Click to open)');
     floatBtn.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles" style="font-size: 1.35rem;"></i>`;
 
     floatBtn.addEventListener('mouseenter', () => floatBtn.style.transform = 'scale(1.08)');

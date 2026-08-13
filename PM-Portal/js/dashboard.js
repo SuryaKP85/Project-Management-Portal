@@ -4,95 +4,27 @@ import { Charts } from './charts.js';
 import { Storage } from './storage.js';
 
 export const DashboardModule = {
-  // High fidelity dummy datasets representing standard portfolio configurations
+  // Default datasets for fresh state
   getDummyJSON() {
     return {
-      customerProjects: [
-        { label: 'AeroSpace Inc.', value: 12 },
-        { label: 'Defense Lab', value: 8 },
-        { label: 'Speedy Delivery', value: 15 },
-        { label: 'Global Bank Corp.', value: 5 },
-        { label: 'GreenField Farms', value: 2 }
-      ],
-      projectStatus: [
-        { label: 'In Progress', value: 18 },
-        { label: 'Completed', value: 20 },
-        { label: 'Planning', value: 10 },
-        { label: 'On Hold', value: 4 },
-        { label: 'Delayed', value: 3 },
-        { label: 'Critical', value: 1 }
-      ],
-      projectPriority: [
-        { label: 'High Priority', value: 15 },
-        { label: 'Medium Priority', value: 20 },
-        { label: 'Low Priority', value: 7 }
-      ],
-      projectRisk: [
-        { label: 'Critical Risks', value: 2 },
-        { label: 'High Risks', value: 5 },
-        { label: 'Medium Risks', value: 12 },
-        { label: 'Low Risks', value: 18 }
-      ],
-      monthlyDeliveries: [
-        { label: 'Jan', value: 3 },
-        { label: 'Feb', value: 5 },
-        { label: 'Mar', value: 4 },
-        { label: 'Apr', value: 7 },
-        { label: 'May', value: 8 },
-        { label: 'Jun', value: 12 },
-        { label: 'Jul', value: 10 },
-        { label: 'Aug', value: 9 },
-        { label: 'Sep', value: 11 },
-        { label: 'Oct', value: 14 },
-        { label: 'Nov', value: 13 },
-        { label: 'Dec', value: 16 }
-      ],
-      departmentEffort: [
-        { label: 'Engineering', value: 45 },
-        { label: 'Design', value: 15 },
-        { label: 'QA / Test', value: 25 },
-        { label: 'Product', value: 10 },
-        { label: 'Operations', value: 12 }
-      ],
-      remainingHours: [
-        { label: 'Engineering', value: 540 },
-        { label: 'Design', value: 180 },
-        { label: 'QA / Test', value: 320 },
-        { label: 'Operations', value: 200 }
-      ],
-      resourceUtilization: [
-        { label: 'Lead Architects', value: 95 },
-        { label: 'Fullstack Devs', value: 100 },
-        { label: 'UX Designers', value: 75 },
-        { label: 'QA Engineers', value: 60 },
-        { label: 'Product Managers', value: 85 }
-      ],
-      sowStatus: [
-        { label: 'Approved', value: 24 },
-        { label: 'Pending Client Sign-off', value: 5 },
-        { label: 'Under Draft', value: 8 },
-        { label: 'In Review', value: 5 }
-      ]
+      customerProjects: [],
+      projectStatus: [],
+      projectPriority: [],
+      projectRisk: [],
+      monthlyDeliveries: [],
+      departmentEffort: [],
+      remainingHours: [],
+      resourceUtilization: [],
+      sowStatus: []
     };
   },
 
   getTasksData() {
-    return [
-      { id: 't1', title: 'Review Phase 1 System Architecture blueprint', priority: 'high', due: 'In 2 days', completed: false },
-      { id: 't2', title: 'Prepare Q3 resource allocation matrix spreadsheets', priority: 'medium', due: 'In 4 days', completed: false },
-      { id: 't3', title: 'Perform weekly risk matrix audits with security leads', priority: 'low', due: 'In 5 days', completed: true },
-      { id: 't4', title: 'Coordinate external client reviews for dashboard UI', priority: 'high', due: 'In 6 days', completed: false }
-    ];
+    return [];
   },
 
   getRecentActivities() {
-    return [
-      { id: 'a1', desc: '<span>Sarah Connor</span> allocated 3 designers to Project Ares', type: 'primary', time: '10 minutes ago' },
-      { id: 'a2', desc: '<span>John Doe</span> marked risk "Spike in API latency" as <span>Mitigated</span>', type: 'success', time: '2 hours ago' },
-      { id: 'a3', desc: '<span>Leave Tracker</span> auto-approved 3 vacation requests for QA team', type: 'success', time: '4 hours ago' },
-      { id: 'a4', desc: '<span>Critical Alert:</span> Server backup execution failed', type: 'danger', time: '1 day ago' },
-      { id: 'a5', desc: '<span>Alex Mercer</span> created new project <span>Zeus Shield</span>', type: 'primary', time: '1 day ago' }
-    ];
+    return [];
   },
 
   /**
@@ -420,11 +352,11 @@ export const DashboardModule = {
           console.warn("Error calculating dashboard leaves count:", e);
         }
       } else {
-        activeLeavesCount = 2; // fallback
+        activeLeavesCount = 0;
       }
 
       // Dynamic integration with Weekend Planner
-      let activeWeekendCount = weekendSupport; // fallback
+      let activeWeekendCount = 0;
       const rawWeekendLogs = localStorage.getItem('pm_portal_weekend_logs') || localStorage.getItem('weekend_logs');
       if (rawWeekendLogs) {
         try {
@@ -509,18 +441,18 @@ export const DashboardModule = {
   renderMetrics() {
     const dynamicData = this.getDynamicData();
     const metrics = dynamicData ? dynamicData.kpis : {
-      'metric-total-customers': '14',
-      'metric-total-projects': '42',
-      'metric-projects-in-progress': '18',
-      'metric-completed-projects': '20',
-      'metric-delayed-projects': '3',
-      'metric-critical-projects': '1',
-      'metric-pending-sow': '5',
-      'metric-employees-on-leave': '2',
-      'metric-weekend-support': '4',
-      'metric-avg-project-health': '92%',
-      'metric-remaining-hours': '1,240',
-      'metric-logged-hours': '4,850'
+      'metric-total-customers': '0',
+      'metric-total-projects': '0',
+      'metric-projects-in-progress': '0',
+      'metric-completed-projects': '0',
+      'metric-delayed-projects': '0',
+      'metric-critical-projects': '0',
+      'metric-pending-sow': '0',
+      'metric-employees-on-leave': '0',
+      'metric-weekend-support': '0',
+      'metric-avg-project-health': '0%',
+      'metric-remaining-hours': '0',
+      'metric-logged-hours': '0'
     };
 
     Object.entries(metrics).forEach(([id, val]) => {

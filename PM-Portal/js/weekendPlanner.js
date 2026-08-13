@@ -45,45 +45,8 @@ export const WeekendPlannerModule = {
   loadData() {
     // 1. Weekend Logs
     let storedLogs = Storage.get('weekend_logs');
-    if (!storedLogs || !Array.isArray(storedLogs) || storedLogs.length === 0) {
-      storedLogs = [
-        {
-          id: 'WK001',
-          date: '2026-08-01',
-          employee: 'Bob Johnson',
-          project: 'PRJ001',
-          hours: 8,
-          task: 'Hotfix for core database replication sync and buffer optimization',
-          status: 'Approved'
-        },
-        {
-          id: 'WK002',
-          date: '2026-08-02',
-          employee: 'Alice Smith',
-          project: 'PRJ002',
-          hours: 6,
-          task: 'Firewall penetration micro-audit and secure endpoints vulnerability sweep',
-          status: 'Approved'
-        },
-        {
-          id: 'WK003',
-          date: '2026-08-08',
-          employee: 'David Miller',
-          project: 'PRJ001',
-          hours: 8,
-          task: 'Jest regression test suite preparation and Jenkins deployment verification',
-          status: 'Pending Review'
-        },
-        {
-          id: 'WK004',
-          date: '2026-08-09',
-          employee: 'Elena Rostova',
-          project: 'PRJ004',
-          hours: 4,
-          task: 'Chronos real-time scheduler backlog pruning and SLA tracking verification',
-          status: 'Approved'
-        }
-      ];
+    if (!storedLogs || !Array.isArray(storedLogs)) {
+      storedLogs = [];
       Storage.set('weekend_logs', storedLogs);
     }
     this.weekendLogs = storedLogs;

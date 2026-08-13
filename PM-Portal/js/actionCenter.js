@@ -33,134 +33,19 @@ export const ActionCenterModule = {
    * Loads all core entity collections from Storage and ensures enriched metrics exist
    */
   loadAndPrepareData() {
-    // 1. Projects
-    let storedProjects = Storage.get('projects');
-    if (!storedProjects || !Array.isArray(storedProjects) || storedProjects.length === 0) {
-      storedProjects = this.app.projectsList || [];
+    this.projects = Storage.get('projects') || [];
+    this.resources = Storage.get('resources') || [];
+    this.stories = Storage.get('stories') || [];
+    this.leaves = Storage.get('leaves') || [];
+    this.customers = Storage.get('customers') || [];
+    this.weekend = Storage.get('weekendWork') || Storage.get('weekend_logs') || [];
+
+    if (this.app) {
+      this.app.projectsList = this.projects;
+      this.app.resourcesList = this.resources;
+      this.app.customersList = this.customers;
+      this.app.leavesList = this.leaves;
     }
-
-    // Enrich projects with SOW, last updates, remaining hours, and escalation status if missing
-    this.projects = storedProjects.map((p, index) => {
-      const copy = { ...p };
-      
-      // Default dates matching 2026
-      const mockDates = [
-        { start: '2026-07-01', end: '2026-07-30' }, // Overdue or Due this week (Jul 30)
-        { start: '2026-07-10', end: '2026-08-05' }, // Due next week (Aug 5)
-        { start: '2026-06-15', end: '2026-07-20' }, // Overdue (Jul 20)
-        { start: '2026-07-20', end: '2026-08-20' }, // In-progress
-        { start: '2026-05-10', end: '2026-06-15' }  // Completed/Hold
-      ];
-      const dateConf = mockDates[index % mockDates.length];
-      copy.estimatedStart = copy.estimatedStart || dateConf.start;
-      copy.estimatedEnd = copy.estimatedEnd || dateConf.end;
-
-      // Hours remaining calculations
-      if (copy.hoursRemaining === undefined) {
-        const totalEst = copy.budget ? Math.round(copy.budget / 120) : 320;
-        copy.totalHours = totalEst;
-        copy.hoursRemaining = Math.max(0, Math.round(totalEst * (1 - (copy.progress || 0) / 100)));
-      }
-
-      // Explicitly set under 20h for a couple projects for rich testing
-      if (copy.id === 'PRJ003') {
-        copy.hoursRemaining = 12;
-        copy.progress = 96;
-      } else if (copy.id === 'PRJ005') {
-        copy.hoursRemaining = 18;
-        copy.progress = 92;
-      }
-
-      // Last update timestamps
-      if (!copy.lastUpdate) {
-        const mockUpdates = ['2026-07-27', '2026-07-21', '2026-07-18', '2026-07-28', '2026-07-15'];
-        copy.lastUpdate = mockUpdates[index % mockUpdates.length];
-      }
-
-      // SOW status
-      if (!copy.sowStatus) {
-        const mockSOW = ['Approved', 'Pending Approval', 'Approved', 'Pending Signature', 'Approved'];
-        copy.sowStatus = mockSOW[index % mockSOW.length];
-      }
-
-      // Developers and QA
-      copy.developer = copy.developer || (index % 2 === 0 ? 'Bob Johnson' : 'Alice Smith');
-      copy.qa = copy.qa || 'David Miller';
-
-      return copy;
-    });
-
-    Storage.set('projects', this.projects);
-    if (this.app) this.app.projectsList = this.projects;
-
-    // 2. Resources (Developer and QA allocations)
-    let storedResources = Storage.get('resources');
-    if (!storedResources || !Array.isArray(storedResources) || storedResources.length === 0) {
-      storedResources = this.app.resourcesList || [
-        { id: 'RES201', name: 'Alice Smith', role: 'Lead Architect', dept: 'Engineering', allocation: 95, status: 'allocated' },
-        { id: 'RES202', name: 'Bob Johnson', role: 'Fullstack Dev', dept: 'Engineering', allocation: 125, status: 'allocated' },
-        { id: 'RES203', name: 'Clara Oswald', role: 'UX Designer', dept: 'Design', allocation: 60, status: 'allocated' },
-        { id: 'RES204', name: 'David Miller', role: 'QA Automation', dept: 'QA / Test', allocation: 135, status: 'allocated' },
-        { id: 'RES205', name: 'Elena Rostova', role: 'Product Manager', dept: 'Product', allocation: 80, status: 'allocated' }
-      ];
-    }
-    // Ensure overloaded status
-    this.resources = storedResources.map(r => {
-      if (r.name === 'Bob Johnson') r.allocation = 125;
-      if (r.name === 'David Miller') r.allocation = 135;
-      return r;
-    });
-    Storage.set('resources', this.resources);
-    if (this.app) this.app.resourcesList = this.resources;
-
-    // 3. User Stories & Tasks
-    let storedStories = Storage.get('stories');
-    if (!storedStories || !Array.isArray(storedStories) || storedStories.length === 0) {
-      storedStories = [
-        { id: 'US-101', title: 'OAuth2 Multi-tenant Authentication Engine', projectId: 'PRJ001', estimatedHours: 16, loggedHours: 28, status: 'In Progress', isBlocked: false, blockerReason: '' },
-        { id: 'US-102', title: 'High-throughput Order Router Pipeline', projectId: 'PRJ003', estimatedHours: 24, loggedHours: 42, status: 'Exceeded', isBlocked: false, blockerReason: '' },
-        { id: 'US-103', title: 'Real-time WebSocket Heartbeat Gateway', projectId: 'PRJ002', estimatedHours: 32, loggedHours: 12, status: 'Blocked', isBlocked: true, blockerReason: 'Waiting for TLS Certificate & Firewall Rules Approval' },
-        { id: 'US-104', title: 'Database Cold-Store Migration Script', projectId: 'PRJ004', estimatedHours: 20, loggedHours: 5, status: 'Blocked', isBlocked: true, blockerReason: 'Pending Third-Party SOW Agreement Sign-off' },
-        { id: 'US-105', title: 'Automated E2E Cypress Regression Suite', projectId: 'PRJ001', estimatedHours: 18, loggedHours: 30, status: 'Exceeded', isBlocked: false, blockerReason: '' }
-      ];
-    }
-    this.stories = storedStories;
-    Storage.set('stories', this.stories);
-
-    // 4. Leaves
-    let storedLeaves = Storage.get('leaves');
-    if (!storedLeaves || !Array.isArray(storedLeaves) || storedLeaves.length === 0) {
-      storedLeaves = this.app.leavesList || [
-        { id: 'LV001', name: 'Alice Smith', type: 'Annual Leave', start: '2026-07-28', end: '2026-08-01', days: 5, status: 'approved' },
-        { id: 'LV002', name: 'David Miller', type: 'Sick Leave', start: '2026-07-29', end: '2026-07-31', days: 3, status: 'approved' },
-        { id: 'LV003', name: 'Elena Rostova', type: 'Personal Day', start: '2026-08-03', end: '2026-08-04', days: 2, status: 'approved' }
-      ];
-    }
-    this.leaves = storedLeaves;
-    Storage.set('leaves', this.leaves);
-
-    // 5. Customers & Escalations
-    let storedCustomers = Storage.get('customers');
-    if (!storedCustomers || !Array.isArray(storedCustomers) || storedCustomers.length === 0) {
-      storedCustomers = this.app.customersList || [
-        { id: 'CST101', name: 'AeroSpace Inc.', industry: 'Aviation', isEscalated: true, escalationReason: 'SLA breach risk on Project Ares Core due to delayed security audits', status: 'active' },
-        { id: 'CST102', name: 'Defense Lab', industry: 'Government', isEscalated: false, escalationReason: '', status: 'active' },
-        { id: 'CST104', name: 'Global Bank Corp.', industry: 'Finance', isEscalated: true, escalationReason: 'Pending SOW signature holding up Sprint 43 deployment', status: 'active' }
-      ];
-    }
-    this.customers = storedCustomers;
-    Storage.set('customers', this.customers);
-
-    // 6. Weekend Shifts
-    let storedWeekend = Storage.get('weekendWork');
-    if (!storedWeekend || !Array.isArray(storedWeekend) || storedWeekend.length === 0) {
-      storedWeekend = [
-        { id: 'WK001', resource: 'Bob Johnson', project: 'Zeus Security Shield Framework', date: '2026-08-01', hours: 8, task: 'Hotfix Deployment & DB Sharding Validation' },
-        { id: 'WK002', resource: 'David Miller', project: 'Project Ares Core Upgrade', date: '2026-08-02', hours: 6, task: 'Overnight Smoke Test Verification' }
-      ];
-    }
-    this.weekendShifts = storedWeekend;
-    Storage.set('weekendWork', this.weekendShifts);
   },
 
   /**
