@@ -20,8 +20,13 @@
   <!-- Chart.js CDN Library -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js" crossorigin="anonymous"></script>
   
-  <!-- SheetJS Library for Excel Engine -->
+  <!-- SheetJS Library for Excel Engine with CDN fallback -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
+  <script>
+    if (typeof XLSX === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"><\/script>');
+    }
+  </script>
 </head>
 <body>
 
@@ -137,10 +142,10 @@
 
       <!-- Sidebar User Profile Footer -->
       <div class="sidebar-footer">
-        <img src="assets/baby_feet.jpg" alt="Profile" referrerpolicy="no-referrer" />
+        <img id="sidebar-user-avatar" src="assets/baby_feet.jpg" alt="Profile" referrerpolicy="no-referrer" />
         <div class="user-info">
-          <div class="font-semibold text-white" style="font-size: 0.85rem;">Prashanth K</div>
-          <div class="brand-subtitle" style="margin: 0; opacity: 0.8;">Admin Lead</div>
+          <div id="sidebar-user-name" class="font-semibold text-white" style="font-size: 0.85rem;">Prashanth</div>
+          <div id="sidebar-user-role" class="brand-subtitle" style="margin: 0; opacity: 0.8;">Admin Lead</div>
         </div>
       </div>
     </aside>
@@ -218,8 +223,8 @@
           </div>
 
           <!-- User profile shortcut -->
-          <a href="#" class="user-profile-menu" data-page="settings">
-            <img src="assets/baby_feet.jpg" alt="Prashanth" referrerpolicy="no-referrer" />
+          <a href="#" class="user-profile-menu" data-page="settings" title="Profile Settings">
+            <img id="header-user-avatar" src="assets/baby_feet.jpg" alt="User Profile" referrerpolicy="no-referrer" />
           </a>
         </div>
       </header>
@@ -2024,9 +2029,6 @@
             </button>
             <button id="weekend-btn-export" class="btn-enterprise btn-enterprise-secondary d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px;" title="Export Roster to Excel">
               <i class="fa-solid fa-file-export text-info"></i> Export Excel
-            </button>
-            <button id="weekend-btn-load-sample" class="btn-enterprise btn-enterprise-secondary d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px;">
-              <i class="fa-solid fa-wand-magic-sparkles text-primary"></i> Sample Roster
             </button>
             <button id="weekend-btn-reset" class="btn-enterprise btn-enterprise-secondary text-danger d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px; border-color: rgba(239, 68, 68, 0.2);">
               <i class="fa-solid fa-trash-can"></i> Clear Ledger

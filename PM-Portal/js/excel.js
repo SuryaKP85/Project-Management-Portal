@@ -393,108 +393,192 @@ export const Excel = {
    * Generic exporter for custom data structures with headers and key mappings
    */
   exportCustomToExcel(headers, data, keys, sheetName = "Export_Data", filename = "export_report") {
-    if (!this.checkLib()) return false;
+    if (this.checkLib()) {
+      try {
+        const XLSX = window.XLSX;
+        const dataAOA = [headers];
 
-    try {
-      const XLSX = window.XLSX;
-      const dataAOA = [headers];
+        if (Array.isArray(data) && data.length > 0) {
+          data.forEach(item => {
+            dataAOA.push(keys.map(k => item[k] !== undefined && item[k] !== null ? item[k] : ""));
+          });
+        }
 
-      if (Array.isArray(data) && data.length > 0) {
-        data.forEach(item => {
-          dataAOA.push(keys.map(k => item[k] !== undefined ? item[k] : ""));
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(dataAOA);
+
+        // Auto-fit column widths
+        const colWidths = headers.map((h, i) => {
+          let maxLen = h.toString().length;
+          dataAOA.forEach(row => {
+            const cellVal = row[i] ? row[i].toString() : "";
+            if (cellVal.length > maxLen) maxLen = Math.min(cellVal.length, 50);
+          });
+          return { wch: maxLen + 3 };
         });
+        ws['!cols'] = colWidths;
+
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        const safeFilename = filename.toLowerCase().replace(/[^a-z0-9]/gi, '_') + '.xlsx';
+        XLSX.writeFile(wb, safeFilename);
+        return true;
+      } catch (e) {
+        console.error("Custom Excel export failed, falling back to CSV:", e);
       }
-
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.aoa_to_sheet(dataAOA);
-
-      // Auto-fit column widths
-      const colWidths = headers.map((h, i) => {
-        let maxLen = h.toString().length;
-        dataAOA.forEach(row => {
-          const cellVal = row[i] ? row[i].toString() : "";
-          if (cellVal.length > maxLen) maxLen = Math.min(cellVal.length, 50);
-        });
-        return { wch: maxLen + 3 };
-      });
-      ws['!cols'] = colWidths;
-
-      XLSX.utils.book_append_sheet(wb, ws, sheetName);
-      const safeFilename = filename.toLowerCase().replace(/[^a-z0-9]/gi, '_') + '.xlsx';
-      XLSX.writeFile(wb, safeFilename);
-      return true;
-    } catch (e) {
-      console.error("Custom Excel export failed:", e);
-      return false;
     }
+
+    return this.exportToCSV(headers, data, keys, filename);
   },
 
   /**
    * Generic downloadable template generator
    */
   downloadCustomTemplate(headers, sampleRow = null, sheetName = "Template", filename = "template") {
-    if (!this.checkLib()) return false;
+    if (this.checkLib()) {
+      try {
+        const XLSX = window.XLSX;
+        const dataAOA = [headers];
+        if (sampleRow && Array.isArray(sampleRow)) {
+          dataAOA.push(sampleRow);
+        }
 
-    try {
-      const XLSX = window.XLSX;
-      const dataAOA = [headers];
-      if (sampleRow && Array.isArray(sampleRow)) {
-        dataAOA.push(sampleRow);
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(dataAOA);
+
+        ws['!cols'] = headers.map(h => ({ wch: Math.max(h.length + 5, 15) }));
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+        const safeFilename = filename.toLowerCase().replace(/[^a-z0-9]/gi, '_') + '.xlsx';
+        XLSX.writeFile(wb, safeFilename);
+        return true;
+      } catch (e) {
+        console.error("Template download failed, falling back to CSV:", e);
       }
-
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.aoa_to_sheet(dataAOA);
-
-      ws['!cols'] = headers.map(h => ({ wch: Math.max(h.length + 5, 15) }));
-      XLSX.utils.book_append_sheet(wb, ws, sheetName);
-
-      const safeFilename = filename.toLowerCase().replace(/[^a-z0-9]/gi, '_') + '.xlsx';
-      XLSX.writeFile(wb, safeFilename);
-      return true;
-    } catch (e) {
-      console.error("Template download failed:", e);
-      return false;
     }
+
+    const keys = headers.map((_, i) => i);
+    const dataObj = sampleRow ? [sampleRow] : [];
+    return this.exportToCSV(headers, dataObj, keys, filename);
   },
 
   /**
-   * Generic parser for custom Excel/CSV files
+   * Generic parser for custom Excel/CSV files with array buffer and CSV fallback
    */
   parseCustomExcelFile(file, callback) {
-    if (!this.checkLib()) {
-      callback(null, "SheetJS library not ready.");
+    const isCSV = file && file.name && (file.name.endsWith('.csv') || file.type === 'text/csv');
+
+    if (!this.checkLib() || isCSV) {
+      this.parseCSVFileNative(file, (csvRows, csvErr) => {
+        if (csvRows && csvRows.length > 0) {
+          callback(csvRows, null);
+        } else if (this.checkLib()) {
+          this.parseXLSXFileArrayBuffer(file, callback);
+        } else {
+          callback(null, csvErr || "Could not parse spreadsheet file.");
+        }
+      });
       return;
     }
 
+    this.parseXLSXFileArrayBuffer(file, callback);
+  },
+
+  /**
+   * Helper to parse Excel binary using ArrayBuffer and SheetJS
+   */
+  parseXLSXFileArrayBuffer(file, callback) {
     try {
       const XLSX = window.XLSX;
       const reader = new FileReader();
 
       reader.onload = (e) => {
         try {
-          const data = e.target.result;
-          const workbook = XLSX.read(data, { type: "binary" });
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: "array", cellDates: true });
           const firstSheetName = workbook.SheetNames[0];
           const worksheet = workbook.Sheets[firstSheetName];
-          const rows = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+          const rows = XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: false });
 
           if (!rows || rows.length === 0) {
-            callback(null, "Spreadsheet is empty.");
+            this.parseCSVFileNative(file, callback);
             return;
           }
 
           callback(rows, null);
         } catch (err) {
-          console.error("Parsing spreadsheet failed:", err);
-          callback(null, "Parsing failed. Ensure valid Excel workbook format.");
+          console.error("XLSX ArrayBuffer parse error, trying CSV fallback:", err);
+          this.parseCSVFileNative(file, callback);
         }
       };
 
-      reader.onerror = () => callback(null, "FileReader failed to load file.");
-      reader.readAsBinaryString(file);
+      reader.onerror = () => this.parseCSVFileNative(file, callback);
+      reader.readAsArrayBuffer(file);
     } catch (e) {
-      console.error("Custom Excel processor failed:", e);
-      callback(null, "File processing error.");
+      console.error("XLSX processor failed:", e);
+      this.parseCSVFileNative(file, callback);
+    }
+  },
+
+  /**
+   * Native CSV reader fallback that works without external libraries
+   */
+  parseCSVFileNative(file, callback) {
+    try {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const text = e.target.result;
+          const lines = text.split(/\r\n|\n/).map(l => l.trim()).filter(l => l.length > 0);
+          if (lines.length < 2) {
+            callback(null, "Spreadsheet is empty or missing data rows.");
+            return;
+          }
+
+          const parseCSVLine = (line) => {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+            for (let i = 0; i < line.length; i++) {
+              const char = line[i];
+              if (char === '"' || char === "'") {
+                inQuotes = !inQuotes;
+              } else if (char === ',' && !inQuotes) {
+                result.push(current.trim().replace(/^["']|["']$/g, ''));
+                current = '';
+              } else {
+                current += char;
+              }
+            }
+            result.push(current.trim().replace(/^["']|["']$/g, ''));
+            return result;
+          };
+
+          const headers = parseCSVLine(lines[0]);
+          const rows = [];
+          for (let i = 1; i < lines.length; i++) {
+            const values = parseCSVLine(lines[i]);
+            if (values.length === 0 || (values.length === 1 && !values[0])) continue;
+            const rowObj = {};
+            headers.forEach((h, idx) => {
+              if (h) rowObj[h] = values[idx] !== undefined ? values[idx] : '';
+            });
+            rows.push(rowObj);
+          }
+
+          if (rows.length === 0) {
+            callback(null, "No valid data rows found in spreadsheet.");
+            return;
+          }
+
+          callback(rows, null);
+        } catch (err) {
+          callback(null, "Spreadsheet parsing error: " + err.message);
+        }
+      };
+      reader.onerror = () => callback(null, "FileReader failed to load file.");
+      reader.readAsText(file);
+    } catch (err) {
+      callback(null, "File reader error: " + err.message);
     }
   },
 

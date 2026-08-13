@@ -147,15 +147,12 @@ export const WeekendPlannerModule = {
       });
     }
 
-    // Loader and Reset buttons
-    const loadBtn = document.getElementById('weekend-btn-load-sample');
-    if (loadBtn) {
-      loadBtn.addEventListener('click', () => this.loadSampleData());
-    }
-
+    // Reset button
     const resetBtn = document.getElementById('weekend-btn-reset');
     if (resetBtn) {
-      resetBtn.addEventListener('click', () => {
+      const newResetBtn = resetBtn.cloneNode(true);
+      resetBtn.parentNode.replaceChild(newResetBtn, resetBtn);
+      newResetBtn.addEventListener('click', () => {
         if (confirm('Are you sure you want to clear all scheduled weekend support logs?')) {
           this.resetData();
         }
@@ -165,22 +162,36 @@ export const WeekendPlannerModule = {
     // Excel Template, Import & Export event handlers
     const templateBtn = document.getElementById('weekend-btn-template');
     if (templateBtn) {
-      templateBtn.addEventListener('click', () => this.downloadTemplate());
+      const newTemplateBtn = templateBtn.cloneNode(true);
+      templateBtn.parentNode.replaceChild(newTemplateBtn, templateBtn);
+      newTemplateBtn.addEventListener('click', () => this.downloadTemplate());
     }
 
     const exportBtn = document.getElementById('weekend-btn-export');
     if (exportBtn) {
-      exportBtn.addEventListener('click', () => this.exportToExcel());
+      const newExportBtn = exportBtn.cloneNode(true);
+      exportBtn.parentNode.replaceChild(newExportBtn, exportBtn);
+      newExportBtn.addEventListener('click', () => this.exportToExcel());
     }
 
     const importBtn = document.getElementById('weekend-btn-import');
     const fileInput = document.getElementById('weekend-file-input');
     if (importBtn && fileInput) {
-      importBtn.addEventListener('click', () => fileInput.click());
-      fileInput.addEventListener('change', (e) => {
+      const newImportBtn = importBtn.cloneNode(true);
+      importBtn.parentNode.replaceChild(newImportBtn, importBtn);
+
+      const newFileInput = fileInput.cloneNode(true);
+      fileInput.parentNode.replaceChild(newFileInput, fileInput);
+
+      newImportBtn.addEventListener('click', () => {
+        newFileInput.value = '';
+        newFileInput.click();
+      });
+
+      newFileInput.addEventListener('change', (e) => {
         if (e.target.files && e.target.files[0]) {
           this.importFromExcel(e.target.files[0]);
-          fileInput.value = '';
+          newFileInput.value = '';
         }
       });
     }
@@ -200,17 +211,14 @@ export const WeekendPlannerModule = {
    * Export weekend support records to Excel
    */
   exportToExcel() {
-    if (!this.weekendLogs || this.weekendLogs.length === 0) {
-      this.app.showToast('No weekend support entries to export', 'warning');
-      return;
-    }
-
     const headers = ['Entry ID', 'Weekend Date', 'Employee Name', 'Project ID', 'Task Description', 'Planned Hours', 'Approval Status'];
     const keys = ['id', 'date', 'employee', 'project', 'task', 'hours', 'status'];
 
-    const success = Excel.exportCustomToExcel(headers, this.weekendLogs, keys, 'Weekend_Roster', 'weekend_planner_export');
+    const logsToExport = (this.weekendLogs && this.weekendLogs.length > 0) ? this.weekendLogs : [];
+
+    const success = Excel.exportCustomToExcel(headers, logsToExport, keys, 'Weekend_Roster', 'weekend_planner_export');
     if (success) {
-      this.app.showToast(`Exported ${this.weekendLogs.length} weekend plan entries to Excel`, 'success');
+      this.app.showToast(`Exported ${logsToExport.length} weekend plan entries to Excel`, 'success');
     } else {
       this.app.showToast('Failed to export weekend plans', 'danger');
     }
@@ -221,45 +229,89 @@ export const WeekendPlannerModule = {
    */
   importFromExcel(file) {
     Excel.parseCustomExcelFile(file, (rows, err) => {
-      if (err || !rows) {
-        this.app.showToast(`Import Error: ${err || 'Invalid file format'}`, 'danger');
+      if (err || !rows || !Array.isArray(rows) || rows.length === 0) {
+        this.app.showToast(`Import Error: ${err || 'No rows found in file'}`, 'danger');
         return;
       }
 
+      const formatIsoDate = (val) => {
+        if (!val) return '2026-08-01';
+        if (val instanceof Date) return val.toISOString().split('T')[0];
+        const str = String(val).trim();
+        if (!isNaN(Number(str)) && Number(str) > 30000) {
+          const d = new Date((Number(str) - (25567 + 2)) * 86400 * 1000);
+          return d.toISOString().split('T')[0];
+        }
+        const parsed = new Date(str);
+        if (!isNaN(parsed.getTime())) {
+          const yyyy = parsed.getFullYear();
+          const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+          const dd = String(parsed.getDate()).padStart(2, '0');
+          return `${yyyy}-${mm}-${dd}`;
+        }
+        return str;
+      };
+
       let importedCount = 0;
       rows.forEach(r => {
+        if (!r || typeof r !== 'object') return;
+
         const getVal = (possibleKeys) => {
           for (let k of possibleKeys) {
-            const found = Object.keys(r).find(key => key.trim().toLowerCase() === k.trim().toLowerCase());
-            if (found && r[found] !== undefined) return r[found];
+            const found = Object.keys(r).find(key => key && key.trim().toLowerCase() === k.trim().toLowerCase());
+            if (found && r[found] !== undefined && r[found] !== null && String(r[found]).trim() !== '') {
+              return String(r[found]).trim();
+            }
           }
           return '';
         };
 
-        const wkDate = getVal(['Weekend Date', 'date', 'Date']) || '2026-08-01';
-        const empName = getVal(['Employee Name', 'employee', 'Employee', 'Name']);
-        const projId = getVal(['Project ID', 'project', 'Project', 'projectId']);
-        const taskDesc = getVal(['Task Description', 'task', 'Task', 'Description']) || 'Imported Weekend Support';
-        const hrsVal = parseInt(getVal(['Planned Hours', 'hours', 'Hours']), 10) || 8;
-        const appStatus = getVal(['Approval Status', 'status', 'Status']) || 'Approved';
+        const wkDateRaw = getVal(['Weekend Date', 'date', 'Date', 'Weekend', 'Log Date', 'Work Date', 'Entry Date']);
+        const empNameRaw = getVal(['Employee Name', 'employee', 'Employee', 'Name', 'Resource', 'Staff', 'Team Member', 'User', 'Person']);
+        const projIdRaw = getVal(['Project ID', 'project', 'Project', 'projectId', 'Project Name', 'Project Code', 'PRJ#', 'ProjectID', 'PRJ']);
+        const taskDescRaw = getVal(['Task Description', 'task', 'Task', 'Description', 'Remarks', 'Activity', 'Work Description', 'Details']);
+        const hrsValRaw = getVal(['Planned Hours', 'hours', 'Hours', 'Planned', 'Hours Logged', 'Logged Hours', 'Duration', 'Effort']);
+        const appStatusRaw = getVal(['Approval Status', 'status', 'Status', 'Approval', 'State']);
 
-        if (empName && projId && hrsVal > 0) {
-          const proj = this.projects.find(p => p.id === projId || p.name === projId);
-          const actualProjId = proj ? proj.id : projId;
-
-          const newEntry = {
-            id: `WK-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 1000)}`,
-            date: wkDate,
-            employee: empName,
-            project: actualProjId,
-            hours: hrsVal,
-            task: taskDesc,
-            status: appStatus
-          };
-
-          this.weekendLogs.unshift(newEntry);
-          importedCount++;
+        // Check if row has any meaningful content
+        if (!wkDateRaw && !empNameRaw && !projIdRaw && !taskDescRaw && !hrsValRaw) {
+          return; // skip completely blank row
         }
+
+        const wkDate = formatIsoDate(wkDateRaw);
+        const empName = empNameRaw || 'Unassigned Staff';
+        const projId = projIdRaw || 'PRJ001';
+        const taskDesc = taskDescRaw || 'Imported Weekend Support';
+        
+        let hrsVal = 8;
+        if (hrsValRaw) {
+          const cleanHrs = String(hrsValRaw).replace(/[^0-9.]/g, '');
+          hrsVal = parseFloat(cleanHrs) || 8;
+        }
+
+        let appStatus = 'Approved';
+        if (appStatusRaw) {
+          const s = appStatusRaw.toLowerCase();
+          if (s.includes('pend')) appStatus = 'Pending Review';
+          else if (s.includes('reject')) appStatus = 'Rejected';
+          else appStatus = 'Approved';
+        }
+
+        const proj = this.projects.find(p => p.id === projId || p.name === projId);
+        const actualProjId = proj ? proj.id : projId;
+
+        const newEntry = {
+          id: `WK-${Date.now().toString().slice(-5)}-${Math.floor(Math.random() * 1000)}`,
+          date: wkDate,
+          employee: empName,
+          project: actualProjId,
+          hours: hrsVal,
+          task: taskDesc,
+          status: appStatus
+        };
+
+        this.weekendLogs.unshift(newEntry);
+        importedCount++;
       });
 
       if (importedCount > 0) {
@@ -269,7 +321,7 @@ export const WeekendPlannerModule = {
         this.triggerLiveImpactAnalysis();
         this.app.showToast(`Successfully imported ${importedCount} weekend plan records!`, 'success');
       } else {
-        this.app.showToast('No valid weekend plan entries found in Excel file. Check column headers.', 'warning');
+        this.app.showToast('No valid weekend plan entries found in spreadsheet.', 'warning');
       }
     });
   },

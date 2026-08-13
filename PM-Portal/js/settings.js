@@ -90,6 +90,19 @@ export const SettingsModule = {
       });
     }
 
+    // Live display name listener for instant bottom-left corner update
+    const nameInp = document.getElementById('settings-user-name');
+    if (nameInp) {
+      nameInp.addEventListener('input', (e) => {
+        const val = e.target.value.trim();
+        const firstName = val ? (val.split(' ')[0] || val) : 'User';
+        const sbName = document.getElementById('sidebar-user-name');
+        if (sbName) sbName.textContent = firstName;
+        const hdrName = document.getElementById('top-user-name');
+        if (hdrName) hdrName.textContent = firstName;
+      });
+    }
+
     // Avatar Photo Change Button and File Input
     const btnUploadAvatar = document.getElementById('settings-btn-upload-avatar');
     const avatarInput = document.getElementById('settings-avatar-input');
@@ -208,19 +221,30 @@ export const SettingsModule = {
     const setPrev = document.getElementById('settings-avatar-preview');
     if (setPrev) setPrev.src = avatarSrc;
 
-    // Sidebar Avatar & Info
+    // Sidebar Avatar & Info (Bottom Left Corner)
     const sbAvatar = document.getElementById('sidebar-user-avatar');
     if (sbAvatar) sbAvatar.src = avatarSrc;
 
     const sbName = document.getElementById('sidebar-user-name');
-    if (sbName) sbName.textContent = this.currentUser.name || 'Prashanth K';
+    if (sbName) {
+      const fullName = (this.currentUser.name || 'Prashanth').trim();
+      const firstName = fullName.split(' ')[0] || fullName;
+      sbName.textContent = firstName;
+    }
 
     const sbRole = document.getElementById('sidebar-user-role');
     if (sbRole) sbRole.textContent = this.currentUser.role === 'admin' ? 'Admin Lead' : 'Team Member';
 
-    // Top Header Avatar
+    // Top Header Avatar (Top Right Corner)
     const hdrAvatar = document.getElementById('header-user-avatar');
     if (hdrAvatar) hdrAvatar.src = avatarSrc;
+
+    const hdrName = document.getElementById('top-user-name');
+    if (hdrName) {
+      const fullName = (this.currentUser.name || 'Prashanth').trim();
+      const firstName = fullName.split(' ')[0] || fullName;
+      hdrName.textContent = firstName;
+    }
   },
 
   /**

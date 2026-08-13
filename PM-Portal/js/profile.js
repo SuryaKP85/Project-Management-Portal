@@ -173,10 +173,19 @@ export const ProfileModule = {
   },
 
   syncAvatarAcrossUI() {
-    this.user = Authentication.getCurrentUser();
+    this.user = Authentication.getCurrentUser() || Storage.get('current_user');
     if (!this.user) return;
 
+    const avatarSrc = this.user.avatar || 'assets/baby_feet.jpg';
+
+    // Settings Preview
+    const setPrev = document.getElementById('settings-avatar-preview');
+    if (setPrev) setPrev.src = avatarSrc;
+
     // Top-right corner avatar
+    const hdrAvatar = document.getElementById('header-user-avatar');
+    if (hdrAvatar) hdrAvatar.src = avatarSrc;
+
     const navAvatar = document.getElementById('top-user-avatar');
     if (navAvatar) {
       if (this.user.avatar) {
@@ -190,7 +199,19 @@ export const ProfileModule = {
     // Top-right user display name
     const navName = document.getElementById('top-user-name');
     if (navName) {
-      navName.textContent = this.user.name || this.user.firstName || 'User';
+      const fullName = (this.user.name || this.user.firstName || 'User').trim();
+      navName.textContent = fullName.split(' ')[0] || fullName;
+    }
+
+    // Sidebar bottom-left corner avatar
+    const sbAvatar = document.getElementById('sidebar-user-avatar');
+    if (sbAvatar) sbAvatar.src = avatarSrc;
+
+    // Sidebar bottom-left corner name (display first name)
+    const sbName = document.getElementById('sidebar-user-name');
+    if (sbName) {
+      const fullName = (this.user.name || this.user.firstName || 'User').trim();
+      sbName.textContent = fullName.split(' ')[0] || fullName;
     }
   }
 };
