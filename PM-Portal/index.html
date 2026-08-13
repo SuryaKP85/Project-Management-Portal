@@ -555,7 +555,11 @@
               <p class="page-description">Manage company project codes, health rates, and budget allocations</p>
             </div>
             <div class="d-flex gap-2">
-              <button id="project-export-btn" class="btn-enterprise btn-enterprise-secondary">
+              <input type="file" id="project-file-input" accept=".xlsx, .xls, .csv" class="d-none" />
+              <button id="project-import-btn" class="btn-enterprise btn-enterprise-secondary" title="Import & Update Projects from Excel">
+                <i class="fa-solid fa-file-import text-primary"></i> Import Excel
+              </button>
+              <button id="project-export-btn" class="btn-enterprise btn-enterprise-secondary" title="Export Spreadsheet with Status Legend">
                 <i class="fa-solid fa-file-excel" style="color: #107c41;"></i> Export Spreadsheet
               </button>
               <button id="project-create-btn" class="btn-enterprise btn-enterprise-primary">

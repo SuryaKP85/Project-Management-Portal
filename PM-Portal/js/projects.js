@@ -370,14 +370,254 @@ export const ProjectsModule = {
       exportBtn.parentNode.replaceChild(newExportBtn, exportBtn);
       
       newExportBtn.addEventListener('click', () => {
-        const filtered = this.getFilteredAndSortedProjects();
-        const headers = ['Project Code', 'Project Name', 'Client/Customer', 'Project Manager', 'Sprint', 'Risk', 'Progress %', 'Budget ($)', 'Status'];
-        const keys = ['id', 'name', 'client', 'manager', 'sprint', 'risk', 'progress', 'budget', 'status'];
-        
-        const ok = Excel.exportToCSV(headers, filtered, keys, 'Enterprise_Projects_Registers');
-        if (ok) this.app.showToast('Spreadsheet exported successfully', 'success');
+        this.exportToExcel();
       });
     }
+
+    // 14. Connect spreadsheet import button from header
+    const importBtn = document.getElementById('project-import-btn');
+    const fileInput = document.getElementById('project-file-input');
+    if (importBtn && fileInput) {
+      const newImportBtn = importBtn.cloneNode(true);
+      importBtn.parentNode.replaceChild(newImportBtn, importBtn);
+
+      const newFileInput = fileInput.cloneNode(true);
+      fileInput.parentNode.replaceChild(newFileInput, fileInput);
+
+      newImportBtn.addEventListener('click', () => {
+        newFileInput.value = '';
+        newFileInput.click();
+      });
+
+      newFileInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+          this.importFromExcel(e.target.files[0]);
+          newFileInput.value = '';
+        }
+      });
+    }
+  },
+
+  /**
+   * Export enterprise project registers to Excel with Status Legend sheet
+   */
+  exportToExcel() {
+    const filtered = this.getFilteredAndSortedProjects();
+    const dataToExport = (filtered && filtered.length > 0) ? filtered : this.projects;
+
+    const headers = [
+      'Project Code',
+      'Project Name',
+      'Client/Customer',
+      'Project Manager',
+      'Developer',
+      'QA',
+      'BA',
+      'Sprint',
+      'Risk',
+      'Progress %',
+      'Budget ($)',
+      'Status',
+      'Remarks'
+    ];
+
+    const keys = [
+      'id',
+      'name',
+      'client',
+      'manager',
+      'developer',
+      'qa',
+      'ba',
+      'sprint',
+      'risk',
+      'progress',
+      'budget',
+      'status',
+      'remarks'
+    ];
+
+    const ok = Excel.exportProjectsWithLegend(headers, dataToExport, keys, 'Project_Registers', 'enterprise_projects_registers');
+    if (ok) {
+      this.app.showToast(`Exported ${dataToExport.length} projects to Excel with Status Legend`, 'success');
+    } else {
+      this.app.showToast('Failed to export projects spreadsheet', 'danger');
+    }
+  },
+
+  /**
+   * Import projects from Excel / CSV file and update existing or create new
+   */
+  importFromExcel(file) {
+    Excel.parseCustomExcelFile(file, (rows, err) => {
+      if (err || !rows || !Array.isArray(rows) || rows.length === 0) {
+        this.app.showToast(`Import Error: ${err || 'No valid rows found in file'}`, 'danger');
+        return;
+      }
+
+      let updatedCount = 0;
+      let createdCount = 0;
+      let skippedCount = 0;
+
+      rows.forEach(r => {
+        if (!r || typeof r !== 'object') return;
+
+        // Flexible column lookup
+        const getVal = (possibleKeys) => {
+          for (let k of possibleKeys) {
+            const found = Object.keys(r).find(key => key && key.trim().toLowerCase() === k.trim().toLowerCase());
+            if (found && r[found] !== undefined && r[found] !== null && String(r[found]).trim() !== '') {
+              return String(r[found]).trim();
+            }
+          }
+          return '';
+        };
+
+        const projCode = getVal(['Project Code', 'Project ID', 'id', 'code', 'PRJ#', 'Project Code/ID', 'Code', 'Project ID/Code']);
+        const projName = getVal(['Project Name', 'name', 'Project', 'Title', 'Project/Client Name', 'Name', 'ProjectTitle']);
+        const clientName = getVal(['Client/Customer', 'Client', 'Customer', 'client', 'customer', 'Customer Name', 'Client Name']);
+
+        // Mandatory check: Part from Project Name / Client Name, other fields are optional.
+        if (!projName && !clientName) {
+          skippedCount++;
+          return;
+        }
+
+        const effectiveName = projName || clientName;
+        const effectiveClient = clientName || projName || 'Internal Client';
+
+        // Optional fields
+        const pmName = getVal(['Project Manager', 'Manager', 'manager', 'PM', 'ProjectManager']);
+        const devName = getVal(['Developer', 'developer', 'Dev', 'Lead Developer']);
+        const qaName = getVal(['QA', 'qa', 'Tester', 'QA Lead']);
+        const baName = getVal(['BA', 'ba', 'Business Analyst']);
+        const sprintName = getVal(['Sprint', 'sprint']);
+        const riskRaw = getVal(['Risk', 'risk', 'Risk Level']);
+        const progressRaw = getVal(['Progress %', 'Progress', 'progress', 'Completion %', 'Progress%']);
+        const budgetRaw = getVal(['Budget ($)', 'Budget', 'budget', 'Cost', 'Project Budget']);
+        const statusRaw = getVal(['Status', 'status', 'Project Status']);
+        const remarksRaw = getVal(['Remarks', 'remarks', 'Notes', 'Description']);
+
+        // Normalize status
+        let parsedStatus = '';
+        if (statusRaw) {
+          const s = statusRaw.toLowerCase();
+          if (s.includes('progress') || s.includes('active') || s.includes('ongoing')) parsedStatus = 'in-progress';
+          else if (s.includes('complet') || s.includes('done') || s.includes('finish') || s.includes('closed')) parsedStatus = 'completed';
+          else if (s.includes('plan') || s.includes('pipeline') || s.includes('scop') || s.includes('initiat')) parsedStatus = 'planning';
+          else if (s.includes('hold') || s.includes('pause') || s.includes('suspend')) parsedStatus = 'on-hold';
+          else if (s.includes('archiv')) parsedStatus = 'archived';
+          else parsedStatus = 'in-progress';
+        }
+
+        // Normalize risk
+        let parsedRisk = '';
+        if (riskRaw) {
+          const rLow = riskRaw.toLowerCase();
+          if (rLow.includes('crit')) parsedRisk = 'Critical';
+          else if (rLow.includes('high')) parsedRisk = 'High';
+          else if (rLow.includes('med')) parsedRisk = 'Medium';
+          else if (rLow.includes('low')) parsedRisk = 'Low';
+          else parsedRisk = 'Low';
+        }
+
+        // Parse progress
+        let parsedProgress = null;
+        if (progressRaw !== '') {
+          const cleanP = progressRaw.replace(/[^0-9.]/g, '');
+          if (cleanP !== '') {
+            let pNum = parseFloat(cleanP);
+            if (pNum > 0 && pNum <= 1 && progressRaw.indexOf('%') === -1) pNum = Math.round(pNum * 100);
+            parsedProgress = Math.min(100, Math.max(0, pNum));
+          }
+        }
+
+        // Parse budget
+        let parsedBudget = null;
+        if (budgetRaw !== '') {
+          const cleanB = budgetRaw.replace(/[^0-9.]/g, '');
+          if (cleanB !== '') {
+            parsedBudget = parseFloat(cleanB);
+          }
+        }
+
+        // Try to match existing project by Code or Name
+        let existingProj = null;
+        if (projCode) {
+          existingProj = this.projects.find(p => p.id && p.id.toLowerCase() === projCode.toLowerCase());
+        }
+        if (!existingProj && effectiveName) {
+          existingProj = this.projects.find(p => p.name && p.name.toLowerCase().trim() === effectiveName.toLowerCase().trim());
+        }
+
+        if (existingProj) {
+          // UPDATE existing record - override non-empty imported fields, preserve existing for omitted fields
+          if (projName) existingProj.name = projName;
+          if (clientName) existingProj.client = clientName;
+          if (pmName) existingProj.manager = pmName;
+          if (devName) existingProj.developer = devName;
+          if (qaName) existingProj.qa = qaName;
+          if (baName) existingProj.ba = baName;
+          if (sprintName) existingProj.sprint = sprintName;
+          if (parsedRisk) existingProj.risk = parsedRisk;
+          if (parsedProgress !== null) existingProj.progress = parsedProgress;
+          if (parsedBudget !== null) existingProj.budget = parsedBudget;
+          if (parsedStatus) existingProj.status = parsedStatus;
+          if (remarksRaw) existingProj.remarks = remarksRaw;
+
+          updatedCount++;
+        } else {
+          // CREATE new record
+          const maxNum = this.getMaxProjectCodeNum() + 1;
+          const newCode = projCode ? projCode.toUpperCase() : `PRJ${String(maxNum).padStart(3, '0')}`;
+
+          const newProj = {
+            id: newCode,
+            name: effectiveName,
+            client: effectiveClient,
+            manager: pmName || 'Unassigned PM',
+            developer: devName || 'Bob Johnson',
+            qa: qaName || 'David Miller',
+            ba: baName || 'Sarah Connor',
+            sprint: sprintName || 'Sprint 14',
+            risk: parsedRisk || 'Low',
+            progress: parsedProgress !== null ? parsedProgress : 0,
+            budget: parsedBudget !== null ? parsedBudget : 50000,
+            status: parsedStatus || 'in-progress',
+            remarks: remarksRaw || 'Imported from Excel',
+            poc: '',
+            estimatedStart: new Date().toISOString().split('T')[0],
+            estimatedEnd: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            actualStart: '',
+            actualEnd: '',
+            month: new Date().toLocaleString('default', { month: 'long' }),
+            quarter: 'Q3',
+            year: '2026'
+          };
+
+          this.projects.unshift(newProj);
+          createdCount++;
+        }
+      });
+
+      if (updatedCount > 0 || createdCount > 0) {
+        this.saveProjects();
+        this.populateFilterDropdowns();
+        this.render();
+
+        let msg = '';
+        if (updatedCount > 0 && createdCount > 0) {
+          msg = `Updated ${updatedCount} existing project(s) & created ${createdCount} new project(s)!`;
+        } else if (updatedCount > 0) {
+          msg = `Successfully updated ${updatedCount} existing project(s)!`;
+        } else {
+          msg = `Successfully created ${createdCount} new project(s)!`;
+        }
+        this.app.showToast(msg, 'success');
+      } else {
+        this.app.showToast('No valid project rows found in file. Ensure Project Name or Client Name is present.', 'warning');
+      }
+    });
   },
 
   /**

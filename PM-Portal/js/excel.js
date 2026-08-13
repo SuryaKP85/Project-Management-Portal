@@ -431,6 +431,125 @@ export const Excel = {
   },
 
   /**
+   * Export Enterprise Projects to Excel with a dedicated Status Legend and Import Guidelines sheet
+   */
+  exportProjectsWithLegend(headers, data, keys, sheetName = "Project_Registers", filename = "enterprise_projects_registers") {
+    const legendAOA = [
+      ["STATUS OPTION LEGEND & IMPORT GUIDELINES"],
+      [""],
+      ["Allowed Status Code", "Display Status Name", "Description & Usage"],
+      ["in-progress", "In Progress", "Active delivery stage or ongoing sprint"],
+      ["completed", "Completed", "Project deliverables successfully completed & closed"],
+      ["planning", "Planning", "Initiation, scoping, requirement gathering phase"],
+      ["on-hold", "On Hold", "Delivery temporarily paused or suspended"],
+      ["archived", "Archived", "Project archived into historical records"],
+      [""],
+      ["ALLOWED RISK LEVELS", "DESCRIPTION"],
+      ["Low", "Low risk exposure; standard monitoring"],
+      ["Medium", "Moderate risk requiring team oversight"],
+      ["High", "High risk flagged for executive escalation"],
+      ["Critical", "Severe risk impacting timeline or budget"],
+      [""],
+      ["IMPORT & UPDATE RULES", "SPECIFICATION"],
+      ["Mandatory Fields", "Project Name OR Client/Customer Name is MANDATORY."],
+      ["Optional Fields", "All other columns (Manager, Developer, QA, BA, Sprint, Risk, Progress, Budget, Status, Remarks) are OPTIONAL."],
+      ["Updating Existing Records", "If 'Project Code' (e.g. PRJ001) or 'Project Name' matches an existing project, the system UPDATES that project."],
+      ["Blank Cells on Update", "When updating, blank/empty optional cells will preserve existing values in the system."],
+      ["Creating New Records", "If 'Project Name' does not match any existing project, a NEW project is initiated automatically."]
+    ];
+
+    if (this.checkLib()) {
+      try {
+        const XLSX = window.XLSX;
+        const dataAOA = [headers];
+
+        if (Array.isArray(data) && data.length > 0) {
+          data.forEach(item => {
+            dataAOA.push(keys.map(k => {
+              if (item[k] === undefined || item[k] === null) return "";
+              if (k === 'status') {
+                const s = String(item[k]).toLowerCase();
+                if (s === 'in-progress') return 'In Progress';
+                if (s === 'completed') return 'Completed';
+                if (s === 'planning') return 'Planning';
+                if (s === 'on-hold') return 'On Hold';
+                if (s === 'archived') return 'Archived';
+              }
+              return item[k];
+            }));
+          });
+        }
+
+        const wb = XLSX.utils.book_new();
+
+        // Sheet 1: Data
+        const wsData = XLSX.utils.aoa_to_sheet(dataAOA);
+        const colWidths = headers.map((h, i) => {
+          let maxLen = h.toString().length;
+          dataAOA.forEach(row => {
+            const cellVal = row[i] ? row[i].toString() : "";
+            if (cellVal.length > maxLen) maxLen = Math.min(cellVal.length, 50);
+          });
+          return { wch: maxLen + 3 };
+        });
+        wsData['!cols'] = colWidths;
+        XLSX.utils.book_append_sheet(wb, wsData, sheetName);
+
+        // Sheet 2: Legend
+        const wsLegend = XLSX.utils.aoa_to_sheet(legendAOA);
+        wsLegend['!cols'] = [{ wch: 28 }, { wch: 28 }, { wch: 65 }];
+        XLSX.utils.book_append_sheet(wb, wsLegend, "Status_Legend");
+
+        const safeFilename = filename.toLowerCase().replace(/[^a-z0-9]/gi, '_') + '.xlsx';
+        XLSX.writeFile(wb, safeFilename);
+        return true;
+      } catch (e) {
+        console.error("Export with legend failed, falling back to CSV:", e);
+      }
+    }
+
+    // CSV Fallback with appended Legend section
+    try {
+      let csvContent = "data:text/csv;charset=utf-8,";
+      csvContent += headers.map(h => `"${String(h).replace(/"/g, '""')}"`).join(",") + "\n";
+      if (Array.isArray(data)) {
+        data.forEach(row => {
+          const line = keys.map(k => {
+            let val = row[k] !== undefined && row[k] !== null ? String(row[k]) : "";
+            if (k === 'status') {
+              const s = val.toLowerCase();
+              if (s === 'in-progress') val = 'In Progress';
+              else if (s === 'completed') val = 'Completed';
+              else if (s === 'planning') val = 'Planning';
+              else if (s === 'on-hold') val = 'On Hold';
+              else if (s === 'archived') val = 'Archived';
+            }
+            return `"${val.replace(/"/g, '""')}"`;
+          }).join(",");
+          csvContent += line + "\n";
+        });
+      }
+
+      csvContent += "\n\"--- STATUS OPTION LEGEND & IMPORT GUIDELINES ---\"\n";
+      legendAOA.forEach(lRow => {
+        csvContent += lRow.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",") + "\n";
+      });
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `${filename.toLowerCase().replace(/[^a-z0-9]/gi, '_')}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return true;
+    } catch (e) {
+      console.error("CSV Export with legend failed:", e);
+      return false;
+    }
+  },
+
+  /**
    * Generic downloadable template generator
    */
   downloadCustomTemplate(headers, sampleRow = null, sheetName = "Template", filename = "template") {
