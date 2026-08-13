@@ -976,7 +976,7 @@ export const ReportsHubModule = {
           </div>
           <div class="col-md-6 col-12 d-flex justify-content-between">
             <span class="text-muted font-semibold">Audit Analyst:</span>
-            <span class="font-bold">Prashanth K (Lead PM)</span>
+            <span class="font-bold">Surya Prashanth (Lead PM)</span>
           </div>
           <div class="col-md-6 col-12 d-flex justify-content-between">
             <span class="text-muted font-semibold">Scope:</span>

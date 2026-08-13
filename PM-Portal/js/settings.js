@@ -24,14 +24,15 @@ export const SettingsModule = {
    */
   loadUsers() {
     let stored = Storage.get('portal_users');
-    const ALLOWED_DEPTS = ['Dev', 'QA', 'BA', 'Product Manager'];
+    const ALLOWED_DEPTS = ['Project Manager', 'Product Manager', 'Dev', 'QA', 'BA'];
     const mapDept = (d) => {
+      if (d === 'PM' || d === 'Project Manager') return 'Project Manager';
       if (d === 'Engineering') return 'Dev';
       if (d === 'Design') return 'BA';
       if (d === 'QA / Test') return 'QA';
       if (d === 'Product') return 'Product Manager';
       if (ALLOWED_DEPTS.includes(d)) return d;
-      return 'Dev';
+      return 'Project Manager';
     };
 
     if (stored && Array.isArray(stored) && stored.length > 0) {
@@ -43,7 +44,7 @@ export const SettingsModule = {
     } else {
       // Default users mapped with departments and roles
       this.users = [
-        { id: 'USR001', name: 'Prashanth K', email: 'surya.prashanth.kp@gmail.com', dept: 'Dev', role: 'admin', status: 'active' },
+        { id: 'USR001', name: 'Surya Prashanth', email: 'surya.prashanth.kp@gmail.com', dept: 'Project Manager', role: 'admin', status: 'active' },
         { id: 'USR002', name: 'Alice Smith', email: 'alice.smith@enterprise.com', dept: 'Dev', role: 'member', status: 'active' },
         { id: 'USR003', name: 'Bob Johnson', email: 'bob.johnson@enterprise.com', dept: 'Dev', role: 'member', status: 'active' },
         { id: 'USR004', name: 'Clara Oswald', email: 'clara.oswald@enterprise.com', dept: 'QA', role: 'member', status: 'active' },
@@ -60,7 +61,7 @@ export const SettingsModule = {
   loadCurrentUser() {
     let active = Storage.get('current_user');
     if (!active || !active.id) {
-      active = this.users[0] || { id: 'USR001', name: 'Prashanth K', email: 'surya.prashanth.kp@gmail.com', dept: 'Engineering', role: 'admin' };
+      active = this.users[0] || { id: 'USR001', name: 'Surya Prashanth', email: 'surya.prashanth.kp@gmail.com', dept: 'Project Manager', role: 'admin' };
       Storage.set('current_user', active);
     }
     this.currentUser = active;
@@ -227,7 +228,7 @@ export const SettingsModule = {
 
     const sbName = document.getElementById('sidebar-user-name');
     if (sbName) {
-      const fullName = (this.currentUser.name || 'Prashanth').trim();
+      const fullName = (this.currentUser.name || 'Surya Prashanth').trim();
       const firstName = fullName.split(' ')[0] || fullName;
       sbName.textContent = firstName;
     }
@@ -241,7 +242,7 @@ export const SettingsModule = {
 
     const hdrName = document.getElementById('top-user-name');
     if (hdrName) {
-      const fullName = (this.currentUser.name || 'Prashanth').trim();
+      const fullName = (this.currentUser.name || 'Surya Prashanth').trim();
       const firstName = fullName.split(' ')[0] || fullName;
       hdrName.textContent = firstName;
     }
@@ -372,7 +373,7 @@ export const SettingsModule = {
     const isEdit = !!target;
     const title = isEdit ? 'Edit User Details' : 'Add New Team Member / User';
 
-    const depts = ['Dev', 'QA', 'BA', 'Product Manager'];
+    const depts = ['Project Manager', 'Product Manager', 'Dev', 'QA', 'BA'];
     let deptOptions = '';
     depts.forEach(d => {
       const sel = (target && target.dept === d) ? 'selected' : '';
@@ -526,7 +527,7 @@ export const SettingsModule = {
         if (this.users.length > 0) {
           this.currentUser = this.users[0];
         } else {
-          this.currentUser = { id: 'USR001', name: 'Prashanth K', email: 'surya.prashanth.kp@gmail.com', dept: 'Dev', role: 'admin', status: 'active' };
+          this.currentUser = { id: 'USR001', name: 'Surya Prashanth', email: 'surya.prashanth.kp@gmail.com', dept: 'Project Manager', role: 'admin', status: 'active' };
           this.users.push(this.currentUser);
           Storage.set('portal_users', this.users);
         }

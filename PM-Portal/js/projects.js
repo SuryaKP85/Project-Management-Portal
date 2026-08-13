@@ -406,10 +406,14 @@ export const ProjectsModule = {
     const dataToExport = (filtered && filtered.length > 0) ? filtered : this.projects;
 
     const headers = [
-      'Project Code',
+      'Project / SOW #',
       'Project Name',
       'Client/Customer',
+      'HD #',
+      'JIRA Links',
+      'Confluence Link',
       'Project Manager',
+      'Product Manager',
       'Developer',
       'QA',
       'BA',
@@ -425,7 +429,11 @@ export const ProjectsModule = {
       'id',
       'name',
       'client',
+      'hd',
+      'jiraLinks',
+      'confluenceLink',
       'manager',
+      'productManager',
       'developer',
       'qa',
       'ba',
@@ -473,7 +481,8 @@ export const ProjectsModule = {
           return '';
         };
 
-        const projCode = getVal(['Project Code', 'Project ID', 'id', 'code', 'PRJ#', 'Project Code/ID', 'Code', 'Project ID/Code']);
+        const sowNum = getVal(['SOW#', 'SOW', 'sow', 'SOW Number', 'Project / SOW #']);
+        const projCode = sowNum || getVal(['Project Code', 'Project ID', 'id', 'code', 'PRJ#', 'Project Code/ID', 'Code']);
         const projName = getVal(['Project Name', 'name', 'Project', 'Title', 'Project/Client Name', 'Name', 'ProjectTitle']);
         const clientName = getVal(['Client/Customer', 'Client', 'Customer', 'client', 'customer', 'Customer Name', 'Client Name']);
 
@@ -487,16 +496,22 @@ export const ProjectsModule = {
         const effectiveClient = clientName || projName || 'Internal Client';
 
         // Optional fields
+        const hdNum = getVal(['HD#', 'HD #', 'HD', 'hd', 'Helpdesk']);
+        const jiraRaw = getVal(['JIRA Links', 'JIRA Link', 'JIRA#', 'JIRA', 'jira', 'jiraLinks']);
+        const confluenceRaw = getVal(['Confluence Link', 'Confluence', 'confluence', 'confluenceLink']);
         const pmName = getVal(['Project Manager', 'Manager', 'manager', 'PM', 'ProjectManager']);
+        const prodName = getVal(['Product Manager', 'ProductManager', 'Product Lead', 'productManager']);
         const devName = getVal(['Developer', 'developer', 'Dev', 'Lead Developer']);
         const qaName = getVal(['QA', 'qa', 'Tester', 'QA Lead']);
         const baName = getVal(['BA', 'ba', 'Business Analyst']);
         const sprintName = getVal(['Sprint', 'sprint']);
         const riskRaw = getVal(['Risk', 'risk', 'Risk Level']);
         const progressRaw = getVal(['Progress %', 'Progress', 'progress', 'Completion %', 'Progress%']);
-        const budgetRaw = getVal(['Budget ($)', 'Budget', 'budget', 'Cost', 'Project Budget']);
+        const budgetRaw = getVal(['Budget ($)', 'Budget', 'budget', 'Approved Budget', 'Cost', 'Project Budget']);
         const statusRaw = getVal(['Status', 'status', 'Project Status']);
         const remarksRaw = getVal(['Remarks', 'remarks', 'Notes', 'Description']);
+
+        const jiraLinksArr = jiraRaw ? jiraRaw.split(/[\n,]+/).map(s => s.trim()).filter(Boolean) : [];
 
         // Normalize status
         let parsedStatus = '';
@@ -532,7 +547,7 @@ export const ProjectsModule = {
           }
         }
 
-        // Parse budget
+        // Parse budget (Accepts 0 as valid!)
         let parsedBudget = null;
         if (budgetRaw !== '') {
           const cleanB = budgetRaw.replace(/[^0-9.]/g, '');
@@ -541,20 +556,28 @@ export const ProjectsModule = {
           }
         }
 
-        // Try to match existing project by Code or Name
+        // Try to match existing project by Code or Name or SOW#
         let existingProj = null;
         if (projCode) {
-          existingProj = this.projects.find(p => p.id && p.id.toLowerCase() === projCode.toLowerCase());
+          existingProj = this.projects.find(p => (p.id && p.id.toLowerCase() === projCode.toLowerCase()) || (p.sow && p.sow.toLowerCase() === projCode.toLowerCase()));
         }
         if (!existingProj && effectiveName) {
           existingProj = this.projects.find(p => p.name && p.name.toLowerCase().trim() === effectiveName.toLowerCase().trim());
         }
 
         if (existingProj) {
-          // UPDATE existing record - override non-empty imported fields, preserve existing for omitted fields
+          // UPDATE existing record - override non-empty imported fields
+          if (sowNum) {
+            existingProj.sow = sowNum;
+            existingProj.id = sowNum; // Project # = SOW#
+          }
+          if (hdNum) existingProj.hd = hdNum;
+          if (jiraLinksArr.length > 0) existingProj.jiraLinks = jiraLinksArr;
+          if (confluenceRaw) existingProj.confluenceLink = confluenceRaw;
           if (projName) existingProj.name = projName;
           if (clientName) existingProj.client = clientName;
           if (pmName) existingProj.manager = pmName;
+          if (prodName) existingProj.productManager = prodName;
           if (devName) existingProj.developer = devName;
           if (qaName) existingProj.qa = qaName;
           if (baName) existingProj.ba = baName;
@@ -569,20 +592,26 @@ export const ProjectsModule = {
         } else {
           // CREATE new record
           const maxNum = this.getMaxProjectCodeNum() + 1;
-          const newCode = projCode ? projCode.toUpperCase() : `PRJ${String(maxNum).padStart(3, '0')}`;
+          const autoCode = `PRJ${String(maxNum).padStart(3, '0')}`;
+          const newCode = sowNum || projCode || autoCode;
 
           const newProj = {
             id: newCode,
+            sow: sowNum || newCode,
+            hd: hdNum || '',
+            jiraLinks: jiraLinksArr,
+            confluenceLink: confluenceRaw || '',
             name: effectiveName,
             client: effectiveClient,
-            manager: pmName || 'Unassigned PM',
+            manager: pmName || 'Surya Prashanth',
+            productManager: prodName || '',
             developer: devName || 'Bob Johnson',
             qa: qaName || 'David Miller',
             ba: baName || 'Sarah Connor',
             sprint: sprintName || 'Sprint 14',
             risk: parsedRisk || 'Low',
             progress: parsedProgress !== null ? parsedProgress : 0,
-            budget: parsedBudget !== null ? parsedBudget : 50000,
+            budget: parsedBudget !== null ? parsedBudget : 0,
             status: parsedStatus || 'in-progress',
             remarks: remarksRaw || 'Imported from Excel',
             poc: '',
@@ -888,18 +917,40 @@ export const ProjectsModule = {
       if (p.risk === 'High') riskClass = 'bg-danger-subtle text-danger';
       if (p.risk === 'Critical') riskClass = 'bg-danger text-white';
 
+      // Build HD / Links
+      let linksHtml = '';
+      if (p.hd) {
+        linksHtml += `<div style="font-size: 0.75rem;"><span class="badge bg-light text-dark border font-mono me-1"><i class="fa-solid fa-headset text-primary me-1"></i>${p.hd}</span></div>`;
+      }
+      const jiraArr = Array.isArray(p.jiraLinks) ? p.jiraLinks : (p.jiraLinks ? [p.jiraLinks] : []);
+      if (jiraArr.length > 0) {
+        linksHtml += `<div class="d-flex flex-wrap gap-1 mt-1">`;
+        jiraArr.forEach((link, idx) => {
+          if (link) {
+            linksHtml += `<a href="${link}" target="_blank" class="badge bg-primary-subtle text-primary text-decoration-none" style="font-size: 0.7rem;" title="${link}"><i class="fa-brands fa-jira me-1"></i>JIRA ${jiraArr.length > 1 ? '#' + (idx + 1) : ''}</a>`;
+          }
+        });
+        linksHtml += `</div>`;
+      }
+      if (p.confluenceLink) {
+        linksHtml += `<div class="mt-1"><a href="${p.confluenceLink}" target="_blank" class="badge bg-info-subtle text-info-emphasis text-decoration-none" style="font-size: 0.7rem;" title="${p.confluenceLink}"><i class="fa-brands fa-confluence me-1"></i>Confluence</a></div>`;
+      }
+      if (!linksHtml) linksHtml = '<span class="text-muted" style="font-size: 0.75rem;">-</span>';
+
       tr.innerHTML = `
         <td class="row-checkbox-cell" style="padding: 14px 10px 14px 20px;">
           <input type="checkbox" class="form-check-input project-row-checkbox" data-id="${p.id}" ${isSelected ? 'checked' : ''} />
         </td>
-        <td class="clickable-project-cell" data-id="${p.id}"><div class="table-project-title text-primary font-bold" style="font-size: 0.85rem;">${p.id}</div></td>
+        <td class="clickable-project-cell" data-id="${p.id}"><div class="table-project-title text-primary font-bold" style="font-size: 0.85rem;">${p.sow || p.id}</div></td>
         <td class="clickable-project-cell" data-id="${p.id}">
           <div class="table-project-cell">
             <span class="table-project-title font-semibold" style="font-size: 0.9rem;">${p.name}</span>
             <span class="table-project-client" style="font-size: 0.75rem;"><i class="fa-solid fa-building me-1"></i> ${p.client}</span>
           </div>
         </td>
-        <td class="clickable-project-cell" data-id="${p.id}"><span class="text-secondary-custom font-semibold">${p.manager}</span></td>
+        <td class="clickable-project-cell" data-id="${p.id}"><span class="text-secondary-custom font-semibold">${p.manager || 'Surya Prashanth'}</span></td>
+        <td class="clickable-project-cell" data-id="${p.id}"><span class="text-secondary-custom font-semibold">${p.productManager || '-'}</span></td>
+        <td class="clickable-project-cell" data-id="${p.id}">${linksHtml}</td>
         <td class="clickable-project-cell" data-id="${p.id}"><span class="badge ${riskClass}" style="font-size: 0.725rem; font-weight: 600; padding: 4px 8px;">${p.risk || 'Low'}</span></td>
         <td class="clickable-project-cell" data-id="${p.id}">
           <div class="d-flex align-items-center gap-2">
@@ -909,8 +960,8 @@ export const ProjectsModule = {
             <span class="font-bold text-secondary" style="font-size: 0.75rem;">${p.progress}%</span>
           </div>
         </td>
-        <td class="clickable-project-cell font-semibold" data-id="${p.id}">$${Number(p.budget).toLocaleString()}</td>
-        <td class="clickable-project-cell" data-id="${p.id}"><span class="status-badge ${p.status}">${p.status.replace('-', ' ')}</span></td>
+        <td class="clickable-project-cell font-semibold" data-id="${p.id}">$${Number(p.budget || 0).toLocaleString()}</td>
+        <td class="clickable-project-cell" data-id="${p.id}"><span class="status-badge ${p.status}">${(p.status || '').replace('-', ' ')}</span></td>
         <td style="text-align: right; white-space: nowrap;">
           <button class="btn btn-sm btn-light border p-1 px-2 btn-row-edit" data-id="${p.id}" title="Edit Project Details">
             <i class="fa-solid fa-pencil text-secondary" style="font-size: 0.8rem;"></i>
@@ -1212,10 +1263,34 @@ export const ProjectsModule = {
     this.populateFormSelects(proj);
     
     // Populate form data
+    const sowInp = document.getElementById('edit-sow');
+    if (sowInp) {
+      sowInp.value = proj.sow || proj.id || '';
+      sowInp.oninput = () => {
+        const val = sowInp.value.trim();
+        if (val) {
+          document.getElementById('detail-proj-id').textContent = val;
+          document.getElementById('edit-id').value = val;
+        }
+        this.triggerAutosave();
+      };
+    }
+    const hdInp = document.getElementById('edit-hd');
+    if (hdInp) hdInp.value = proj.hd || '';
+    
+    const prodMSelect = document.getElementById('edit-product-manager');
+    if (prodMSelect) prodMSelect.value = proj.productManager || '';
+
+    const conflInp = document.getElementById('edit-confluence');
+    if (conflInp) conflInp.value = proj.confluenceLink || '';
+
+    // Render JIRA links builder
+    this.renderJiraLinksContainer(proj.jiraLinks || []);
+
     document.getElementById('edit-id').value = proj.id;
     document.getElementById('edit-name').value = proj.name;
     document.getElementById('edit-client').value = proj.client;
-    document.getElementById('edit-budget').value = proj.budget;
+    document.getElementById('edit-budget').value = proj.budget !== undefined && proj.budget !== null ? proj.budget : 0;
     document.getElementById('edit-remarks').value = proj.remarks || '';
     document.getElementById('edit-est-start').value = proj.estimatedStart || '';
     document.getElementById('edit-est-end').value = proj.estimatedEnd || '';
@@ -1245,16 +1320,105 @@ export const ProjectsModule = {
   },
 
   /**
+   * Renders dynamic JIRA links builder inputs in project details form
+   */
+  renderJiraLinksContainer(jiraLinksArray) {
+    const container = document.getElementById('edit-jira-links-container');
+    if (!container) return;
+
+    let links = Array.isArray(jiraLinksArray) && jiraLinksArray.length > 0 
+      ? jiraLinksArray 
+      : (typeof jiraLinksArray === 'string' && jiraLinksArray ? [jiraLinksArray] : ['']);
+
+    if (links.length === 0) links = [''];
+
+    container.innerHTML = '';
+    links.forEach((link) => {
+      const row = document.createElement('div');
+      row.className = 'd-flex align-items-center gap-2 jira-link-row';
+      row.innerHTML = `
+        <div class="input-group">
+          <span class="input-group-text bg-light"><i class="fa-brands fa-jira text-primary"></i></span>
+          <input type="url" class="form-control select-enterprise jira-link-input" placeholder="https://jira.company.com/browse/PROJ-101" value="${link}" />
+        </div>
+        <button type="button" class="btn btn-outline-danger btn-sm btn-remove-jira-link" title="Remove Link">
+          <i class="fa-solid fa-trash-can"></i>
+        </button>
+      `;
+      container.appendChild(row);
+
+      const inp = row.querySelector('.jira-link-input');
+      inp.addEventListener('input', () => this.triggerAutosave());
+      inp.addEventListener('change', () => this.triggerAutosave());
+
+      const removeBtn = row.querySelector('.btn-remove-jira-link');
+      removeBtn.addEventListener('click', () => {
+        row.remove();
+        if (container.querySelectorAll('.jira-link-row').length === 0) {
+          this.renderJiraLinksContainer(['']);
+        }
+        this.triggerAutosave();
+      });
+    });
+
+    const addBtn = document.getElementById('btn-add-jira-link');
+    if (addBtn) {
+      addBtn.onclick = () => {
+        const row = document.createElement('div');
+        row.className = 'd-flex align-items-center gap-2 jira-link-row';
+        row.innerHTML = `
+          <div class="input-group">
+            <span class="input-group-text bg-light"><i class="fa-brands fa-jira text-primary"></i></span>
+            <input type="url" class="form-control select-enterprise jira-link-input" placeholder="https://jira.company.com/browse/PROJ-101" value="" />
+          </div>
+          <button type="button" class="btn btn-outline-danger btn-sm btn-remove-jira-link" title="Remove Link">
+            <i class="fa-solid fa-trash-can"></i>
+          </button>
+        `;
+        container.appendChild(row);
+
+        const inp = row.querySelector('.jira-link-input');
+        inp.addEventListener('input', () => this.triggerAutosave());
+        inp.addEventListener('change', () => this.triggerAutosave());
+
+        const removeBtn = row.querySelector('.btn-remove-jira-link');
+        removeBtn.addEventListener('click', () => {
+          row.remove();
+          if (container.querySelectorAll('.jira-link-row').length === 0) {
+            this.renderJiraLinksContainer(['']);
+          }
+          this.triggerAutosave();
+        });
+
+        inp.focus();
+      };
+    }
+  },
+
+  /**
    * Retrieves all registered team members across User Management (Authentication) and Resource Planner
    */
   getTeamMembersList() {
     const map = new Map();
 
-    // 1. System Users registered in User Management
+    // 1. System Users registered in User Management (Settings)
+    const settingsUsers = Storage.get('portal_users') || [];
+    settingsUsers.forEach(u => {
+      const fullName = (u.name || '').trim();
+      if (fullName) {
+        map.set(fullName, {
+          name: fullName,
+          role: u.role || 'Team Member',
+          dept: u.dept || u.department || 'Dev'
+        });
+      }
+    });
+
+    // 2. Fallback to Authentication users
     const users = Authentication.getUsers() || this.app?.usersList || [];
     users.forEach(u => {
       const fullName = (u.name || `${u.firstName || ''} ${u.lastName || ''}`).trim();
-      if (fullName) {
+      if (fullName && !map.has(fullName)) {
         map.set(fullName, {
           name: fullName,
           role: u.role || 'Team Member',
@@ -1263,7 +1427,7 @@ export const ProjectsModule = {
       }
     });
 
-    // 2. Staffing Resources from Storage or app.resourcesList
+    // 3. Staffing Resources from Storage or app.resourcesList
     let resources = Storage.getResources();
     if (!resources || resources.length === 0) {
       resources = this.app?.resourcesList || [];
@@ -1282,7 +1446,38 @@ export const ProjectsModule = {
   },
 
   /**
-   * Populates form dropdown selectors with current unique entries
+   * Filter members by their exact assigned role/department in settings
+   */
+  getTeamMembersByRole(targetRole) {
+    const allMembers = this.getTeamMembersList();
+    if (!targetRole) return allMembers;
+    const norm = targetRole.toLowerCase().trim();
+
+    return allMembers.filter(m => {
+      const dept = (m.dept || '').toLowerCase().trim();
+      const role = (m.role || '').toLowerCase().trim();
+
+      if (norm === 'project manager' || norm === 'pm') {
+        return dept === 'project manager' || dept === 'pm' || role === 'project manager' || role === 'admin';
+      }
+      if (norm === 'product manager' || norm === 'product') {
+        return dept === 'product manager' || dept === 'product' || role === 'product manager';
+      }
+      if (norm === 'dev' || norm === 'developer') {
+        return dept === 'dev' || dept === 'engineering' || role === 'developer' || role === 'dev' || role === 'member';
+      }
+      if (norm === 'qa') {
+        return dept === 'qa' || dept === 'qa / test' || role === 'qa' || role === 'tester';
+      }
+      if (norm === 'ba' || norm === 'business analyst') {
+        return dept === 'ba' || dept === 'design' || role === 'ba' || role === 'business analyst';
+      }
+      return dept.includes(norm) || role.includes(norm);
+    });
+  },
+
+  /**
+   * Populates form dropdown selectors with role-filtered entries
    */
   populateFormSelects(activeProj) {
     let registeredCusts = Storage.getCustomers();
@@ -1305,66 +1500,71 @@ export const ProjectsModule = {
     }
 
     const pmSelect = document.getElementById('edit-manager');
+    const prodMSelect = document.getElementById('edit-product-manager');
     const baSelect = document.getElementById('edit-ba');
     const devSelect = document.getElementById('edit-developer');
     const qaSelect = document.getElementById('edit-qa');
     
-    // Extract staffing resources from User Management and Resource Planner
+    // Extract role-filtered staffing resources
+    const pmMembers = this.getTeamMembersByRole('Project Manager');
+    const prodMembers = this.getTeamMembersByRole('Product Manager');
+    const devMembers = this.getTeamMembersByRole('Dev');
+    const baMembers = this.getTeamMembersByRole('BA');
+    const qaMembers = this.getTeamMembersByRole('QA');
     const allMembers = this.getTeamMembersList();
     
     if (pmSelect) {
-      pmSelect.innerHTML = `<option value="">Select Manager...</option>`;
-      allMembers.forEach(m => {
+      pmSelect.innerHTML = `<option value="">Select Project Manager...</option>`;
+      pmMembers.forEach(m => {
         pmSelect.innerHTML += `<option value="${m.name}">${m.name} (${m.role})</option>`;
       });
-      const uniquePMs = [...new Set(this.projects.map(p => p.manager))];
-      uniquePMs.forEach(pm => {
-        if (pm && !allMembers.some(m => m.name === pm)) {
-          pmSelect.innerHTML += `<option value="${pm}">${pm}</option>`;
-        }
-      });
+      if (activeProj?.manager && !pmMembers.some(m => m.name === activeProj.manager)) {
+        pmSelect.innerHTML += `<option value="${activeProj.manager}">${activeProj.manager}</option>`;
+      }
       if (activeProj?.manager) pmSelect.value = activeProj.manager;
+    }
+
+    if (prodMSelect) {
+      prodMSelect.innerHTML = `<option value="">Select Product Manager...</option>`;
+      prodMembers.forEach(m => {
+        prodMSelect.innerHTML += `<option value="${m.name}">${m.name} (${m.role})</option>`;
+      });
+      if (activeProj?.productManager && !prodMembers.some(m => m.name === activeProj.productManager)) {
+        prodMSelect.innerHTML += `<option value="${activeProj.productManager}">${activeProj.productManager}</option>`;
+      }
+      if (activeProj?.productManager) prodMSelect.value = activeProj.productManager;
     }
 
     if (baSelect) {
       baSelect.innerHTML = `<option value="">Select BA...</option>`;
-      allMembers.forEach(m => {
+      baMembers.forEach(m => {
         baSelect.innerHTML += `<option value="${m.name}">${m.name} (${m.role})</option>`;
       });
-      const uniqueBAs = [...new Set(this.projects.map(p => p.ba))];
-      uniqueBAs.forEach(ba => {
-        if (ba && !allMembers.some(m => m.name === ba)) {
-          baSelect.innerHTML += `<option value="${ba}">${ba}</option>`;
-        }
-      });
+      if (activeProj?.ba && !baMembers.some(m => m.name === activeProj.ba)) {
+        baSelect.innerHTML += `<option value="${activeProj.ba}">${activeProj.ba}</option>`;
+      }
       if (activeProj?.ba) baSelect.value = activeProj.ba;
     }
 
     if (devSelect) {
       devSelect.innerHTML = `<option value="">Select Developer...</option>`;
-      allMembers.forEach(m => {
+      devMembers.forEach(m => {
         devSelect.innerHTML += `<option value="${m.name}">${m.name} (${m.role})</option>`;
       });
-      const uniqueDevs = [...new Set(this.projects.map(p => p.developer))];
-      uniqueDevs.forEach(dev => {
-        if (dev && !allMembers.some(m => m.name === dev)) {
-          devSelect.innerHTML += `<option value="${dev}">${dev}</option>`;
-        }
-      });
+      if (activeProj?.developer && !devMembers.some(m => m.name === activeProj.developer)) {
+        devSelect.innerHTML += `<option value="${activeProj.developer}">${activeProj.developer}</option>`;
+      }
       if (activeProj?.developer) devSelect.value = activeProj.developer;
     }
 
     if (qaSelect) {
       qaSelect.innerHTML = `<option value="">Select QA...</option>`;
-      allMembers.forEach(m => {
+      qaMembers.forEach(m => {
         qaSelect.innerHTML += `<option value="${m.name}">${m.name} (${m.role})</option>`;
       });
-      const uniqueQAs = [...new Set(this.projects.map(p => p.qa))];
-      uniqueQAs.forEach(qa => {
-        if (qa && !allMembers.some(m => m.name === qa)) {
-          qaSelect.innerHTML += `<option value="${qa}">${qa}</option>`;
-        }
-      });
+      if (activeProj?.qa && !qaMembers.some(m => m.name === activeProj.qa)) {
+        qaSelect.innerHTML += `<option value="${activeProj.qa}">${activeProj.qa}</option>`;
+      }
       if (activeProj?.qa) qaSelect.value = activeProj.qa;
     }
   },
@@ -1398,6 +1598,8 @@ export const ProjectsModule = {
    */
   executeAutosave() {
     const id = document.getElementById('edit-id')?.value || '';
+    const sow = document.getElementById('edit-sow')?.value || '';
+    const hd = document.getElementById('edit-hd')?.value || '';
     const name = document.getElementById('edit-name')?.value || '';
     const client = document.getElementById('edit-client')?.value || '';
     const budget = document.getElementById('edit-budget')?.value || '0';
@@ -1407,14 +1609,19 @@ export const ProjectsModule = {
     const actStart = document.getElementById('edit-act-start')?.value || '';
     const actEnd = document.getElementById('edit-act-end')?.value || '';
     const pm = document.getElementById('edit-manager')?.value || '';
+    const productManager = document.getElementById('edit-product-manager')?.value || '';
     const ba = document.getElementById('edit-ba')?.value || '';
     const dev = document.getElementById('edit-developer')?.value || '';
     const qa = document.getElementById('edit-qa')?.value || '';
+    const confluenceLink = document.getElementById('edit-confluence')?.value || '';
     const sprintEl = document.getElementById('edit-sprint');
     const sprint = sprintEl ? sprintEl.value : '';
     const risk = document.getElementById('edit-risk')?.value || 'Low';
     const status = document.getElementById('edit-status')?.value || 'planning';
     const progress = document.getElementById('edit-progress')?.value || '0';
+
+    const jiraInputs = document.querySelectorAll('#edit-jira-links-container .jira-link-input');
+    const jiraLinks = Array.from(jiraInputs).map(inp => inp.value.trim()).filter(Boolean);
 
     // VALIDATION DECK
     let isValid = true;
@@ -1429,9 +1636,9 @@ export const ProjectsModule = {
       nameInput.classList.remove('is-invalid');
     }
 
-    // Validate budget positive number
+    // Validate budget non-negative
     const budgetInput = document.getElementById('edit-budget');
-    if (!budget || Number(budget) <= 0) {
+    if (budget === '' || isNaN(Number(budget)) || Number(budget) < 0) {
       budgetInput.classList.add('is-invalid');
       isValid = false;
     } else {
@@ -1465,6 +1672,15 @@ export const ProjectsModule = {
       proj.name = name;
       document.getElementById('detail-proj-title').textContent = name;
       
+      if (sow) {
+        proj.sow = sow;
+        proj.id = sow; // Ensure Project # is updated to SOW#
+        document.getElementById('detail-proj-id').textContent = sow;
+      }
+      proj.hd = hd;
+      proj.productManager = productManager;
+      proj.confluenceLink = confluenceLink;
+      proj.jiraLinks = jiraLinks;
       proj.client = client;
       proj.budget = Number(budget);
       proj.remarks = remarks;

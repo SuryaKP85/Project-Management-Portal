@@ -467,6 +467,7 @@ export const Excel = {
           data.forEach(item => {
             dataAOA.push(keys.map(k => {
               if (item[k] === undefined || item[k] === null) return "";
+              if (Array.isArray(item[k])) return item[k].join(', ');
               if (k === 'status') {
                 const s = String(item[k]).toLowerCase();
                 if (s === 'in-progress') return 'In Progress';

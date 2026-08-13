@@ -51,8 +51,9 @@ export const ResourcePlannerModule = {
   loadResources() {
     // Check if resources exist in local storage, otherwise use default
     let stored = Storage.get('resources');
-    const ALLOWED_DEPTS = ['Dev', 'QA', 'BA', 'Product Manager'];
+    const ALLOWED_DEPTS = ['Project Manager', 'Product Manager', 'Dev', 'QA', 'BA'];
     const mapDept = (d) => {
+      if (d === 'PM' || d === 'Project Manager') return 'Project Manager';
       if (d === 'Engineering') return 'Dev';
       if (d === 'Design') return 'BA';
       if (d === 'QA / Test') return 'QA';
@@ -61,17 +62,48 @@ export const ResourcePlannerModule = {
       return 'Dev';
     };
 
-    if (stored && Array.isArray(stored)) {
-      this.resources = stored.map(r => ({
-        ...r,
-        dept: mapDept(r.dept)
-      }));
+    // Get system users from settings / auth
+    let systemUsers = Storage.get('portal_users') || Authentication.getUsers() || [];
+
+    if (stored && Array.isArray(stored) && stored.length > 0) {
+      this.resources = stored.map(r => {
+        let name = r.name;
+        if (name === 'Prashanth K' || name === 'Prashanth') name = 'Surya Prashanth';
+        return {
+          ...r,
+          name,
+          dept: mapDept(r.dept)
+        };
+      });
     } else {
       this.resources = [];
-      Storage.set('resources', []);
     }
+
+    // Auto-sync system users into resources list so roles match settings
+    systemUsers.forEach((u, idx) => {
+      const uName = (u.name || '').trim();
+      if (!uName) return;
+      const existing = this.resources.find(r => r.name === uName || r.id === u.id);
+      if (existing) {
+        existing.dept = mapDept(u.dept);
+        existing.role = u.role === 'admin' ? (u.dept || 'Manager') : (u.dept || 'Team Specialist');
+      } else {
+        this.resources.push({
+          id: u.id || `RES20${idx + 1}`,
+          name: uName,
+          role: u.dept || 'Team Member',
+          dept: mapDept(u.dept),
+          allocation: 0,
+          status: 'active'
+        });
+      }
+    });
+
+    Storage.set('resources', this.resources);
     // Keep app resources list synced
-    this.app.resourcesList = this.resources;
+    if (this.app) {
+      this.app.resourcesList = this.resources;
+    }
   },
 
   /**
@@ -190,7 +222,7 @@ export const ResourcePlannerModule = {
     const roleSelect = document.getElementById('planner-role-select');
 
     if (deptSelect) {
-      const depts = ['Dev', 'QA', 'BA', 'Product Manager'];
+      const depts = ['Project Manager', 'Product Manager', 'Dev', 'QA', 'BA'];
       deptSelect.innerHTML = '<option value="all">All Departments</option>';
       depts.forEach(d => {
         deptSelect.innerHTML += `<option value="${d}">${d}</option>`;

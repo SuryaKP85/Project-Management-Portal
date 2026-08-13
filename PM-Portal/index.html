@@ -144,7 +144,7 @@
       <div class="sidebar-footer">
         <img id="sidebar-user-avatar" src="assets/baby_feet.jpg" alt="Profile" referrerpolicy="no-referrer" />
         <div class="user-info">
-          <div id="sidebar-user-name" class="font-semibold text-white" style="font-size: 0.85rem;">Prashanth</div>
+          <div id="sidebar-user-name" class="font-semibold text-white" style="font-size: 0.85rem;">Surya</div>
           <div id="sidebar-user-role" class="brand-subtitle" style="margin: 0; opacity: 0.8;">Admin Lead</div>
         </div>
       </div>
@@ -731,33 +731,39 @@
             </div>
           </div>
 
-          <!-- Table Grid Container with Sticky Headers -->
-          <div class="table-responsive-container" style="max-height: 62vh; overflow-y: auto;">
-            <table class="table-enterprise">
+          <!-- Table Grid Container with Sticky Headers & Horizontal Scroll -->
+          <div class="table-responsive-container" style="max-height: 62vh; overflow-y: auto; overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch;">
+            <table class="table-enterprise" style="min-width: 1280px;">
               <thead style="position: sticky; top: 0; z-index: 10; background-color: var(--bg-card);">
                 <tr>
                   <th style="width: 40px; padding: 14px 10px 14px 20px;">
                     <input type="checkbox" id="project-select-all" class="form-check-input" />
                   </th>
-                  <th style="width: 120px; cursor: pointer;" id="th-code">
-                    Code <i class="fa-solid fa-sort ms-1 opacity-50 text-muted" style="font-size: 0.65rem;"></i>
+                  <th style="width: 130px; cursor: pointer;" id="th-code">
+                    Project / SOW # <i class="fa-solid fa-sort ms-1 opacity-50 text-muted" style="font-size: 0.65rem;"></i>
                   </th>
-                  <th style="cursor: pointer;" id="th-name">
+                  <th style="cursor: pointer; min-width: 180px;" id="th-name">
                     Project / Client Name <i class="fa-solid fa-sort ms-1 opacity-50 text-muted" style="font-size: 0.65rem;"></i>
                   </th>
-                  <th style="cursor: pointer;" id="th-pm">
+                  <th style="cursor: pointer; min-width: 140px;" id="th-pm">
                     Project Manager <i class="fa-solid fa-sort ms-1 opacity-50 text-muted" style="font-size: 0.65rem;"></i>
+                  </th>
+                  <th style="cursor: pointer; min-width: 140px;" id="th-prod-m">
+                    Product Manager <i class="fa-solid fa-sort ms-1 opacity-50 text-muted" style="font-size: 0.65rem;"></i>
+                  </th>
+                  <th style="min-width: 150px;">
+                    HD# / Links (JIRA/Confluence)
                   </th>
                   <th style="width: 100px; cursor: pointer;" id="th-risk">
                     Risk <i class="fa-solid fa-sort ms-1 opacity-50 text-muted" style="font-size: 0.65rem;"></i>
                   </th>
-                  <th style="width: 180px; cursor: pointer;" id="th-progress">
+                  <th style="width: 150px; cursor: pointer;" id="th-progress">
                     Progress <i class="fa-solid fa-sort ms-1 opacity-50 text-muted" style="font-size: 0.65rem;"></i>
                   </th>
-                  <th style="cursor: pointer;" id="th-budget">
+                  <th style="cursor: pointer; min-width: 110px;" id="th-budget">
                     Budget <i class="fa-solid fa-sort ms-1 opacity-50 text-muted" style="font-size: 0.65rem;"></i>
                   </th>
-                  <th style="width: 130px; cursor: pointer;" id="th-status">
+                  <th style="width: 120px; cursor: pointer;" id="th-status">
                     Status <i class="fa-solid fa-sort ms-1 opacity-50 text-muted" style="font-size: 0.65rem;"></i>
                   </th>
                   <th style="width: 110px; text-align: right;">Actions</th>
@@ -819,13 +825,13 @@
                   <h4 class="font-semibold text-primary m-0" style="font-size: 1.1rem;"><i class="fa-regular fa-folder-open text-primary me-2"></i>General Information</h4>
                 </div>
 
-                <div class="col-md-6">
+                <div class="col-md-4">
                   <label class="form-label font-semibold" style="font-size: 0.85rem;">Project Name <span class="text-danger">*</span></label>
                   <input type="text" class="form-control select-enterprise w-100" id="edit-name" required />
                   <div class="invalid-feedback" id="val-name-feedback">Project name is required and must not be empty.</div>
                 </div>
 
-                <div class="col-md-6">
+                <div class="col-md-4">
                   <label class="form-label font-semibold" style="font-size: 0.85rem;">Client / Customer <span class="text-danger">*</span></label>
                   <select class="form-select select-enterprise w-100" id="edit-client" required>
                     <!-- Populated dynamically -->
@@ -833,18 +839,54 @@
                   <div class="invalid-feedback">Please assign a valid client company.</div>
                 </div>
 
-                <div class="col-md-6">
-                  <label class="form-label font-semibold" style="font-size: 0.85rem;">Approved Budget ($) <span class="text-danger">*</span></label>
-                  <input type="number" class="form-control select-enterprise w-100" id="edit-budget" min="1" required />
-                  <div class="invalid-feedback">Approved budget must be a positive number greater than zero.</div>
+                <div class="col-md-4">
+                  <label class="form-label font-semibold" style="font-size: 0.85rem;">SOW# (Project #)</label>
+                  <input type="text" class="form-control select-enterprise w-100" id="edit-sow" placeholder="E.g. SOW-2026-001" />
+                  <span class="text-muted" style="font-size: 0.72rem;">Sets the official Project Number</span>
                 </div>
 
-                <div class="col-md-6">
+                <div class="col-md-4">
+                  <label class="form-label font-semibold" style="font-size: 0.85rem;">HD # (Helpdesk Ticket)</label>
+                  <input type="text" class="form-control select-enterprise w-100" id="edit-hd" placeholder="E.g. HD-88421" />
+                </div>
+
+                <div class="col-md-4">
+                  <label class="form-label font-semibold" style="font-size: 0.85rem;">Approved Budget ($)</label>
+                  <input type="number" class="form-control select-enterprise w-100" id="edit-budget" min="0" placeholder="0" />
+                  <span class="text-muted" style="font-size: 0.72rem;">Optional - Accepts 0 or blank</span>
+                </div>
+
+                <div class="col-md-4">
                   <label class="form-label font-semibold" style="font-size: 0.85rem;">Remarks & Remarks Descriptions</label>
                   <input type="text" class="form-control select-enterprise w-100" id="edit-remarks" placeholder="Optional comments, milestones or status summaries" />
                 </div>
 
-                <!-- SECTION 2: TIMELINE DATES -->
+                <!-- SECTION 2: LINKS & INTEGRATIONS -->
+                <div class="col-12 border-bottom pb-2 mt-4">
+                  <h4 class="font-semibold text-primary m-0" style="font-size: 1.1rem;"><i class="fa-solid fa-link text-primary me-2"></i>Project Links & Integrations</h4>
+                </div>
+
+                <div class="col-md-6">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <label class="form-label font-semibold m-0" style="font-size: 0.85rem;">JIRA Links (Multiple)</label>
+                    <button type="button" id="btn-add-jira-link" class="btn btn-sm btn-outline-primary py-0 px-2" style="font-size: 0.75rem;">
+                      <i class="fa-solid fa-plus me-1"></i>Add JIRA Link
+                    </button>
+                  </div>
+                  <div id="edit-jira-links-container" class="d-flex flex-column gap-2">
+                    <!-- Dynamic JIRA link inputs -->
+                  </div>
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label font-semibold" style="font-size: 0.85rem;">Confluence Link</label>
+                  <div class="input-group">
+                    <span class="input-group-text bg-light"><i class="fa-brands fa-confluence text-primary"></i></span>
+                    <input type="url" class="form-control select-enterprise" id="edit-confluence" placeholder="https://confluence.company.com/display/PROJ" />
+                  </div>
+                </div>
+
+                <!-- SECTION 3: TIMELINE DATES -->
                 <div class="col-12 border-bottom pb-2 mt-4">
                   <h4 class="font-semibold text-primary m-0" style="font-size: 1.1rem;"><i class="fa-regular fa-calendar-days text-primary me-2"></i>Dates & Milestone Timeline</h4>
                 </div>
@@ -870,33 +912,40 @@
                   <input type="date" class="form-control select-enterprise w-100" id="edit-act-end" />
                 </div>
 
-                <!-- SECTION 3: STAFFING ASSIGNMENTS -->
+                <!-- SECTION 4: STAFFING ASSIGNMENTS -->
                 <div class="col-12 border-bottom pb-2 mt-4">
                   <h4 class="font-semibold text-primary m-0" style="font-size: 1.1rem;"><i class="fa-solid fa-users-gear text-primary me-2"></i>Resources & Team Allocations</h4>
                 </div>
 
-                <div class="col-md-3">
+                <div class="col-md-4">
                   <label class="form-label font-semibold" style="font-size: 0.85rem;">Project Manager (PM)</label>
                   <select class="form-select select-enterprise w-100" id="edit-manager">
                     <!-- Populated dynamically -->
                   </select>
                 </div>
 
-                <div class="col-md-3">
+                <div class="col-md-4">
+                  <label class="form-label font-semibold" style="font-size: 0.85rem;">Product Manager</label>
+                  <select class="form-select select-enterprise w-100" id="edit-product-manager">
+                    <!-- Populated dynamically -->
+                  </select>
+                </div>
+
+                <div class="col-md-4">
                   <label class="form-label font-semibold" style="font-size: 0.85rem;">Business Analyst (BA)</label>
                   <select class="form-select select-enterprise w-100" id="edit-ba">
                     <!-- Populated dynamically -->
                   </select>
                 </div>
 
-                <div class="col-md-3">
+                <div class="col-md-6">
                   <label class="form-label font-semibold" style="font-size: 0.85rem;">Lead Developer</label>
                   <select class="form-select select-enterprise w-100" id="edit-developer">
                     <!-- Populated dynamically -->
                   </select>
                 </div>
 
-                <div class="col-md-3">
+                <div class="col-md-6">
                   <label class="form-label font-semibold" style="font-size: 0.85rem;">QA Analyst</label>
                   <select class="form-select select-enterprise w-100" id="edit-qa">
                     <!-- Populated dynamically -->
