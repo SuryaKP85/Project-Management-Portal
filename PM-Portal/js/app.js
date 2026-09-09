@@ -13,6 +13,7 @@ import { TimeLoggingModule } from './timeLogging.js';
 import { LeaveTrackerModule } from './leaveTracker.js';
 import { WeekendPlannerModule } from './weekendPlanner.js';
 import { RiskEngineModule } from './riskEngine.js';
+import { RiskModule } from './riskModule.js';
 import { ForecastEngineModule } from './forecastEngine.js';
 import { ReportsHubModule } from './reportsHub.js';
 import { GanttModule } from './gantt.js';
@@ -20,6 +21,14 @@ import { ActionCenterModule } from './actionCenter.js';
 import { AppIntegrationModule } from './appIntegration.js';
 import { MigrationConfig } from './migrationConfig.js';
 import { SettingsModule } from './settings.js';
+import { PortfoliosModule } from './portfolios.js';
+import { ProductsModule } from './products.js';
+import { DeliveryModule } from './delivery.js';
+import { AgileBoardModule } from './agileBoard.js';
+import { SprintPlanningModule } from './sprintPlanning.js';
+import { MyWorkModule } from './myWork.js';
+import { GovernanceModule } from './governance.js';
+import { NotificationService } from './services/notificationService.js';
 
 class EnterprisePortalApp {
   constructor() {
@@ -305,6 +314,12 @@ class EnterprisePortalApp {
         'dashboard': 'Executive Dashboard',
         'action-center': 'Executive Action Center',
         'projects': 'Projects Portfolio',
+        'portfolios': 'Strategic Portfolios & OKRs',
+        'products': 'Enterprise Products',
+        'delivery': 'Delivery Management & Hierarchy',
+        'agile-board': 'Agile Execution Board',
+        'sprint-planning': 'Sprint Planning & Backlog',
+        'my-work': 'My Personal Work Queue',
         'customers': 'Customers Registry',
         'resources': 'Human Resources',
         'resource-planner': 'Resource Allocation Planner',
@@ -330,6 +345,18 @@ class EnterprisePortalApp {
       ActionCenterModule.init(this);
     } else if (pageId === 'projects') {
       ProjectsModule.init(this);
+    } else if (pageId === 'portfolios') {
+      PortfoliosModule.init(this);
+    } else if (pageId === 'products') {
+      ProductsModule.init(this);
+    } else if (pageId === 'delivery') {
+      DeliveryModule.init(this);
+    } else if (pageId === 'agile-board') {
+      AgileBoardModule.init(this);
+    } else if (pageId === 'sprint-planning') {
+      SprintPlanningModule.init(this);
+    } else if (pageId === 'my-work') {
+      MyWorkModule.init(this);
     } else if (pageId === 'customers') {
       CustomersModule.init(this);
     } else if (pageId === 'resources') {
@@ -347,7 +374,8 @@ class EnterprisePortalApp {
     } else if (pageId === 'gantt') {
       GanttModule.init(this);
     } else if (pageId === 'risks') {
-      RiskEngineModule.init(this);
+      window.portalRiskModule = RiskModule;
+      RiskModule.init(this);
     } else if (pageId === 'reports') {
       ExcelEngineModule.init(this);
       ReportsHubModule.init(this);
@@ -406,14 +434,64 @@ class EnterprisePortalApp {
       });
     }
 
-    // Notifications Dropdown toggle
+    // Notifications Dropdown toggle and live feed
     const notifyBtn = document.getElementById('notifications-toggle-btn');
     const dropdown = document.getElementById('notifications-dropdown-menu');
+    const markAllReadBtn = document.getElementById('notifications-mark-all-read-btn');
+    const listContainer = document.getElementById('notifications-list-container');
+
+    const updateNotificationsFeed = async () => {
+      try {
+        const notifs = await NotificationService.getNotifications();
+        if (listContainer && Array.isArray(notifs) && notifs.length > 0) {
+          listContainer.innerHTML = notifs.slice(0, 10).map(n => {
+            const isUnread = !n.read;
+            const iconClass = n.type === 'risk' ? 'fa-shield-halved text-danger' :
+                             n.type === 'leave' ? 'fa-umbrella-beach text-success' :
+                             n.type === 'budget' ? 'fa-circle-exclamation text-warning' :
+                             n.type === 'project' ? 'fa-diagram-project text-primary' : 'fa-bell text-info';
+            return `
+              <div class="notification-item ${isUnread ? 'unread' : ''}" data-id="${n.id}" style="cursor: pointer;">
+                <div class="notification-icon"><i class="fa-solid ${iconClass}"></i></div>
+                <div class="notification-info">
+                  <span class="notification-title fw-bold">${n.title}</span>
+                  <span class="notification-text text-muted">${n.message}</span>
+                  <span class="notification-time small">${new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+              </div>
+            `;
+          }).join('');
+
+          // Update unread badge dot
+          const hasUnread = notifs.some(n => !n.read);
+          const badgeDot = notifyBtn.querySelector('.badge-dot');
+          if (badgeDot) {
+            badgeDot.style.display = hasUnread ? 'block' : 'none';
+          }
+
+          // Individual click to mark as read
+          listContainer.querySelectorAll('.notification-item.unread').forEach(item => {
+            item.addEventListener('click', async () => {
+              const id = item.getAttribute('data-id');
+              if (id) {
+                await NotificationService.markAsRead(id);
+                item.classList.remove('unread');
+              }
+            });
+          });
+        }
+      } catch (err) {
+        console.warn('[App] Failed fetching notifications:', err);
+      }
+    };
 
     if (notifyBtn && dropdown) {
       notifyBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         dropdown.classList.toggle('show');
+        if (dropdown.classList.contains('show')) {
+          updateNotificationsFeed();
+        }
       });
 
       document.addEventListener('click', () => {
@@ -423,6 +501,19 @@ class EnterprisePortalApp {
       dropdown.addEventListener('click', (e) => {
         e.stopPropagation();
       });
+
+      if (markAllReadBtn) {
+        markAllReadBtn.addEventListener('click', async () => {
+          await NotificationService.markAllAsRead();
+          const badgeDot = notifyBtn.querySelector('.badge-dot');
+          if (badgeDot) badgeDot.style.display = 'none';
+          document.querySelectorAll('.notification-item.unread').forEach(el => el.classList.remove('unread'));
+          this.showToast('All notifications marked as read', 'success');
+        });
+      }
+
+      // Initial feed load
+      updateNotificationsFeed();
     }
   }
 

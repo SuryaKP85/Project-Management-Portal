@@ -52,7 +52,7 @@ export const DashboardModule = {
               'Project': p.name || p.id,
               'Status': p.status || 'planning',
               'Risk': p.risk || 'Low',
-              'SOW': p.sprint || 'Approved',
+              'SOW': p.sow || p.sowStatus || (p.status === 'awaiting-sow-sign-off' ? 'Awaiting SOW sign off' : 'Approved'),
               'Weekend': 'No',
               'Completion %': p.progress || 0,
               'Total Estimated': p.budget ? p.budget / 100 : 1500,
@@ -162,8 +162,9 @@ export const DashboardModule = {
           critical++;
         }
         
-        // SOW pending
-        if (sow.toLowerCase().includes('pending')) {
+        // SOW pending / awaiting sign off
+        const sowLower = sow.toLowerCase();
+        if (sowLower.includes('pending') || sowLower.includes('awaiting') || sowLower.includes('sign off') || statusLower.includes('awaiting') || statusLower === 'awaiting-sow-sign-off') {
           pendingSOW++;
         }
         
@@ -798,24 +799,29 @@ export const DashboardModule = {
       `;
     } else if (metricId === 'metric-pending-sow') {
       title = 'Pending SOW Agreements Drilldown';
-      const rowsHtml = projects.map(p => `
+      const pendingProjects = projects.filter(p => {
+        const s = (p.status || '').toLowerCase();
+        const sowVal = (p.sow || p.sowStatus || '').toLowerCase();
+        return s === 'awaiting-sow-sign-off' || s.includes('awaiting') || sowVal.includes('pending') || sowVal.includes('awaiting') || sowVal.includes('sign off');
+      });
+      const rowsHtml = pendingProjects.map(p => `
         <tr>
-          <td class="font-semibold text-primary">${p.id}</td>
+          <td class="font-semibold text-primary">${p.sow || p.id}</td>
           <td class="font-bold">${p.name}</td>
           <td>${p.client}</td>
-          <td>${p.manager}</td>
+          <td>${p.manager || 'Surya Prashanth'}</td>
           <td class="font-semibold">$${Number(p.budget || 0).toLocaleString()}</td>
-          <td><span class="badge bg-warning-subtle text-warning">Pending Sign-off</span></td>
+          <td><span class="badge bg-warning-subtle text-warning border border-warning-subtle">${p.status === 'awaiting-sow-sign-off' ? 'Awaiting SOW Sign Off' : (p.sowStatus || 'Awaiting Sign-off')}</span></td>
         </tr>
       `).join('');
       bodyHtml = `
-        <div class="mb-3 text-muted font-semibold" style="font-size: 0.85rem;">SOW agreements and contractual documentation pending sign-off.</div>
+        <div class="mb-3 text-muted font-semibold" style="font-size: 0.85rem;">Showing ${pendingProjects.length} SOW agreements and contractual documentation pending sign-off.</div>
         <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
           <table class="table table-hover align-middle" style="font-size: 0.85rem;">
             <thead class="table-light sticky-top">
-              <tr><th>Code</th><th>Project Name</th><th>Client</th><th>Manager</th><th>Budget</th><th>SOW Status</th></tr>
+              <tr><th>Code / SOW#</th><th>Project Name</th><th>Client</th><th>Manager</th><th>Budget</th><th>SOW Status</th></tr>
             </thead>
-            <tbody>${rowsHtml}</tbody>
+            <tbody>${rowsHtml || '<tr><td colspan="6" class="text-center py-3 text-muted">No projects currently awaiting SOW sign-off.</td></tr>'}</tbody>
           </table>
         </div>
       `;

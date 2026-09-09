@@ -296,19 +296,22 @@ export const ActionCenterModule = {
 
     // 9. PENDING SOW
     this.projects.forEach(p => {
-      if (p.sowStatus && p.sowStatus.toLowerCase().includes('pending')) {
+      const sowVal = (p.sowStatus || p.sow || '').toLowerCase();
+      const stVal = (p.status || '').toLowerCase();
+      if (stVal === 'awaiting-sow-sign-off' || stVal.includes('awaiting') || sowVal.includes('pending') || sowVal.includes('awaiting') || sowVal.includes('sign off')) {
+        const displaySow = p.status === 'awaiting-sow-sign-off' ? 'Awaiting SOW Sign Off' : (p.sowStatus || 'Pending Sign-off');
         cards.push({
           id: `card-sow-${p.id}`,
           category: 'pending-sow',
           categoryLabel: 'Pending SOW',
           categoryIcon: 'fa-solid fa-file-contract',
           priority: 'warning',
-          title: `SOW Pending Approval for ${p.id}`,
-          description: `Project ${p.name} SOW contract status is '${p.sowStatus}'. Budget of $${(p.budget || 0).toLocaleString()} uncommitted.`,
+          title: `SOW Pending Approval for ${p.sow || p.id}`,
+          description: `Project ${p.name} SOW contract status is '${displaySow}'. Budget of $${(p.budget || 0).toLocaleString()} uncommitted.`,
           affectedEntity: `${p.client} - ${p.name}`,
           entityType: 'project',
           metrics: [
-            { label: 'SOW Status', value: p.sowStatus, color: 'text-warning' },
+            { label: 'SOW Status', value: displaySow, color: 'text-warning' },
             { label: 'Budget', value: `$${(p.budget || 0).toLocaleString()}` },
             { label: 'Client', value: p.client }
           ],

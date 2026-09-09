@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Enterprise Project Management Portal</title>
+  <meta name="description" content="Enterprise Project Management Portal & Operating System (V2.0 Platform Foundation) with Node.js Express backend, PostgreSQL architecture, server-side authentication, RBAC, and AI service layer." />
+  <meta property="og:title" content="Enterprise Project Management Portal" />
+  <meta property="og:description" content="Enterprise Project Management Portal & Operating System (V2.0 Platform Foundation) with Node.js Express backend, PostgreSQL architecture, server-side authentication, RBAC, and AI service layer." />
   
   <!-- Bootstrap 5 CSS -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
@@ -68,6 +71,44 @@
             <span class="menu-text">Projects</span>
           </a>
         </li>
+        <li class="menu-header">Strategy & Portfolios</li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="portfolios">
+            <i class="fa-solid fa-briefcase text-info"></i>
+            <span class="menu-text">Portfolios & OKRs</span>
+          </a>
+        </li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="products">
+            <i class="fa-solid fa-cube text-primary"></i>
+            <span class="menu-text">Products</span>
+          </a>
+        </li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="delivery">
+            <i class="fa-solid fa-folder-tree text-primary"></i>
+            <span class="menu-text">Delivery Management</span>
+          </a>
+        </li>
+        <li class="menu-header">Agile Execution</li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="agile-board">
+            <i class="fa-solid fa-table-columns text-primary"></i>
+            <span class="menu-text">Agile Board</span>
+          </a>
+        </li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="sprint-planning">
+            <i class="fa-solid fa-list-ol text-success"></i>
+            <span class="menu-text">Sprint Planning</span>
+          </a>
+        </li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="my-work">
+            <i class="fa-solid fa-user-check text-warning"></i>
+            <span class="menu-text">My Work</span>
+          </a>
+        </li>
         <li class="menu-item">
           <a href="#" class="menu-link" data-page="customers">
             <i class="fa-solid fa-handshake"></i>
@@ -121,9 +162,39 @@
 
         <li class="menu-header">Risk & Governance</li>
         <li class="menu-item">
+          <a href="#" class="menu-link" data-page="governance">
+            <i class="fa-solid fa-scale-balanced text-primary"></i>
+            <span class="menu-text">Governance Hub</span>
+          </a>
+        </li>
+        <li class="menu-item">
           <a href="#" class="menu-link" data-page="risks">
-            <i class="fa-solid fa-shield-halved"></i>
+            <i class="fa-solid fa-shield-halved text-danger"></i>
             <span class="menu-text">Risks</span>
+          </a>
+        </li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="issues">
+            <i class="fa-solid fa-circle-exclamation text-warning"></i>
+            <span class="menu-text">Issues</span>
+          </a>
+        </li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="dependencies">
+            <i class="fa-solid fa-diagram-next text-primary"></i>
+            <span class="menu-text">Dependencies</span>
+          </a>
+        </li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="milestones">
+            <i class="fa-solid fa-flag-checkered text-success"></i>
+            <span class="menu-text">Milestones</span>
+          </a>
+        </li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="releases">
+            <i class="fa-solid fa-rocket text-info"></i>
+            <span class="menu-text">Releases</span>
           </a>
         </li>
         <li class="menu-item">
@@ -189,9 +260,9 @@
           <div class="notifications-dropdown" id="notifications-dropdown-menu">
             <div class="notifications-header">
               <span>Notifications</span>
-              <span class="text-primary font-semibold" style="font-size: 0.75rem; cursor: pointer;">Mark all read</span>
+              <span class="text-primary font-semibold" id="notifications-mark-all-read-btn" style="font-size: 0.75rem; cursor: pointer;">Mark all read</span>
             </div>
-            <div class="notifications-list">
+            <div class="notifications-list" id="notifications-list-container">
               <a href="#" class="notification-item unread">
                 <div class="notification-icon"><i class="fa-solid fa-shield-halved"></i></div>
                 <div class="notification-info">
@@ -556,6 +627,9 @@
             </div>
             <div class="d-flex gap-2">
               <input type="file" id="project-file-input" accept=".xlsx, .xls, .csv" class="d-none" />
+              <button id="project-sync-v2-btn" class="btn-enterprise btn-enterprise-secondary" title="Sync & Migrate LocalStorage to PostgreSQL Backend">
+                <i class="fa-solid fa-cloud-arrow-up text-info"></i> Sync PostgreSQL
+              </button>
               <button id="project-import-btn" class="btn-enterprise btn-enterprise-secondary" title="Import & Update Projects from Excel">
                 <i class="fa-solid fa-file-import text-primary"></i> Import Excel
               </button>
@@ -607,6 +681,7 @@
                 <select id="filter-status" class="select-enterprise w-100" style="min-width: unset; padding: 6px 10px; font-size: 0.8rem;">
                   <option value="all">All Statuses</option>
                   <option value="in-progress">In Progress</option>
+                  <option value="awaiting-sow-sign-off">Awaiting SOW sign off</option>
                   <option value="completed">Completed</option>
                   <option value="planning">Planning</option>
                   <option value="on-hold">On Hold</option>
@@ -702,6 +777,7 @@
                 <option value="">Update Status...</option>
                 <option value="planning">Planning</option>
                 <option value="in-progress">In Progress</option>
+                <option value="awaiting-sow-sign-off">Awaiting SOW sign off</option>
                 <option value="on-hold">On Hold</option>
                 <option value="completed">Completed</option>
                 <option value="archived">Archived</option>
@@ -972,6 +1048,7 @@
                   <select class="form-select select-enterprise w-100" id="edit-status">
                     <option value="planning">Planning</option>
                     <option value="in-progress">In Progress</option>
+                    <option value="awaiting-sow-sign-off">Awaiting SOW sign off</option>
                     <option value="on-hold">On Hold</option>
                     <option value="completed">Completed</option>
                     <option value="archived">Archived</option>
@@ -991,6 +1068,307 @@
               </div>
             </form>
           </div>
+
+          <!-- SECTION 4: DELIVERY WORK BREAKDOWN (EPICS, FEATURES, STORIES, TASKS) -->
+          <div class="card p-4 mt-4 shadow-sm border-0" id="project-delivery-breakdown-card">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 pb-2 border-bottom">
+              <div>
+                <h4 class="font-semibold text-primary m-0" style="font-size: 1.1rem;">
+                  <i class="fa-solid fa-folder-tree text-primary me-2"></i>Delivery Work Breakdown & Traceability
+                </h4>
+                <span class="text-muted small">Epics, Features, User Stories, and Execution Tasks associated with this project</span>
+              </div>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-primary" id="btn-project-add-epic">
+                  <i class="fa-solid fa-plus me-1"></i> Add Epic
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-project-trace-lineage">
+                  <i class="fa-solid fa-route me-1"></i> Trace Project Lineage
+                </button>
+              </div>
+            </div>
+            <div id="project-delivery-items-container">
+              <!-- Dynamically rendered project epics and hierarchy -->
+            </div>
+          </div>
+
+          <!-- PROJECT RISKS SECTION (Sprint 5A) -->
+          <div class="card p-4 mt-4" style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--border-radius-md);">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div>
+                <h5 class="fw-bold mb-1 d-flex align-items-center gap-2">
+                  <i class="fa-solid fa-shield-halved text-danger"></i> Project Risks
+                  <span id="project-risks-count-badge" class="badge bg-secondary ms-1">0</span>
+                </h5>
+                <p class="text-secondary small mb-0">Track project-specific risks, probability x impact scores, and active mitigation plans</p>
+              </div>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-primary" id="btn-project-add-risk">
+                  <i class="fa-solid fa-plus me-1"></i> Add Risk
+                </button>
+              </div>
+            </div>
+            <div id="project-risks-container">
+              <!-- Dynamically rendered project risks -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2B. STRATEGIC PORTFOLIOS & OKRs PAGE -->
+      <section id="page-portfolios" class="page-container">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Strategic Portfolios & OKRs</h1>
+            <p class="page-description">Oversee enterprise business portfolios and track strategic organizational key results</p>
+          </div>
+          <div class="d-flex gap-2">
+            <button id="btn-create-portfolio-item" class="btn-enterprise btn-enterprise-primary">
+              <i class="fa-solid fa-plus"></i> Add Item
+            </button>
+          </div>
+        </div>
+
+        <div class="card p-3 mb-4 shadow-sm border-0">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+            <div class="btn-group" role="group">
+              <button type="button" class="btn btn-sm btn-primary active" id="tab-btn-portfolios">
+                <i class="fa-solid fa-briefcase me-1"></i> Portfolios
+              </button>
+              <button type="button" class="btn btn-sm btn-light" id="tab-btn-goals">
+                <i class="fa-solid fa-bullseye me-1"></i> Strategic OKRs
+              </button>
+            </div>
+            <div class="search-bar" style="max-width: 320px;">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="portfolio-search-input" placeholder="Search portfolios or goals..." />
+            </div>
+          </div>
+        </div>
+
+        <div id="portfolios-content-area">
+          <!-- Dynamic Portfolios / Goals cards -->
+        </div>
+      </section>
+
+      <!-- 2C. PRODUCTS MANAGEMENT PAGE -->
+      <section id="page-products" class="page-container">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Enterprise Products</h1>
+            <p class="page-description">Manage product lines, lifecycle stages, dedicated teams, and connected execution projects</p>
+          </div>
+          <div class="d-flex gap-2">
+            <button id="btn-create-product" class="btn-enterprise btn-enterprise-primary">
+              <i class="fa-solid fa-plus"></i> Register Product
+            </button>
+          </div>
+        </div>
+
+        <div class="card p-3 mb-4 shadow-sm border-0">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+            <div class="d-flex align-items-center gap-2">
+              <label class="small fw-semibold text-muted mb-0">Lifecycle Stage:</label>
+              <select class="form-select form-select-sm" id="product-stage-filter" style="width: auto;">
+                <option value="all">All Stages</option>
+                <option value="concept">Concept</option>
+                <option value="development">Development</option>
+                <option value="beta">Beta</option>
+                <option value="ga">General Availability</option>
+                <option value="sunset">Sunset</option>
+              </select>
+            </div>
+            <div class="search-bar" style="max-width: 320px;">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="product-search-input" placeholder="Search product name, code, category..." />
+            </div>
+          </div>
+        </div>
+
+        <div id="products-content-area">
+          <!-- Dynamic Products cards -->
+        </div>
+      </section>
+
+      <!-- 2D. DELIVERY MANAGEMENT: EPICS, FEATURES, STORIES, TASKS & TRACEABILITY -->
+      <section id="page-delivery" class="page-container">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Delivery Management & Hierarchy</h1>
+            <p class="page-description">Manage Epics, Features, Stories, Tasks, and inspect end-to-end strategic delivery traceability</p>
+          </div>
+          <div class="d-flex gap-2">
+            <button id="btn-delivery-quick-trace" class="btn-enterprise btn-enterprise-secondary">
+              <i class="fa-solid fa-route"></i> Trace Lineage
+            </button>
+            <button id="btn-delivery-add-item" class="btn-enterprise btn-enterprise-primary">
+              <i class="fa-solid fa-plus"></i> New Work Item
+            </button>
+          </div>
+        </div>
+
+        <!-- Metric KPI Cards -->
+        <div class="stats-grid-executive mb-4">
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Total Epics</span>
+              <div class="kpi-icon-wrapper kpi-icon-primary"><i class="fa-solid fa-crown" style="color: #7c3aed;"></i></div>
+            </div>
+            <h2 class="kpi-value" id="delivery-kpi-epics">0</h2>
+            <div class="kpi-footer"><span class="kpi-trend neutral">Strategic Initiatives</span></div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Total Features</span>
+              <div class="kpi-icon-wrapper kpi-icon-info"><i class="fa-solid fa-puzzle-piece text-info"></i></div>
+            </div>
+            <h2 class="kpi-value" id="delivery-kpi-features">0</h2>
+            <div class="kpi-footer"><span class="kpi-trend neutral">Functional Capabilities</span></div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">User Stories</span>
+              <div class="kpi-icon-wrapper kpi-icon-warning"><i class="fa-solid fa-book-open text-warning"></i></div>
+            </div>
+            <h2 class="kpi-value" id="delivery-kpi-stories">0</h2>
+            <div class="kpi-footer"><span class="kpi-trend neutral">Agile Deliverables</span></div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Execution Tasks</span>
+              <div class="kpi-icon-wrapper kpi-icon-primary"><i class="fa-solid fa-list-check text-primary"></i></div>
+            </div>
+            <h2 class="kpi-value" id="delivery-kpi-tasks">0</h2>
+            <div class="kpi-footer"><span class="kpi-trend positive">Engineering Units</span></div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Blocked Items</span>
+              <div class="kpi-icon-wrapper kpi-icon-danger"><i class="fa-solid fa-triangle-exclamation text-danger"></i></div>
+            </div>
+            <h2 class="kpi-value text-danger" id="delivery-kpi-blocked">0</h2>
+            <div class="kpi-footer"><span class="kpi-trend negative">Requires Attention</span></div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-header">
+              <span class="kpi-title">Delivery Progress</span>
+              <div class="kpi-icon-wrapper kpi-icon-success"><i class="fa-solid fa-circle-check text-success"></i></div>
+            </div>
+            <h2 class="kpi-value" id="delivery-kpi-completion">0%</h2>
+            <div class="kpi-footer"><span class="kpi-trend positive">Overall Rollup</span></div>
+          </div>
+        </div>
+
+        <!-- Controls Toolbar & Tabs -->
+        <div class="card p-3 mb-4 shadow-sm border-0">
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+            <div class="btn-group flex-wrap" role="group" id="delivery-tabs-nav">
+              <button type="button" class="btn btn-sm btn-primary active" data-tab="hierarchy">
+                <i class="fa-solid fa-folder-tree me-1"></i> Hierarchy Tree
+              </button>
+              <button type="button" class="btn btn-sm btn-light" data-tab="epics">
+                <i class="fa-solid fa-crown me-1"></i> Epics
+              </button>
+              <button type="button" class="btn btn-sm btn-light" data-tab="features">
+                <i class="fa-solid fa-puzzle-piece me-1"></i> Features
+              </button>
+              <button type="button" class="btn btn-sm btn-light" data-tab="stories">
+                <i class="fa-solid fa-book-open me-1"></i> Stories
+              </button>
+              <button type="button" class="btn btn-sm btn-light" data-tab="tasks">
+                <i class="fa-solid fa-list-check me-1"></i> Tasks
+              </button>
+              <button type="button" class="btn btn-sm btn-light" data-tab="traceability">
+                <i class="fa-solid fa-route me-1"></i> Traceability Inspector
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-primary" onclick="window.portalAppInstance?.switchPage('agile-board')" title="Jump to Agile Execution Board">
+                <i class="fa-solid fa-table-columns me-1"></i> Agile Board
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-success" onclick="window.portalAppInstance?.switchPage('sprint-planning')" title="Jump to Sprint Planning">
+                <i class="fa-solid fa-list-ol me-1"></i> Sprint Planning
+              </button>
+            </div>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <select class="form-select form-select-sm" id="delivery-filter-project" style="width: 180px;">
+                <option value="all">All Projects</option>
+              </select>
+              <select class="form-select form-select-sm" id="delivery-filter-status" style="width: 140px;">
+                <option value="all">All Statuses</option>
+                <option value="planning">Planning / Backlog</option>
+                <option value="in-progress">In Progress</option>
+                <option value="completed">Completed / Done</option>
+                <option value="blocked">Blocked</option>
+              </select>
+              <div class="search-bar" style="max-width: 240px;">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" id="delivery-search-input" placeholder="Search work items..." />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="delivery-tab-content-area">
+          <!-- Dynamic Content Rendered by DeliveryModule -->
+        </div>
+      </section>
+
+      <!-- AGILE EXECUTION BOARD PAGE -->
+      <section id="page-agile-board" class="page-container">
+        <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+          <div>
+            <h1 class="page-title">Agile Execution Board</h1>
+            <p class="page-description">Execute active sprint stories, manage WIP columns, inspect swimlanes, and deliver sprint goals</p>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <button class="btn-enterprise btn-enterprise-secondary" onclick="window.portalAppInstance?.switchPage('sprint-planning')">
+              <i class="fa-solid fa-sliders me-1"></i> Sprint Planning
+            </button>
+            <button class="btn-enterprise btn-enterprise-secondary" onclick="window.portalAppInstance?.switchPage('delivery')">
+              <i class="fa-solid fa-route me-1"></i> Delivery Hierarchy
+            </button>
+          </div>
+        </div>
+
+        <div id="agile-board-workspace">
+          <!-- Rendered dynamically by AgileBoardModule -->
+        </div>
+      </section>
+
+      <!-- SPRINT PLANNING & BACKLOG PAGE -->
+      <section id="page-sprint-planning" class="page-container">
+        <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+          <div>
+            <h1 class="page-title">Sprint Planning & Backlog Management</h1>
+            <p class="page-description">Prioritize backlog items from delivery hierarchy, balance team capacity, and commit sprint scopes</p>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <button class="btn-enterprise btn-enterprise-secondary" onclick="window.portalAppInstance?.switchPage('agile-board')">
+              <i class="fa-solid fa-table-columns me-1"></i> Agile Board
+            </button>
+          </div>
+        </div>
+
+        <div id="sprint-planning-workspace">
+          <!-- Rendered dynamically by SprintPlanningModule -->
+        </div>
+      </section>
+
+      <!-- MY WORK PERSONAL WORKSPACE PAGE -->
+      <section id="page-my-work" class="page-container">
+        <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+          <div>
+            <h1 class="page-title">My Personal Work Queue</h1>
+            <p class="page-description">Track all stories, tasks, and subtasks assigned to you across active sprints with direct status progression</p>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <button class="btn-enterprise btn-enterprise-secondary" onclick="window.portalAppInstance?.switchPage('agile-board')">
+              <i class="fa-solid fa-table-columns me-1"></i> Agile Board
+            </button>
+          </div>
+        </div>
+
+        <div id="my-work-workspace">
+          <!-- Rendered dynamically by MyWorkModule -->
         </div>
       </section>
 
@@ -2318,6 +2696,82 @@
         </div>
       </section>
 
+      <!-- 7.9. GOVERNANCE & DELIVERY CONTROL HUB (SPRINT 5) -->
+      <section id="page-governance" class="page-container">
+        <div class="page-header d-flex flex-wrap justify-content-between align-items-center gap-3">
+          <div>
+            <h1 class="page-title">Governance & Delivery Control</h1>
+            <p class="page-description">Connected governance framework uniting Risks, Issues, Dependencies, Milestones & Releases across the delivery hierarchy</p>
+          </div>
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <button id="gov-btn-run-audit" class="btn-enterprise btn-enterprise-secondary d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px;">
+              <i class="fa-solid fa-arrows-spin"></i> Run Risk Audit Scan
+            </button>
+            <button id="gov-btn-new-risk" class="btn-enterprise btn-enterprise-secondary text-danger d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px;">
+              <i class="fa-solid fa-shield-halved"></i> New Risk
+            </button>
+            <button id="gov-btn-new-issue" class="btn-enterprise btn-enterprise-secondary text-warning d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px;">
+              <i class="fa-solid fa-circle-exclamation"></i> New Issue
+            </button>
+            <button id="gov-btn-new-dep" class="btn-enterprise btn-enterprise-secondary text-primary d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px;">
+              <i class="fa-solid fa-diagram-next"></i> New Dependency
+            </button>
+            <button id="gov-btn-new-milestone" class="btn-enterprise btn-enterprise-secondary text-success d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px;">
+              <i class="fa-solid fa-flag-checkered"></i> New Milestone
+            </button>
+            <button id="gov-btn-new-release" class="btn-enterprise btn-enterprise-primary d-flex align-items-center gap-1.5" style="font-size: 0.85rem; padding: 8px 14px;">
+              <i class="fa-solid fa-rocket"></i> Plan Release
+            </button>
+          </div>
+        </div>
+
+        <!-- Governance Sub-navigation Tabs and Filters Header Bar -->
+        <div class="enterprise-card mb-4" style="background-color: var(--bg-card); border: 1px solid var(--border-color);">
+          <div class="p-3 d-flex flex-wrap justify-content-between align-items-center gap-3">
+            <!-- Tabs -->
+            <div class="d-flex align-items-center gap-1.5 flex-wrap" id="gov-tabs-nav">
+              <button class="btn-enterprise btn-enterprise-secondary gov-tab-btn active btn-sm font-bold" data-tab="dashboard">
+                <i class="fa-solid fa-gauge-high me-1"></i> Executive Hub
+              </button>
+              <button class="btn-enterprise btn-enterprise-secondary gov-tab-btn btn-sm font-bold" data-tab="risks">
+                <i class="fa-solid fa-shield-halved text-danger me-1"></i> Risks Register
+              </button>
+              <button class="btn-enterprise btn-enterprise-secondary gov-tab-btn btn-sm font-bold" data-tab="issues">
+                <i class="fa-solid fa-circle-exclamation text-warning me-1"></i> Issues Tracker
+              </button>
+              <button class="btn-enterprise btn-enterprise-secondary gov-tab-btn btn-sm font-bold" data-tab="dependencies">
+                <i class="fa-solid fa-diagram-next text-primary me-1"></i> Dependencies & Graph
+              </button>
+              <button class="btn-enterprise btn-enterprise-secondary gov-tab-btn btn-sm font-bold" data-tab="milestones">
+                <i class="fa-solid fa-flag-checkered text-success me-1"></i> Milestones
+              </button>
+              <button class="btn-enterprise btn-enterprise-secondary gov-tab-btn btn-sm font-bold" data-tab="releases">
+                <i class="fa-solid fa-rocket text-info me-1"></i> Releases
+              </button>
+              <button class="btn-enterprise btn-enterprise-secondary gov-tab-btn btn-sm font-bold" data-tab="traceability">
+                <i class="fa-solid fa-arrows-split-up-and-left text-secondary me-1"></i> 360° Traceability
+              </button>
+            </div>
+
+            <!-- Filters -->
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <select id="gov-filter-project" class="form-select form-select-sm" style="min-width: 180px;">
+                <option value="all">All Projects</option>
+              </select>
+              <div class="search-bar" style="margin: 0; min-width: 220px;">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" id="gov-search-input" placeholder="Search governance..." />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- DYNAMIC TAB CONTENT AREA -->
+        <div id="gov-tab-content-area">
+          <!-- Populated by GovernanceModule.renderTabContent() -->
+        </div>
+      </section>
+
       <!-- 8. DYNAMIC AUTOMATIC RISK ENGINE PAGE -->
       <section id="page-risks" class="page-container">
         <div class="page-header d-flex flex-wrap justify-content-between align-items-center gap-3">
@@ -3404,7 +3858,7 @@
       <!-- STICKY FOOTER -->
       <footer id="footer">
         <div>&copy; 2026 Enterprise PM Portal. Created by Surya. All rights reserved.</div>
-        <div class="d-none d-sm-block">Version 1.1.0 (Enterprise Suite) | <a href="#" onclick="alert('Demo License - Enterprise Version'); return false;">License agreement</a></div>
+        <div class="d-none d-sm-block">Version 2.0.0 (V2.0 Platform Foundation) | <a href="#" onclick="alert('Surya Enterprise Suite - V2.0'); return false;">License agreement</a></div>
       </footer>
 
     </main>

@@ -103,5 +103,20 @@ export const Calculations = {
       return sum + (item.completed ? 100 : 0);
     }, 0);
     return Math.round(total / items.length);
+  },
+
+  /**
+   * Safely escapes HTML strings to prevent Cross-Site Scripting (XSS)
+   * @param {string} str 
+   * @returns {string} Sanitized string
+   */
+  escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 };

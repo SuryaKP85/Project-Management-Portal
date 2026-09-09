@@ -129,9 +129,13 @@
 
 .status-badge.planning,
 .status-badge.pending,
-.status-badge.on-hold {
-  background-color: rgba(245, 158, 11, 0.1);
-  color: var(--brand-warning);
+.status-badge.on-hold,
+.status-badge.awaiting-sow-sign-off,
+.status-badge.awaiting-sow,
+.status-badge.awaiting {
+  background-color: rgba(245, 158, 11, 0.15);
+  color: #b45309;
+  border: 1px solid rgba(245, 158, 11, 0.3);
 }
 
 .status-badge.inactive,

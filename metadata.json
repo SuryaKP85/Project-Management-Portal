@@ -1,6 +1,6 @@
 {
   "name": "Enterprise Project Management Portal",
-  "description": "Phase 1 of an Enterprise Project Management Portal featuring a responsive dashboard, professional sidebar, light/dark mode, and customizable enterprise UI widgets.",
+  "description": "Enterprise Project Management Portal & Operating System (V2.0 Platform Foundation) with Node.js Express backend, PostgreSQL architecture, server-side authentication, RBAC, and AI service layer.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

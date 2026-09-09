@@ -297,30 +297,29 @@ export const RiskEngineModule = {
       totalPoints += 20;
     }
 
-    // Boundary cap 0-100
-    const score = Math.min(100, totalPoints);
-
-    // Determine status level
-    let severity = 'Low';
-    if (score >= 80) severity = 'Critical';
-    else if (score >= 60) severity = 'High';
-    else if (score >= 30) severity = 'Medium';
-
-    // Map to heatmap coordinates: Likelihood (1-5) & Impact (1-5)
-    // Probability based on calculated risk score
+    // Unified V2 Formula: Probability (1-5) based on audit flags
     let likelihood = 1;
-    if (score >= 80) likelihood = 5;
-    else if (score >= 60) likelihood = 4;
-    else if (score >= 40) likelihood = 3;
-    else if (score >= 20) likelihood = 2;
+    if (totalPoints >= 60) likelihood = 5;
+    else if (totalPoints >= 45) likelihood = 4;
+    else if (totalPoints >= 30) likelihood = 3;
+    else if (totalPoints >= 15) likelihood = 2;
 
-    // Impact based on financial stakes (budget)
+    // Impact (1-5) based on financial stakes / budget
     const budget = Number(proj.budget) || 100000;
     let impact = 1;
     if (budget >= 300000) impact = 5;
     else if (budget >= 200000) impact = 4;
     else if (budget >= 120000) impact = 3;
     else if (budget >= 80000) impact = 2;
+
+    // Risk Score = Probability * Impact (Scale: 1 - 25)
+    const score = likelihood * impact;
+
+    // V2 Severity Bands: 1-4 Low, 5-9 Medium, 10-16 High, 17-25 Critical
+    let severity = 'Low';
+    if (score >= 17) severity = 'Critical';
+    else if (score >= 10) severity = 'High';
+    else if (score >= 5) severity = 'Medium';
 
     return {
       score,
@@ -382,17 +381,17 @@ export const RiskEngineModule = {
     const kpiComplianceRate = document.getElementById('risk-kpi-compliance-rate');
     const kpiScoreColorWrapper = document.getElementById('risk-kpi-score-color');
 
-    if (kpiAvgScore) kpiAvgScore.textContent = `${avgRiskScore} Index`;
+    if (kpiAvgScore) kpiAvgScore.textContent = `${avgRiskScore}/25 Score`;
     if (kpiSevereCount) kpiSevereCount.textContent = `${severeCount} Project(s)`;
     if (kpiResourceStrain) kpiResourceStrain.textContent = `${resourceStrainFailuresCount} Failure(s)`;
     if (kpiComplianceRate) kpiComplianceRate.textContent = `${complianceIndexValue}% Rate`;
 
     // Adjust KPI icon background color based on avg score severity
     if (kpiScoreColorWrapper) {
-      if (avgRiskScore >= 60) {
+      if (avgRiskScore >= 17) {
         kpiScoreColorWrapper.style.backgroundColor = 'rgba(239, 68, 68, 0.15)';
         kpiScoreColorWrapper.style.color = 'var(--brand-danger)';
-      } else if (avgRiskScore >= 30) {
+      } else if (avgRiskScore >= 10) {
         kpiScoreColorWrapper.style.backgroundColor = 'rgba(245, 158, 11, 0.15)';
         kpiScoreColorWrapper.style.color = 'var(--brand-warning)';
       } else {

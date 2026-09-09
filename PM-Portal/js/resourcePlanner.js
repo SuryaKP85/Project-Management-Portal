@@ -2,6 +2,8 @@
 
 import { Storage } from './storage.js';
 import { Filters } from './filters.js';
+import { TeamService } from './services/teamService.js';
+import { Authentication } from './authentication.js';
 
 export const ResourcePlannerModule = {
   app: null,
@@ -104,6 +106,13 @@ export const ResourcePlannerModule = {
     if (this.app) {
       this.app.resourcesList = this.resources;
     }
+
+    // V2 Team Service synchronization
+    TeamService.getTeams().then(teams => {
+      if (teams && Array.isArray(teams)) {
+        this.v2Teams = teams;
+      }
+    }).catch(() => {});
   },
 
   /**

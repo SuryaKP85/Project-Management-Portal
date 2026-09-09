@@ -4,6 +4,15 @@ import { Storage } from './storage.js';
 import { Authentication } from './authentication.js';
 import { Filters } from './filters.js';
 import { Excel } from './excel.js';
+import { dataService } from './services/dataAdapter.js';
+import { ProductService } from './services/productService.js';
+import { ProjectService } from './services/projectService.js';
+import { EpicService } from './services/epicService.js';
+import { FeatureService } from './services/featureService.js';
+import { StoryService } from './services/storyService.js';
+import { TaskService } from './services/taskService.js';
+import { DeliveryService } from './services/deliveryService.js';
+import { RiskService } from './services/riskService.js';
 
 export const ProjectsModule = {
   app: null,
@@ -58,6 +67,38 @@ export const ProjectsModule = {
     
     // Render view
     this.render();
+
+    // V2 Background Sync and Migration
+    this.syncV2Projects();
+  },
+
+  /**
+   * Background sync with V2 PostgreSQL backend and automatic migration
+   */
+  async syncV2Projects(isManual = false) {
+    try {
+      if (isManual && this.app) {
+        this.app.showToast('Initiating V2 PostgreSQL synchronization & migration...', 'info');
+      }
+
+      await dataService.autoMigrateLocalProjects();
+      const v2Projects = await dataService.getProjects();
+      if (v2Projects && Array.isArray(v2Projects) && v2Projects.length > 0) {
+        this.projects = v2Projects;
+        this.app.projectsList = this.projects;
+        Storage.set('projects', this.projects);
+        this.populateFilterDropdowns();
+        this.render();
+        if (isManual && this.app) {
+          this.app.showToast('Synchronized successfully with PostgreSQL V2 backend!', 'success');
+        }
+      }
+    } catch (err) {
+      console.warn('[ProjectsModule] V2 sync note:', err);
+      if (isManual && this.app) {
+        this.app.showToast('V2 sync completed with cached records', 'info');
+      }
+    }
   },
 
   /**
@@ -77,11 +118,14 @@ export const ProjectsModule = {
   },
 
   /**
-   * Save changes to LocalStorage and sync with central state
+   * Save changes to LocalStorage and sync with central state & V2 backend
    */
   saveProjects() {
     Storage.set('projects', this.projects);
     this.app.projectsList = this.projects;
+    dataService.saveProjects(this.projects).catch((err) => {
+      console.warn('[ProjectsModule] Background V2 saveProjects error:', err);
+    });
   },
 
   /**
@@ -363,6 +407,16 @@ export const ProjectsModule = {
       });
     }
 
+    // 12b. Connect V2 Sync Button
+    const syncBtn = document.getElementById('project-sync-v2-btn');
+    if (syncBtn) {
+      const newSyncBtn = syncBtn.cloneNode(true);
+      syncBtn.parentNode.replaceChild(newSyncBtn, syncBtn);
+      newSyncBtn.addEventListener('click', () => {
+        this.syncV2Projects(true);
+      });
+    }
+
     // 13. Connect spreadsheet export button from header
     const exportBtn = document.getElementById('project-export-btn');
     if (exportBtn) {
@@ -517,7 +571,8 @@ export const ProjectsModule = {
         let parsedStatus = '';
         if (statusRaw) {
           const s = statusRaw.toLowerCase();
-          if (s.includes('progress') || s.includes('active') || s.includes('ongoing')) parsedStatus = 'in-progress';
+          if (s.includes('awaiting') || s.includes('sign off') || s.includes('sign-off') || (s.includes('sow') && !s.includes('approved'))) parsedStatus = 'awaiting-sow-sign-off';
+          else if (s.includes('progress') || s.includes('active') || s.includes('ongoing')) parsedStatus = 'in-progress';
           else if (s.includes('complet') || s.includes('done') || s.includes('finish') || s.includes('closed')) parsedStatus = 'completed';
           else if (s.includes('plan') || s.includes('pipeline') || s.includes('scop') || s.includes('initiat')) parsedStatus = 'planning';
           else if (s.includes('hold') || s.includes('pause') || s.includes('suspend')) parsedStatus = 'on-hold';
@@ -945,7 +1000,10 @@ export const ProjectsModule = {
         <td class="clickable-project-cell" data-id="${p.id}">
           <div class="table-project-cell">
             <span class="table-project-title font-semibold" style="font-size: 0.9rem;">${p.name}</span>
-            <span class="table-project-client" style="font-size: 0.75rem;"><i class="fa-solid fa-building me-1"></i> ${p.client}</span>
+            <div class="d-flex align-items-center gap-1 flex-wrap">
+              <span class="table-project-client" style="font-size: 0.75rem;"><i class="fa-solid fa-building me-1"></i> ${p.client}</span>
+              ${p.productName || p.productId ? `<span class="badge bg-light text-primary border" style="font-size: 0.68rem;"><i class="fa-solid fa-cube me-1"></i>${p.productName || p.productId}</span>` : ''}
+            </div>
           </div>
         </td>
         <td class="clickable-project-cell" data-id="${p.id}"><span class="text-secondary-custom font-semibold">${p.manager || 'Surya Prashanth'}</span></td>
@@ -961,7 +1019,7 @@ export const ProjectsModule = {
           </div>
         </td>
         <td class="clickable-project-cell font-semibold" data-id="${p.id}">$${Number(p.budget || 0).toLocaleString()}</td>
-        <td class="clickable-project-cell" data-id="${p.id}"><span class="status-badge ${p.status}">${(p.status || '').replace('-', ' ')}</span></td>
+        <td class="clickable-project-cell" data-id="${p.id}"><span class="status-badge ${p.status}">${p.status === 'awaiting-sow-sign-off' ? 'Awaiting SOW sign off' : (p.status || '').replace(/-/g, ' ')}</span></td>
         <td style="text-align: right; white-space: nowrap;">
           <button class="btn btn-sm btn-light border p-1 px-2 btn-row-edit" data-id="${p.id}" title="Edit Project Details">
             <i class="fa-solid fa-pencil text-secondary" style="font-size: 0.8rem;"></i>
@@ -1095,6 +1153,7 @@ export const ProjectsModule = {
     const executeDelete = () => {
       this.projects = this.projects.filter(p => p.id !== id);
       this.saveProjects();
+      dataService.deleteProject(id);
       this.selectedIds.delete(id);
       this.populateFilterDropdowns();
       this.app.showToast(`Deleted project ${id} successfully`, 'success');
@@ -1317,6 +1376,293 @@ export const ProjectsModule = {
       badge.textContent = `${slider.value}%`;
       this.triggerAutosave();
     };
+
+    // Render linked delivery work breakdown (Epics, Features, Stories, Tasks)
+    this.renderProjectDeliveryItems(proj.id);
+
+    // Render linked project risks (Sprint 5A)
+    this.renderProjectRisks(proj.id);
+  },
+
+  /**
+   * Renders Delivery Work Breakdown (Epics -> Features -> Stories -> Tasks) inside project detail
+   */
+  async renderProjectDeliveryItems(projectId) {
+    const container = document.getElementById('project-delivery-items-container');
+    const btnAddEpic = document.getElementById('btn-project-add-epic');
+    const btnTrace = document.getElementById('btn-project-trace-lineage');
+
+    if (btnAddEpic) {
+      btnAddEpic.onclick = () => {
+        if (window.portalDeliveryModule) {
+          window.portalDeliveryModule.openEpicModal(null, projectId);
+        }
+      };
+    }
+
+    if (btnTrace) {
+      btnTrace.onclick = () => {
+        if (this.app) {
+          this.app.navigateToPage('delivery');
+          setTimeout(() => {
+            if (window.portalDeliveryModule) {
+              window.portalDeliveryModule.inspectTrace('project', projectId);
+            }
+          }, 150);
+        }
+      };
+    }
+
+    if (!container) return;
+    container.innerHTML = `
+      <div class="text-center py-4 text-muted">
+        <i class="fa-solid fa-spinner fa-spin me-2"></i> Loading delivery work breakdown...
+      </div>
+    `;
+
+    try {
+      const [epics, features, stories, tasks] = await Promise.all([
+        EpicService.getEpics(projectId).catch(() => []),
+        FeatureService.getFeatures(projectId).catch(() => []),
+        StoryService.getStories(projectId).catch(() => []),
+        TaskService.getTasks(projectId).catch(() => []),
+      ]);
+
+      if (!epics || epics.length === 0) {
+        container.innerHTML = `
+          <div class="p-4 text-center text-muted bg-light rounded">
+            <div class="mb-2"><i class="fa-solid fa-crown fa-2x text-secondary" style="opacity: 0.4;"></i></div>
+            <h6 class="fw-bold">No Epics Created for This Project Yet</h6>
+            <p class="small text-muted mb-3">Epics group large feature capabilities and establish the delivery management hierarchy.</p>
+            <button type="button" class="btn btn-primary btn-sm" onclick="window.portalDeliveryModule && window.portalDeliveryModule.openEpicModal(null, '${projectId}')">
+              <i class="fa-solid fa-plus me-1"></i> Add First Epic
+            </button>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = `
+        <div class="delivery-project-hierarchy">
+          ${epics.map(epic => {
+            const epicFeatures = features.filter(f => f.epicId === epic.id);
+            return `
+              <div class="border rounded p-3 mb-3 bg-white shadow-2xs">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                  <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-purple-subtle text-purple fw-bold font-monospace" style="background-color: rgba(139, 92, 246, 0.15); color: #7c3aed;">
+                      <i class="fa-solid fa-crown me-1"></i>${epic.code || 'EPIC'}
+                    </span>
+                    <strong class="text-dark">${epic.name}</strong>
+                    <span class="badge bg-light text-secondary border small text-capitalize">${epic.status}</span>
+                    <span class="badge bg-light text-secondary border small text-capitalize">${epic.priority}</span>
+                  </div>
+                  <div class="d-flex align-items-center gap-3">
+                    <div class="d-flex align-items-center gap-2" style="width: 140px;">
+                      <div class="progress flex-grow-1" style="height: 6px;">
+                        <div class="progress-bar bg-success" style="width: ${epic.progress || 0}%"></div>
+                      </div>
+                      <span class="small fw-bold text-muted">${epic.progress || 0}%</span>
+                    </div>
+                    <div class="btn-group btn-group-sm">
+                      <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" title="Add Feature" onclick="window.portalDeliveryModule && window.portalDeliveryModule.openFeatureModal(null, '${epic.id}', '${projectId}')">
+                        <i class="fa-solid fa-plus"></i> Feature
+                      </button>
+                      <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" title="Trace Lineage" onclick="window.portalDeliveryModule && window.portalDeliveryModule.inspectTrace('epic', '${epic.id}')">
+                        <i class="fa-solid fa-route"></i>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Features list under this epic -->
+                ${epicFeatures.length > 0 ? `
+                  <div class="mt-2.5 pt-2 border-top ms-3">
+                    ${epicFeatures.map(feature => {
+                      const featStories = stories.filter(s => s.featureId === feature.id);
+                      return `
+                        <div class="border-start border-3 border-info ps-2.5 mb-2 py-1 bg-light rounded">
+                          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <div class="d-flex align-items-center gap-2">
+                              <span class="badge bg-info-subtle text-info fw-bold font-monospace"><i class="fa-solid fa-puzzle-piece me-1"></i>${feature.code || 'FEAT'}</span>
+                              <span class="fw-semibold small">${feature.name}</span>
+                              <span class="badge bg-white text-secondary border small text-capitalize">${feature.status}</span>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                              <span class="small text-muted">${feature.progress || 0}%</span>
+                              <button type="button" class="btn btn-outline-primary btn-xs py-0 px-1.5 text-xs" onclick="window.portalDeliveryModule && window.portalDeliveryModule.openStoryModal(null, '${feature.id}', '${projectId}')">
+                                <i class="fa-solid fa-plus"></i> Story
+                              </button>
+                              <button type="button" class="btn btn-outline-secondary btn-xs py-0 px-1.5 text-xs" onclick="window.portalDeliveryModule && window.portalDeliveryModule.inspectTrace('feature', '${feature.id}')">
+                                <i class="fa-solid fa-route"></i>
+                              </button>
+                            </div>
+                          </div>
+
+                          <!-- Stories under feature -->
+                          ${featStories.length > 0 ? `
+                            <div class="mt-1 ms-3 pt-1 border-top">
+                              ${featStories.map(story => {
+                                const storyTasks = tasks.filter(t => t.storyId === story.id);
+                                return `
+                                  <div class="d-flex justify-content-between align-items-center py-1 border-bottom border-light">
+                                    <div class="d-flex align-items-center gap-2">
+                                      <span class="badge bg-warning-subtle text-warning font-monospace small">${story.code || 'STR'}</span>
+                                      <span class="small fw-semibold text-dark">${story.title}</span>
+                                      ${story.storyPoints ? `<span class="badge bg-white text-secondary border small">${story.storyPoints} pts</span>` : ''}
+                                    </div>
+                                    <div class="d-flex align-items-center gap-2">
+                                      <span class="small text-muted">${storyTasks.length} tasks</span>
+                                      <button type="button" class="btn btn-outline-primary btn-xs py-0 px-1 text-xs" onclick="window.portalDeliveryModule && window.portalDeliveryModule.openTaskModal(null, '${story.id}', '${projectId}')">
+                                        <i class="fa-solid fa-plus"></i> Task
+                                      </button>
+                                      <button type="button" class="btn btn-outline-secondary btn-xs py-0 px-1 text-xs" onclick="window.portalDeliveryModule && window.portalDeliveryModule.inspectTrace('story', '${story.id}')">
+                                        <i class="fa-solid fa-route"></i>
+                                      </button>
+                                    </div>
+                                  </div>
+                                `;
+                              }).join('')}
+                            </div>
+                          ` : ''}
+                        </div>
+                      `;
+                    }).join('')}
+                  </div>
+                ` : ''}
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    } catch (err) {
+      console.error('Failed loading delivery items in project detail:', err);
+      container.innerHTML = `<div class="text-danger small p-2">Failed to load project delivery breakdown.</div>`;
+    }
+  },
+
+  /**
+   * Renders Linked Project Risks (Sprint 5A) inside project detail
+   */
+  async renderProjectRisks(projectId) {
+    const container = document.getElementById('project-risks-container');
+    const badgeCount = document.getElementById('project-risks-count-badge');
+    const btnAdd = document.getElementById('btn-project-add-risk');
+
+    if (btnAdd) {
+      btnAdd.onclick = () => {
+        if (window.portalRiskModule) {
+          window.portalRiskModule.openCreateModal(projectId);
+        } else {
+          this.app?.navigateToPage('risks');
+        }
+      };
+    }
+
+    if (!container) return;
+
+    container.innerHTML = `
+      <div class="text-center py-3 text-muted">
+        <i class="fa-solid fa-spinner fa-spin me-2"></i> Loading project risks...
+      </div>
+    `;
+
+    try {
+      const risks = await RiskService.getRisks({ projectId });
+      if (badgeCount) badgeCount.textContent = risks.length;
+
+      if (!risks || risks.length === 0) {
+        container.innerHTML = `
+          <div class="p-4 text-center text-muted bg-light rounded" style="border: 1px dashed var(--border-color);">
+            <div class="mb-2"><i class="fa-solid fa-shield-halved fa-2x text-secondary" style="opacity: 0.4;"></i></div>
+            <div class="fw-semibold">No Risks Logged for this Project</div>
+            <div class="text-xs text-secondary mt-1">Capture technical, schedule, or operational risks early to protect delivery.</div>
+          </div>
+        `;
+        return;
+      }
+
+      const severityStyles = {
+        Critical: { bg: 'rgba(239, 68, 68, 0.15)', text: '#dc2626', border: 'rgba(239, 68, 68, 0.3)' },
+        High: { bg: 'rgba(249, 115, 22, 0.15)', text: '#ea580c', border: 'rgba(249, 115, 22, 0.3)' },
+        Medium: { bg: 'rgba(245, 158, 11, 0.15)', text: '#d97706', border: 'rgba(245, 158, 11, 0.3)' },
+        Low: { bg: 'rgba(16, 185, 129, 0.15)', text: '#059669', border: 'rgba(16, 185, 129, 0.3)' },
+      };
+
+      container.innerHTML = `
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0" style="font-size: 0.85rem;">
+            <thead style="background-color: var(--bg-light);">
+              <tr>
+                <th style="width: 100px;">Code</th>
+                <th>Title</th>
+                <th style="width: 120px;">Category</th>
+                <th style="width: 80px; text-align: center;">P × I</th>
+                <th style="width: 120px; text-align: center;">Score</th>
+                <th style="width: 110px; text-align: center;">Status</th>
+                <th style="width: 110px;">Target Date</th>
+                <th style="width: 90px; text-align: center;">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${risks.map(r => {
+                const sev = severityStyles[r.severity] || severityStyles.Low;
+                return `
+                  <tr>
+                    <td><span class="badge bg-secondary-subtle text-secondary font-monospace">${r.code || 'RSK-?'}</span></td>
+                    <td>
+                      <div class="fw-bold">${r.title}</div>
+                      ${r.mitigationPlan ? `<div class="text-xs text-secondary text-truncate" style="max-width: 300px;">Plan: ${r.mitigationPlan}</div>` : ''}
+                    </td>
+                    <td><span class="badge bg-light text-dark border">${r.category}</span></td>
+                    <td style="text-align: center;"><span class="fw-semibold">${r.probability} × ${r.impact}</span></td>
+                    <td style="text-align: center;">
+                      <span class="badge" style="background-color: ${sev.bg}; color: ${sev.text}; border: 1px solid ${sev.border};">
+                        ${r.riskScore} — ${r.severity}
+                      </span>
+                    </td>
+                    <td style="text-align: center;"><span class="badge bg-secondary">${r.status}</span></td>
+                    <td><span class="text-xs text-secondary">${r.targetResolutionDate ? r.targetResolutionDate.split('T')[0] : '—'}</span></td>
+                    <td style="text-align: center;">
+                      <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-secondary btn-proj-view-risk" data-id="${r.id}" title="View Risk">
+                          <i class="fa-solid fa-eye"></i>
+                        </button>
+                        <button class="btn btn-outline-secondary btn-proj-edit-risk" data-id="${r.id}" title="Edit Risk">
+                          <i class="fa-solid fa-pen-to-square"></i>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      container.querySelectorAll('.btn-proj-view-risk').forEach(btn => {
+        btn.onclick = () => {
+          if (window.portalRiskModule) {
+            window.portalRiskModule.openViewModal(btn.dataset.id);
+          }
+        };
+      });
+
+      container.querySelectorAll('.btn-proj-edit-risk').forEach(btn => {
+        btn.onclick = () => {
+          if (window.portalRiskModule) {
+            window.portalRiskModule.openEditModal(btn.dataset.id);
+          }
+        };
+      });
+    } catch (err) {
+      container.innerHTML = `
+        <div class="p-3 text-danger text-center">
+          <i class="fa-solid fa-triangle-exclamation me-1"></i> Error loading project risks: ${err.message}
+        </div>
+      `;
+    }
   },
 
   /**
@@ -1814,7 +2160,14 @@ export const ProjectsModule = {
           <select class="form-select select-enterprise w-100" id="mod-status">
             <option value="planning">Planning</option>
             <option value="in-progress">In Progress</option>
+            <option value="awaiting-sow-sign-off">Awaiting SOW sign off</option>
             <option value="on-hold">On Hold</option>
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label font-semibold" style="font-size: 0.85rem;">Associated Product (V2 Optional)</label>
+          <select class="form-select select-enterprise w-100" id="mod-product">
+            <option value="">No Product (Standalone)</option>
           </select>
         </div>
       </form>
@@ -1830,6 +2183,9 @@ export const ProjectsModule = {
       const poc = overlay.querySelector('#mod-poc')?.value || '';
       const budget = overlay.querySelector('#mod-budget')?.value || '0';
       const status = overlay.querySelector('#mod-status')?.value || 'planning';
+      const prodEl = overlay.querySelector('#mod-product');
+      const prodId = prodEl?.value || '';
+      const prodName = prodEl?.selectedOptions?.[0]?.getAttribute('data-name') || '';
 
       let isModalValid = true;
       const nameEl = overlay.querySelector('#mod-name');
@@ -1876,16 +2232,28 @@ export const ProjectsModule = {
         remarks: '',
         month: new Date().toLocaleString('default', { month: 'long' }),
         quarter: 'Q3',
-        year: '2026'
+        year: '2026',
+        productId: prodId || undefined,
+        productName: prodName || undefined,
       };
 
       this.projects.unshift(newProj);
       this.saveProjects();
+      dataService.saveSingleProject(newProj);
       this.populateFilterDropdowns();
       this.app.showToast(`New Project ${newCode} initiated successfully`, 'success');
       this.currentPage = 1;
       this.render();
       return true; // close modal
     });
+
+    // Dynamically load products into dropdown
+    ProductService.getProducts().then(prods => {
+      const prodSelect = document.getElementById('mod-product');
+      if (prodSelect && Array.isArray(prods) && prods.length > 0) {
+        prodSelect.innerHTML = '<option value="">No Product (Standalone)</option>' +
+          prods.map(p => `<option value="${p.id}" data-name="${p.name}">${p.name} (${p.code})</option>`).join('');
+      }
+    }).catch(() => {});
   }
 };
