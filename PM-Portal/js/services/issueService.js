@@ -1,5 +1,48 @@
 import { apiClient } from './apiClient.js';
 
+/**
+ * Translate legacy V1 issue-form fields into the canonical V2 API contract.
+ * The Governance UI still uses a few legacy names, so the adapter keeps the
+ * UI stable while ensuring the server only receives V2 fields.
+ */
+function toApiPayload(issueData = {}) {
+  const payload = { ...issueData };
+
+  if (payload.rootCause !== undefined && payload.rootCauseNotes === undefined) {
+    payload.rootCauseNotes = payload.rootCause;
+  }
+  delete payload.rootCause;
+
+  if (payload.dueDate !== undefined && payload.targetResolutionDate === undefined) {
+    payload.targetResolutionDate = payload.dueDate;
+  }
+  delete payload.dueDate;
+
+  if (payload.resolutionNotes !== undefined && payload.resolution === undefined) {
+    payload.resolution = payload.resolutionNotes;
+  }
+  delete payload.resolutionNotes;
+
+  // Escalation is governance metadata in V2, not an IssueStatus. Preserve
+  // legacy form compatibility by translating the old option to Investigating.
+  if (payload.status === 'Escalated') payload.status = 'Investigating';
+  delete payload.escalationLevel;
+
+  return payload;
+}
+
+/** Add read-only compatibility aliases for existing V1 UI renderers. */
+function fromApiIssue(issue) {
+  if (!issue) return issue;
+  return {
+    ...issue,
+    rootCause: issue.rootCause ?? issue.rootCauseNotes ?? '',
+    dueDate: issue.dueDate ?? issue.targetResolutionDate ?? '',
+    resolutionNotes: issue.resolutionNotes ?? issue.resolution ?? '',
+    escalationLevel: issue.escalationLevel ?? 'None',
+  };
+}
+
 export class IssueService {
   static async getIssues(params = {}) {
     const query = new URLSearchParams();
@@ -8,22 +51,22 @@ export class IssueService {
     });
     const qs = query.toString() ? `?${query.toString()}` : '';
     const data = await apiClient.get(`/issues${qs}`);
-    return data.issues || [];
+    return (data.issues || []).map(fromApiIssue);
   }
 
   static async getIssueById(id) {
     const data = await apiClient.get(`/issues/${id}`);
-    return data.issue;
+    return fromApiIssue(data.issue);
   }
 
   static async createIssue(issueData) {
-    const data = await apiClient.post('/issues', issueData);
-    return data.issue;
+    const data = await apiClient.post('/issues', toApiPayload(issueData));
+    return fromApiIssue(data.issue);
   }
 
   static async updateIssue(id, updates) {
-    const data = await apiClient.put(`/issues/${id}`, updates);
-    return data.issue;
+    const data = await apiClient.patch(`/issues/${id}`, toApiPayload(updates));
+    return fromApiIssue(data.issue);
   }
 
   static async deleteIssue(id) {
