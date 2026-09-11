@@ -13,6 +13,8 @@ import { StoryService } from './services/storyService.js';
 import { TaskService } from './services/taskService.js';
 import { DeliveryService } from './services/deliveryService.js';
 import { RiskService } from './services/riskService.js';
+import { IssueService } from './services/issueService.js';
+import { DependencyService } from './services/dependencyService.js';
 
 export const ProjectsModule = {
   app: null,
@@ -1382,6 +1384,12 @@ export const ProjectsModule = {
 
     // Render linked project risks (Sprint 5A)
     this.renderProjectRisks(proj.id);
+
+    // Render linked project issues (Sprint 5B)
+    this.renderProjectIssues(proj.id);
+
+    // Render linked project dependencies (Sprint 5C)
+    this.renderProjectDependencies(proj.id);
   },
 
   /**
@@ -1660,6 +1668,315 @@ export const ProjectsModule = {
       container.innerHTML = `
         <div class="p-3 text-danger text-center">
           <i class="fa-solid fa-triangle-exclamation me-1"></i> Error loading project risks: ${err.message}
+        </div>
+      `;
+    }
+  },
+
+  /**
+   * Renders Linked Project Issues (Sprint 5B) inside project detail
+   */
+  async renderProjectIssues(projectId) {
+    const container = document.getElementById('project-issues-container');
+    const badgeCount = document.getElementById('project-issues-count-badge');
+    const btnAdd = document.getElementById('btn-project-add-issue');
+
+    if (btnAdd) {
+      btnAdd.onclick = () => {
+        if (window.GovernanceModule) {
+          window.GovernanceModule.openIssueModal();
+          setTimeout(() => {
+            const projSelect = document.getElementById('m-issue-project');
+            if (projSelect) projSelect.value = projectId;
+          }, 50);
+        } else {
+          this.app?.navigateToPage('issues');
+        }
+      };
+    }
+
+    if (!container) return;
+
+    container.innerHTML = `
+      <div class="text-center py-3 text-muted">
+        <i class="fa-solid fa-spinner fa-spin me-2"></i> Loading project issues...
+      </div>
+    `;
+
+    try {
+      const issues = await IssueService.getIssues({ projectId });
+      if (badgeCount) badgeCount.textContent = issues.length;
+
+      if (!issues || issues.length === 0) {
+        container.innerHTML = `
+          <div class="p-4 text-center text-muted bg-light rounded" style="border: 1px dashed var(--border-color);">
+            <div class="mb-2"><i class="fa-solid fa-circle-check fa-2x text-success" style="opacity: 0.4;"></i></div>
+            <div class="fw-semibold">No Active Issues Logged for this Project</div>
+            <div class="text-xs text-secondary mt-1">All delivery streams clear of reported defects or technical blockers.</div>
+          </div>
+        `;
+        return;
+      }
+
+      const severityBadges = {
+        Critical: 'bg-danger text-white',
+        High: 'bg-warning text-dark font-bold',
+        Medium: 'bg-warning-subtle text-dark',
+        Low: 'bg-secondary-subtle text-secondary'
+      };
+
+      const statusBadges = {
+        Resolved: 'bg-success text-white',
+        Closed: 'bg-secondary text-white',
+        Blocked: 'bg-danger text-white',
+        'In Progress': 'bg-primary text-white',
+        Investigating: 'bg-info text-dark',
+        Rejected: 'bg-dark text-white',
+        Open: 'bg-light text-dark border'
+      };
+
+      container.innerHTML = `
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0" style="font-size: 0.85rem;">
+            <thead style="background-color: var(--bg-light);">
+              <tr>
+                <th style="width: 100px;">Code</th>
+                <th>Title</th>
+                <th style="width: 100px; text-align: center;">Severity</th>
+                <th style="width: 90px; text-align: center;">Priority</th>
+                <th style="width: 110px; text-align: center;">Status</th>
+                <th style="width: 130px;">Root Cause</th>
+                <th style="width: 110px;">Target Date</th>
+                <th style="width: 90px; text-align: center;">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${issues.map(i => {
+                const sevClass = severityBadges[i.severity] || 'bg-secondary';
+                const statClass = statusBadges[i.status] || 'bg-secondary';
+                const rootDisplay = i.rootCauseCategory || i.rootCause || '—';
+                const targetDate = i.targetResolutionDate ? i.targetResolutionDate.split('T')[0] : (i.dueDate ? i.dueDate.split('T')[0] : '—');
+                return `
+                  <tr>
+                    <td><span class="badge bg-secondary-subtle text-secondary font-monospace">${i.code || 'ISS-?'}</span></td>
+                    <td>
+                      <div class="fw-bold text-primary" style="cursor: pointer;" onclick="window.GovernanceModule && window.GovernanceModule.openIssueDetails('${i.id}')">${i.title}</div>
+                      ${i.description ? `<div class="text-xs text-secondary text-truncate" style="max-width: 280px;">${i.description}</div>` : ''}
+                    </td>
+                    <td style="text-align: center;"><span class="badge ${sevClass}">${i.severity}</span></td>
+                    <td style="text-align: center;"><span class="text-xs font-semibold">${i.priority}</span></td>
+                    <td style="text-align: center;"><span class="badge ${statClass}">${i.status}</span></td>
+                    <td><span class="badge bg-info-subtle text-info text-truncate" style="max-width: 120px;">${rootDisplay}</span></td>
+                    <td><span class="text-xs text-secondary">${targetDate}</span></td>
+                    <td style="text-align: center;">
+                      <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-secondary btn-proj-view-issue" data-id="${i.id}" title="View Details">
+                          <i class="fa-solid fa-eye"></i>
+                        </button>
+                        <button class="btn btn-outline-secondary btn-proj-edit-issue" data-id="${i.id}" title="Edit Issue">
+                          <i class="fa-solid fa-pen-to-square"></i>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      container.querySelectorAll('.btn-proj-view-issue').forEach(btn => {
+        btn.onclick = () => {
+          if (window.GovernanceModule) {
+            window.GovernanceModule.openIssueDetails(btn.dataset.id);
+          }
+        };
+      });
+
+      container.querySelectorAll('.btn-proj-edit-issue').forEach(btn => {
+        btn.onclick = () => {
+          if (window.GovernanceModule) {
+            window.GovernanceModule.openIssueModal(btn.dataset.id);
+          }
+        };
+      });
+    } catch (err) {
+      container.innerHTML = `
+        <div class="p-3 text-danger text-center">
+          <i class="fa-solid fa-triangle-exclamation me-1"></i> Error loading project issues: ${err.message}
+        </div>
+      `;
+    }
+  },
+
+  /**
+   * Renders Linked Project Dependencies (Sprint 5C) inside project detail
+   */
+  async renderProjectDependencies(projectId) {
+    const container = document.getElementById('project-dependencies-container');
+    const badgeCount = document.getElementById('project-deps-count-badge');
+    const btnAdd = document.getElementById('btn-project-add-dependency');
+
+    if (btnAdd) {
+      btnAdd.onclick = () => {
+        if (window.GovernanceModule) {
+          window.GovernanceModule.openDependencyModal(null, {
+            sourceEntityId: projectId,
+            sourceEntityType: 'project',
+            projectId: projectId,
+          });
+        } else {
+          this.app?.navigateToPage('governance');
+        }
+      };
+    }
+
+    if (!container) return;
+
+    container.innerHTML = `
+      <div class="text-center py-3 text-muted">
+        <i class="fa-solid fa-spinner fa-spin me-2"></i> Loading project dependencies...
+      </div>
+    `;
+
+    try {
+      const deps = await DependencyService.getDependencies({ projectId });
+      if (badgeCount) badgeCount.textContent = deps.length;
+
+      if (!deps || deps.length === 0) {
+        container.innerHTML = `
+          <div class="p-4 text-center text-muted bg-light rounded" style="border: 1px dashed var(--border-color);">
+            <div class="mb-2"><i class="fa-solid fa-diagram-project fa-2x text-primary" style="opacity: 0.4;"></i></div>
+            <div class="fw-semibold">No Dependencies Recorded for this Project</div>
+            <div class="text-xs text-secondary mt-1">Cross-initiative execution linkages, blockers, and prerequisites will appear here.</div>
+          </div>
+        `;
+        return;
+      }
+
+      // Partition into Inbound (blocking this project) and Outbound (this project blocks)
+      const inbound = deps.filter(d => d.targetEntityId === projectId || d.dependencyType === 'Depends On' || d.dependencyType === 'Blocked By');
+      const outbound = deps.filter(d => !inbound.includes(d));
+
+      const criticalityBadges = {
+        Critical: 'bg-danger text-white',
+        High: 'bg-warning text-dark fw-bold',
+        Medium: 'bg-primary-subtle text-primary',
+        Low: 'bg-secondary-subtle text-secondary',
+      };
+
+      const statusBadges = {
+        Open: 'bg-light text-dark border',
+        'In Progress': 'bg-primary text-white',
+        'At Risk': 'bg-warning text-dark fw-bold',
+        Blocked: 'bg-danger text-white',
+        Resolved: 'bg-success text-white',
+        Closed: 'bg-secondary text-white',
+        Cancelled: 'bg-dark text-white',
+      };
+
+      const renderTable = (items, emptyMessage) => {
+        if (!items || items.length === 0) {
+          return `<div class="p-3 text-muted text-center small">${emptyMessage}</div>`;
+        }
+        return `
+          <div class="table-responsive mb-3">
+            <table class="table table-hover align-middle mb-0" style="font-size: 0.85rem;">
+              <thead style="background-color: var(--bg-light);">
+                <tr>
+                  <th style="width: 90px;">Code</th>
+                  <th>Relationship</th>
+                  <th style="width: 110px; text-align: center;">Type</th>
+                  <th style="width: 100px; text-align: center;">Criticality</th>
+                  <th style="width: 110px; text-align: center;">Status</th>
+                  <th style="width: 100px;">Target Date</th>
+                  <th style="width: 90px; text-align: center;">Critical Path</th>
+                  <th style="width: 90px; text-align: center;">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${items.map(d => {
+                  const critBadge = criticalityBadges[d.criticality] || 'bg-secondary text-white';
+                  const statBadge = statusBadges[d.status] || 'bg-light text-dark';
+                  const isCritPath = d.isCritical || d.isCriticalPath;
+                  return `
+                    <tr>
+                      <td class="fw-bold text-primary">${d.code || d.id}</td>
+                      <td>
+                        <div class="fw-semibold">${d.sourceEntityName}</div>
+                        <div class="small text-muted"><i class="fa-solid fa-arrow-right text-secondary me-1"></i>${d.targetEntityName}</div>
+                      </td>
+                      <td class="text-center"><span class="badge bg-secondary-subtle text-dark border">${d.dependencyType}</span></td>
+                      <td class="text-center"><span class="badge ${critBadge}">${d.criticality || 'Medium'}</span></td>
+                      <td class="text-center"><span class="badge ${statBadge}">${d.status}</span></td>
+                      <td>${d.targetDate || d.dueDate || '—'}</td>
+                      <td class="text-center">
+                        ${isCritPath ? '<span class="badge bg-danger-subtle text-danger"><i class="fa-solid fa-bolt me-1"></i>Yes</span>' : '<span class="text-muted small">No</span>'}
+                      </td>
+                      <td class="text-center">
+                        <div class="btn-group btn-group-sm">
+                          <button class="btn btn-outline-secondary btn-proj-view-dep" data-id="${d.id}" title="View Details">
+                            <i class="fa-solid fa-eye"></i>
+                          </button>
+                          <button class="btn btn-outline-primary btn-proj-edit-dep" data-id="${d.id}" title="Edit Dependency">
+                            <i class="fa-solid fa-pen"></i>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      };
+
+      container.innerHTML = `
+        <div class="nav nav-tabs nav-tabs-sm mb-3" role="tablist">
+          <button class="nav-link active fw-semibold" id="proj-deps-all-tab" data-bs-toggle="tab" data-bs-target="#proj-deps-all" type="button" role="tab">
+            All (${deps.length})
+          </button>
+          <button class="nav-link fw-semibold" id="proj-deps-inbound-tab" data-bs-toggle="tab" data-bs-target="#proj-deps-inbound" type="button" role="tab">
+            Inbound / Prerequisites (${inbound.length})
+          </button>
+          <button class="nav-link fw-semibold" id="proj-deps-outbound-tab" data-bs-toggle="tab" data-bs-target="#proj-deps-outbound" type="button" role="tab">
+            Outbound / Blocked Items (${outbound.length})
+          </button>
+        </div>
+        <div class="tab-content">
+          <div class="tab-pane fade show active" id="proj-deps-all" role="tabpanel">
+            ${renderTable(deps, 'No dependencies')}
+          </div>
+          <div class="tab-pane fade" id="proj-deps-inbound" role="tabpanel">
+            ${renderTable(inbound, 'No inbound dependencies')}
+          </div>
+          <div class="tab-pane fade" id="proj-deps-outbound" role="tabpanel">
+            ${renderTable(outbound, 'No outbound dependencies')}
+          </div>
+        </div>
+      `;
+
+      container.querySelectorAll('.btn-proj-view-dep').forEach(btn => {
+        btn.onclick = () => {
+          if (window.GovernanceModule) {
+            window.GovernanceModule.openDependencyDetails(btn.dataset.id);
+          }
+        };
+      });
+
+      container.querySelectorAll('.btn-proj-edit-dep').forEach(btn => {
+        btn.onclick = () => {
+          if (window.GovernanceModule) {
+            window.GovernanceModule.openDependencyModal(btn.dataset.id);
+          }
+        };
+      });
+    } catch (err) {
+      container.innerHTML = `
+        <div class="p-3 text-danger text-center">
+          <i class="fa-solid fa-triangle-exclamation me-1"></i> Error loading project dependencies: ${err.message}
         </div>
       `;
     }

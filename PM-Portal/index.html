@@ -1112,6 +1112,48 @@
               <!-- Dynamically rendered project risks -->
             </div>
           </div>
+
+          <!-- PROJECT ISSUES SECTION (Sprint 5B) -->
+          <div class="card p-4 mt-4" style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--border-radius-md);">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div>
+                <h5 class="fw-bold mb-1 d-flex align-items-center gap-2">
+                  <i class="fa-solid fa-circle-exclamation text-warning"></i> Project Issues & Blockers
+                  <span id="project-issues-count-badge" class="badge bg-secondary ms-1">0</span>
+                </h5>
+                <p class="text-secondary small mb-0">Track active defects, technical impediments, root causes, and resolution commitments</p>
+              </div>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-primary" id="btn-project-add-issue">
+                  <i class="fa-solid fa-plus me-1"></i> Log Issue
+                </button>
+              </div>
+            </div>
+            <div id="project-issues-container">
+              <!-- Dynamically rendered project issues -->
+            </div>
+          </div>
+
+          <!-- PROJECT DEPENDENCIES SECTION (Sprint 5C) -->
+          <div class="card p-4 mt-4" style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--border-radius-md);">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <div>
+                <h5 class="fw-bold mb-1 d-flex align-items-center gap-2">
+                  <i class="fa-solid fa-diagram-project text-primary"></i> Project Dependencies
+                  <span id="project-deps-count-badge" class="badge bg-secondary ms-1">0</span>
+                </h5>
+                <p class="text-secondary small mb-0">Track inbound blocking dependencies, outbound predecessor items, and critical path linkages</p>
+              </div>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-primary" id="btn-project-add-dependency">
+                  <i class="fa-solid fa-plus me-1"></i> Add Dependency
+                </button>
+              </div>
+            </div>
+            <div id="project-dependencies-container">
+              <!-- Dynamically rendered project dependencies -->
+            </div>
+          </div>
         </div>
       </section>
 

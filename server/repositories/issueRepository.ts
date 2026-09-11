@@ -16,6 +16,8 @@ function seedDefaultIssues() {
       projectName: 'Ares Flight Control Firmware',
       productId: 'prod_1',
       productName: 'Ares Autonomous Flight Stack',
+      reportedBy: 'usr_admin_1',
+      reportedByName: 'Surya Prashanth',
       ownerId: 'usr_admin_1',
       ownerName: 'Surya Prashanth',
       assigneeId: 'usr_dev_1',
@@ -45,13 +47,15 @@ function seedDefaultIssues() {
       projectName: 'Titan Cryogenic Propulsion Telemetry',
       productId: 'prod_1',
       productName: 'Ares Autonomous Flight Stack',
+      reportedBy: 'usr_pm_2',
+      reportedByName: 'Alex Morgan',
       ownerId: 'usr_pm_2',
       ownerName: 'Alex Morgan',
       assigneeId: 'usr_dev_1',
       assigneeName: 'Sarah Chen',
       teamId: 'team_1',
       teamName: 'Core Platform & Architecture',
-      category: 'Hardware',
+      category: 'Technical',
       severity: 'High',
       priority: 'High',
       status: 'In Progress',
@@ -74,6 +78,8 @@ function seedDefaultIssues() {
       projectName: 'NextGen Avionics Suite',
       productId: 'prod_2',
       productName: 'Titan Mission Control Cloud',
+      reportedBy: 'usr_pm_2',
+      reportedByName: 'Alex Morgan',
       ownerId: 'usr_pm_2',
       ownerName: 'Alex Morgan',
       assigneeId: 'usr_admin_1',
@@ -103,6 +109,8 @@ function seedDefaultIssues() {
       projectName: 'Orbital Insertion Guidance OS',
       productId: 'prod_2',
       productName: 'Titan Mission Control Cloud',
+      reportedBy: 'usr_admin_1',
+      reportedByName: 'Surya Prashanth',
       ownerId: 'usr_admin_1',
       ownerName: 'Surya Prashanth',
       assigneeId: 'usr_dev_1',
@@ -119,6 +127,7 @@ function seedDefaultIssues() {
       reportedDate: '2026-08-01',
       targetResolutionDate: '2026-08-15',
       resolvedDate: '2026-08-12T16:00:00Z',
+      resolvedAt: '2026-08-12T16:00:00Z',
       createdAt: '2026-08-01T10:00:00Z',
       updatedAt: '2026-08-12T16:00:00Z',
       createdBy: 'usr_admin_1',
@@ -138,24 +147,31 @@ export const IssueRepository = {
     productId?: string;
     assigneeId?: string;
     ownerId?: string;
+    category?: string;
     severity?: string;
     priority?: string;
     status?: string;
     search?: string;
+    page?: number;
+    limit?: number;
   }): Promise<Issue[]> {
     seedDefaultIssues();
     let issues: Issue[] = [];
+
+    const page = filter?.page && filter.page > 0 ? Number(filter.page) : undefined;
+    const limit = filter?.limit && filter.limit > 0 ? Number(filter.limit) : undefined;
+    const offset = page && limit ? (page - 1) * limit : 0;
 
     if (isDbConnected()) {
       try {
         let queryStr = `
           SELECT id, code, title, description, project_id as "projectId",
-                 product_id as "productId", owner_id as "ownerId",
+                 product_id as "productId", reported_by as "reportedBy", owner_id as "ownerId",
                  assignee_id as "assigneeId", team_id as "teamId", category,
                  severity, priority, status, root_cause_category as "rootCauseCategory",
                  root_cause_notes as "rootCauseNotes", resolution,
                  reported_date as "reportedDate", target_resolution_date as "targetResolutionDate",
-                 resolved_date as "resolvedDate", created_by as "createdBy",
+                 resolved_date as "resolvedDate", resolved_date as "resolvedAt", created_by as "createdBy",
                  updated_by as "updatedBy", created_at as "createdAt", updated_at as "updatedAt"
           FROM issues
           WHERE 1=1
@@ -179,6 +195,10 @@ export const IssueRepository = {
           queryStr += ` AND owner_id = $${pIndex++}`;
           params.push(filter.ownerId);
         }
+        if (filter?.category && filter.category !== 'all') {
+          queryStr += ` AND category = $${pIndex++}`;
+          params.push(filter.category);
+        }
         if (filter?.severity && filter.severity !== 'all') {
           queryStr += ` AND severity = $${pIndex++}`;
           params.push(filter.severity);
@@ -192,11 +212,16 @@ export const IssueRepository = {
           params.push(filter.status);
         }
         if (filter?.search) {
-          queryStr += ` AND (title ILIKE $${pIndex} OR code ILIKE $${pIndex} OR description ILIKE $${pIndex})`;
+          queryStr += ` AND (title ILIKE $${pIndex} OR code ILIKE $${pIndex} OR description ILIKE $${pIndex} OR root_cause_notes ILIKE $${pIndex})`;
           params.push(`%${filter.search}%`);
           pIndex++;
         }
-        queryStr += ` ORDER BY created_at DESC`;
+        queryStr += ` ORDER BY CASE severity WHEN 'Critical' THEN 1 WHEN 'High' THEN 2 WHEN 'Medium' THEN 3 WHEN 'Low' THEN 4 ELSE 5 END, created_at DESC`;
+
+        if (limit !== undefined) {
+          queryStr += ` LIMIT $${pIndex++} OFFSET $${pIndex++}`;
+          params.push(limit, offset);
+        }
 
         const res = await query(queryStr, params);
         issues = res.rows;
@@ -213,6 +238,7 @@ export const IssueRepository = {
       if (filter.productId) issues = issues.filter((i) => i.productId === filter.productId);
       if (filter.assigneeId) issues = issues.filter((i) => i.assigneeId === filter.assigneeId);
       if (filter.ownerId) issues = issues.filter((i) => i.ownerId === filter.ownerId);
+      if (filter.category && filter.category !== 'all') issues = issues.filter((i) => i.category.toLowerCase() === filter.category!.toLowerCase());
       if (filter.severity && filter.severity !== 'all') issues = issues.filter((i) => i.severity.toLowerCase() === filter.severity!.toLowerCase());
       if (filter.priority && filter.priority !== 'all') issues = issues.filter((i) => i.priority.toLowerCase() === filter.priority!.toLowerCase());
       if (filter.status && filter.status !== 'all') issues = issues.filter((i) => i.status.toLowerCase() === filter.status!.toLowerCase());
@@ -222,17 +248,136 @@ export const IssueRepository = {
           (i) =>
             i.title.toLowerCase().includes(q) ||
             i.code.toLowerCase().includes(q) ||
-            (i.description && i.description.toLowerCase().includes(q))
+            (i.description && i.description.toLowerCase().includes(q)) ||
+            (i.rootCauseNotes && i.rootCauseNotes.toLowerCase().includes(q))
         );
+      }
+      const sevOrder: Record<string, number> = { critical: 1, high: 2, medium: 3, low: 4 };
+      issues.sort((a, b) => (sevOrder[a.severity.toLowerCase()] || 5) - (sevOrder[b.severity.toLowerCase()] || 5));
+      if (limit !== undefined) {
+        issues = issues.slice(offset, offset + limit);
       }
     }
 
-    // Attach linked items
+    // Attach linked items and ensure resolvedAt is populated
     for (const i of issues) {
+      if (!i.resolvedAt && i.resolvedDate) i.resolvedAt = i.resolvedDate;
+      if (!i.resolvedDate && i.resolvedAt) i.resolvedDate = i.resolvedAt;
       i.linkedItems = await GovernanceLinkRepository.getLinksFor('issue', i.id);
     }
 
     return issues;
+  },
+
+  async count(filter?: {
+    projectId?: string;
+    productId?: string;
+    assigneeId?: string;
+    ownerId?: string;
+    category?: string;
+    severity?: string;
+    priority?: string;
+    status?: string;
+    search?: string;
+  }): Promise<number> {
+    seedDefaultIssues();
+    if (isDbConnected()) {
+      try {
+        let queryStr = `SELECT COUNT(*)::int as count FROM issues WHERE 1=1`;
+        const params: any[] = [];
+        let pIndex = 1;
+
+        if (filter?.projectId) {
+          queryStr += ` AND project_id = $${pIndex++}`;
+          params.push(filter.projectId);
+        }
+        if (filter?.productId) {
+          queryStr += ` AND product_id = $${pIndex++}`;
+          params.push(filter.productId);
+        }
+        if (filter?.assigneeId) {
+          queryStr += ` AND assignee_id = $${pIndex++}`;
+          params.push(filter.assigneeId);
+        }
+        if (filter?.ownerId) {
+          queryStr += ` AND owner_id = $${pIndex++}`;
+          params.push(filter.ownerId);
+        }
+        if (filter?.category && filter.category !== 'all') {
+          queryStr += ` AND category = $${pIndex++}`;
+          params.push(filter.category);
+        }
+        if (filter?.severity && filter.severity !== 'all') {
+          queryStr += ` AND severity = $${pIndex++}`;
+          params.push(filter.severity);
+        }
+        if (filter?.priority && filter.priority !== 'all') {
+          queryStr += ` AND priority = $${pIndex++}`;
+          params.push(filter.priority);
+        }
+        if (filter?.status && filter.status !== 'all') {
+          queryStr += ` AND status = $${pIndex++}`;
+          params.push(filter.status);
+        }
+        if (filter?.search) {
+          queryStr += ` AND (title ILIKE $${pIndex} OR code ILIKE $${pIndex} OR description ILIKE $${pIndex} OR root_cause_notes ILIKE $${pIndex})`;
+          params.push(`%${filter.search}%`);
+          pIndex++;
+        }
+
+        const res = await query(queryStr, params);
+        return res.rows[0]?.count || 0;
+      } catch (err) {
+        console.warn('DB error in IssueRepository.count:', err);
+      }
+    }
+
+    let issues = Array.from(memoryIssues.values());
+    if (filter) {
+      if (filter.projectId) issues = issues.filter((i) => i.projectId === filter.projectId);
+      if (filter.productId) issues = issues.filter((i) => i.productId === filter.productId);
+      if (filter.assigneeId) issues = issues.filter((i) => i.assigneeId === filter.assigneeId);
+      if (filter.ownerId) issues = issues.filter((i) => i.ownerId === filter.ownerId);
+      if (filter.category && filter.category !== 'all') issues = issues.filter((i) => i.category.toLowerCase() === filter.category!.toLowerCase());
+      if (filter.severity && filter.severity !== 'all') issues = issues.filter((i) => i.severity.toLowerCase() === filter.severity!.toLowerCase());
+      if (filter.priority && filter.priority !== 'all') issues = issues.filter((i) => i.priority.toLowerCase() === filter.priority!.toLowerCase());
+      if (filter.status && filter.status !== 'all') issues = issues.filter((i) => i.status.toLowerCase() === filter.status!.toLowerCase());
+      if (filter.search) {
+        const q = filter.search.toLowerCase();
+        issues = issues.filter(
+          (i) =>
+            i.title.toLowerCase().includes(q) ||
+            i.code.toLowerCase().includes(q) ||
+            (i.description && i.description.toLowerCase().includes(q)) ||
+            (i.rootCauseNotes && i.rootCauseNotes.toLowerCase().includes(q))
+        );
+      }
+    }
+    return issues.length;
+  },
+
+  async findPaginated(filter?: {
+    projectId?: string;
+    productId?: string;
+    assigneeId?: string;
+    ownerId?: string;
+    category?: string;
+    severity?: string;
+    priority?: string;
+    status?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ issues: Issue[]; total: number; page: number; limit: number }> {
+    const page = filter?.page && filter.page > 0 ? Number(filter.page) : 1;
+    const limit = filter?.limit && filter.limit > 0 ? Number(filter.limit) : 10;
+
+    const [total, issues] = await Promise.all([
+      this.count(filter),
+      this.findAll({ ...filter, page, limit }),
+    ]);
+
+    return { issues, total, page, limit };
   },
 
   async findById(id: string): Promise<Issue | null> {
@@ -242,12 +387,12 @@ export const IssueRepository = {
       try {
         const res = await query(
           `SELECT id, code, title, description, project_id as "projectId",
-                  product_id as "productId", owner_id as "ownerId",
+                  product_id as "productId", reported_by as "reportedBy", owner_id as "ownerId",
                   assignee_id as "assigneeId", team_id as "teamId", category,
                   severity, priority, status, root_cause_category as "rootCauseCategory",
                   root_cause_notes as "rootCauseNotes", resolution,
                   reported_date as "reportedDate", target_resolution_date as "targetResolutionDate",
-                  resolved_date as "resolvedDate", created_by as "createdBy",
+                  resolved_date as "resolvedDate", resolved_date as "resolvedAt", created_by as "createdBy",
                   updated_by as "updatedBy", created_at as "createdAt", updated_at as "updatedAt"
            FROM issues
            WHERE id = $1`,
@@ -262,6 +407,8 @@ export const IssueRepository = {
       issue = memoryIssues.get(id) || null;
     }
     if (issue) {
+      if (!issue.resolvedAt && issue.resolvedDate) issue.resolvedAt = issue.resolvedDate;
+      if (!issue.resolvedDate && issue.resolvedAt) issue.resolvedDate = issue.resolvedAt;
       issue.linkedItems = await GovernanceLinkRepository.getLinksFor('issue', issue.id);
     }
     return issue;
@@ -272,6 +419,7 @@ export const IssueRepository = {
     const id = data.id || `iss_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
     const count = memoryIssues.size + 101;
     const code = data.code || `ISS-${count}`;
+    const resolvedTimestamp = data.resolvedAt || data.resolvedDate || (data.status === 'Resolved' || data.status === 'Closed' ? new Date().toISOString() : undefined);
 
     const newIssue: Issue = {
       id,
@@ -282,6 +430,8 @@ export const IssueRepository = {
       projectName: data.projectName || '',
       productId: data.productId,
       productName: data.productName,
+      reportedBy: data.reportedBy || data.createdBy || 'usr_admin_1',
+      reportedByName: data.reportedByName,
       ownerId: data.ownerId || 'usr_admin_1',
       ownerName: data.ownerName || 'Admin User',
       assigneeId: data.assigneeId,
@@ -297,7 +447,8 @@ export const IssueRepository = {
       resolution: data.resolution || '',
       reportedDate: data.reportedDate || new Date().toISOString().split('T')[0],
       targetResolutionDate: data.targetResolutionDate || '',
-      resolvedDate: data.resolvedDate,
+      resolvedDate: resolvedTimestamp,
+      resolvedAt: resolvedTimestamp,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       createdBy: data.createdBy || 'system',
@@ -311,11 +462,11 @@ export const IssueRepository = {
         await query(
           `INSERT INTO issues (
             id, code, title, description, project_id, product_id,
-            owner_id, assignee_id, team_id, category, severity, priority,
+            reported_by, owner_id, assignee_id, team_id, category, severity, priority,
             status, root_cause_category, root_cause_notes, resolution,
             reported_date, target_resolution_date, resolved_date,
             created_by, updated_by, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)`,
           [
             newIssue.id,
             newIssue.code,
@@ -323,6 +474,7 @@ export const IssueRepository = {
             newIssue.description || null,
             newIssue.projectId,
             newIssue.productId || null,
+            newIssue.reportedBy || null,
             newIssue.ownerId || null,
             newIssue.assigneeId || null,
             newIssue.teamId || null,
@@ -369,10 +521,10 @@ export const IssueRepository = {
     const existing = await this.findById(id);
     if (!existing) return null;
 
-    let resolvedDate = existing.resolvedDate;
+    let resolvedDate = updates.resolvedAt || updates.resolvedDate || existing.resolvedDate;
     if (updates.status === 'Resolved' || updates.status === 'Closed') {
       if (!resolvedDate) resolvedDate = new Date().toISOString();
-    } else if (updates.status && updates.status !== 'Resolved' && updates.status !== 'Closed') {
+    } else if (updates.status) {
       resolvedDate = undefined;
     }
 
@@ -380,6 +532,7 @@ export const IssueRepository = {
       ...existing,
       ...updates,
       resolvedDate,
+      resolvedAt: resolvedDate,
       updatedAt: new Date().toISOString(),
     };
 
@@ -390,16 +543,17 @@ export const IssueRepository = {
         await query(
           `UPDATE issues SET
             title = $1, description = $2, project_id = $3, product_id = $4,
-            owner_id = $5, assignee_id = $6, team_id = $7, category = $8,
-            severity = $9, priority = $10, status = $11, root_cause_category = $12,
-            root_cause_notes = $13, resolution = $14, reported_date = $15,
-            target_resolution_date = $16, resolved_date = $17, updated_by = $18, updated_at = $19
-           WHERE id = $20`,
+            reported_by = $5, owner_id = $6, assignee_id = $7, team_id = $8, category = $9,
+            severity = $10, priority = $11, status = $12, root_cause_category = $13,
+            root_cause_notes = $14, resolution = $15, reported_date = $16,
+            target_resolution_date = $17, resolved_date = $18, updated_by = $19, updated_at = $20
+           WHERE id = $21`,
           [
             updated.title,
             updated.description || null,
             updated.projectId,
             updated.productId || null,
+            updated.reportedBy || null,
             updated.ownerId || null,
             updated.assigneeId || null,
             updated.teamId || null,

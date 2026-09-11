@@ -425,6 +425,345 @@ async function runTests() {
   const deletedCheck = await RiskService.getRiskById(createdRisk.id);
   assert(deletedCheck === null, 'Risk successfully deleted from repository');
 
+  // 18. V2 Issue Management Foundation (Sprint 5B)
+  console.log('\n--- 18. V2 Issue Management Foundation ---');
+  const { IssueService } = await import('../server/services/issueService');
+  const { IssueRepository } = await import('../server/repositories/issueRepository');
+
+  // Seeded Issues in DB
+  const seededIssues = await IssueRepository.findAll();
+  assert(seededIssues.length >= 3, `IssueRepository loaded seeded enterprise issues (count: ${seededIssues.length})`);
+  assert(seededIssues.some(i => i.code === 'ISS-101' || i.code?.startsWith('ISS-')), 'Issues assigned formatted enterprise code (e.g. ISS-101)');
+
+  // Field mapping checks on seeded issues
+  const sampleIssue = seededIssues[0];
+  assert(sampleIssue.rootCauseCategory !== undefined, 'Issue schema contains canonical rootCauseCategory field');
+  assert(sampleIssue.reportedBy !== undefined, 'Issue schema contains canonical reportedBy field');
+
+  // Create Issue with Server-Side Validation & Enrichment
+  const createdIssue = await IssueService.createIssue(
+    {
+      title: 'Database connection pool exhaustion under stress',
+      description: 'Connection pool runs dry during concurrent sprint simulations',
+      projectId: 'PRJ-101',
+      severity: 'Critical',
+      priority: 'High',
+      category: 'Technical',
+      rootCauseCategory: 'Technical',
+      rootCauseNotes: 'Connection leaks in batch processing workers',
+      targetResolutionDate: '2026-10-15T00:00:00.000Z',
+      reportedBy: 'usr_pm_2',
+      assigneeId: 'usr_dev_3',
+    },
+    { id: actor.id, name: actor.name }
+  );
+
+  assert(createdIssue.id.startsWith('iss_'), `Issue created with generated ID: ${createdIssue.id}`);
+  assert(createdIssue.code.startsWith('ISS-'), `Issue assigned formatted code: ${createdIssue.code}`);
+  assert(createdIssue.status === 'Open', 'New issue correctly defaulted to Open status');
+  assert(createdIssue.rootCauseCategory === 'Technical', 'Root cause category preserved accurately');
+  assert(createdIssue.reportedBy === 'usr_pm_2', 'Reporter ID correctly stored in reportedBy');
+  assert(createdIssue.targetResolutionDate?.includes('2026-10-15'), 'Target resolution date correctly stored');
+
+  // Validation enforcement
+  let issueValidationCaught = false;
+  try {
+    await IssueService.createIssue({ title: '', projectId: 'PRJ-101' }, { id: actor.id, name: actor.name });
+  } catch {
+    issueValidationCaught = true;
+  }
+  assert(issueValidationCaught, 'Empty issue title rejected by server validation');
+
+  let invalidStatusCaught = false;
+  try {
+    // @ts-ignore
+    await IssueService.createIssue({ title: 'Invalid Status', projectId: 'PRJ-101', status: 'NonExistent' });
+  } catch {
+    invalidStatusCaught = true;
+  }
+  assert(invalidStatusCaught, 'Invalid status rejected by server validation');
+
+  let invalidSeverityCaught = false;
+  try {
+    // @ts-ignore
+    await IssueService.createIssue({ title: 'Invalid Severity', projectId: 'PRJ-101', severity: 'Catastrophic' });
+  } catch {
+    invalidSeverityCaught = true;
+  }
+  assert(invalidSeverityCaught, 'Invalid severity rejected by server validation');
+
+  // Pagination & Filtering
+  const paginatedIssues = await IssueService.getPaginatedIssues({ page: 1, limit: 2, projectId: 'PRJ-101' });
+  assert(paginatedIssues.issues.length <= 2, `Paginated issues obeyed limit=2 (actual: ${paginatedIssues.issues.length})`);
+  assert(paginatedIssues.total >= 1, `Paginated issues total count returned (${paginatedIssues.total})`);
+  assert(paginatedIssues.issues.every(i => i.projectId === 'PRJ-101'), 'Project filter correctly filtered returned issues');
+
+  // Lifecycle transitions: Resolve issue
+  const resolvedIssue = await IssueService.updateIssue(
+    createdIssue.id,
+    {
+      status: 'Resolved',
+      resolution: 'Increased pg pool max clients and added connection timeout handling',
+    },
+    { id: actor.id, name: actor.name }
+  );
+  assert(resolvedIssue !== null && resolvedIssue.status === 'Resolved', 'Issue successfully updated to Resolved status');
+  assert(resolvedIssue?.resolvedAt !== undefined && resolvedIssue.resolvedAt !== null, 'resolvedAt automatically populated on resolution');
+  assert(resolvedIssue?.resolvedDate === resolvedIssue?.resolvedAt, 'resolvedDate synchronized with resolvedAt');
+  assert(resolvedIssue?.resolution?.includes('pg pool'), 'Resolution notes persisted');
+
+  // Lifecycle transitions: Re-open issue (clears resolvedAt)
+  const reopenedIssue = await IssueService.updateIssue(
+    createdIssue.id,
+    {
+      status: 'In Progress',
+    },
+    { id: actor.id, name: actor.name }
+  );
+  assert(reopenedIssue !== null && reopenedIssue.status === 'In Progress', 'Issue re-opened to In Progress');
+  assert(reopenedIssue?.resolvedAt === undefined || reopenedIssue.resolvedAt === null, 'resolvedAt cleared when re-opening issue');
+
+  // Activity Log verification
+  const recentActivitiesIssues = await ActivityRepository.findRecent(20);
+  const issueCreatedLog = recentActivitiesIssues.find(a => a.entityId === createdIssue.id && a.action === 'create');
+  assert(issueCreatedLog !== undefined, 'Issue creation recorded in enterprise activity log');
+
+  const issueResolvedLog = recentActivitiesIssues.find(a => a.entityId === createdIssue.id && a.action === 'resolve');
+  assert(issueResolvedLog !== undefined, 'Issue resolution recorded in enterprise activity log');
+
+  // Notifications verification
+  const devNotifs = await NotificationRepository.findByUserId('usr_dev_3');
+  const issueAssignedNotif = devNotifs.find(n => n.type === 'issue_assigned' && n.title.includes(createdIssue.code));
+  assert(issueAssignedNotif !== undefined, 'Notification generated and delivered for issue assignee');
+
+  // RBAC permissions check
+  assert(hasPermission('admin', ['project-manager']), 'Admin has permission for Issue management');
+  assert(hasPermission('project-manager', ['project-manager', 'team-member']), 'PM has permission for Issue management');
+  assert(!hasPermission('viewer', ['project-manager']), 'Viewer role is denied write permissions for Issue management');
+
+  // Deletion
+  await IssueService.deleteIssue(createdIssue.id, { id: actor.id, name: actor.name });
+  const deletedIssueCheck = await IssueService.getIssueById(createdIssue.id);
+  assert(deletedIssueCheck === null, 'Issue successfully deleted from repository');
+
+  // 19. V2 Dependency Management Foundation (Sprint 5C)
+  console.log('\n--- 19. V2 Dependency Management Foundation ---');
+  const { DependencyService } = await import('../server/services/dependencyService');
+  const { DependencyRepository } = await import('../server/repositories/dependencyRepository');
+
+  // Seeded Dependencies in DB
+  const seededDeps = await DependencyRepository.findAll();
+  assert(seededDeps.length >= 2, `DependencyRepository loaded seeded enterprise dependencies (count: ${seededDeps.length})`);
+  assert(seededDeps.some(d => d.code === 'DEP-101' || d.code?.startsWith('DEP-')), 'Dependencies assigned formatted enterprise code (e.g. DEP-101)');
+
+  // Schema & Field verification
+  const sampleDep = seededDeps[0];
+  assert(sampleDep.criticality !== undefined, 'Dependency schema contains canonical criticality field');
+  assert(sampleDep.dependencyType !== undefined, 'Dependency schema contains canonical dependencyType field');
+  assert(sampleDep.sourceEntityType !== undefined && sampleDep.targetEntityType !== undefined, 'Dependency schema tracks source and target entity types');
+
+  // 1. Self-Dependency Rejection
+  let selfDepFailed = false;
+  try {
+    await DependencyService.createDependency({
+      sourceEntityType: 'project',
+      sourceEntityId: 'PRJ-101',
+      targetEntityType: 'project',
+      targetEntityId: 'PRJ-101',
+      dependencyType: 'Blocks',
+    }, { id: actor.id, name: actor.name });
+  } catch (err: any) {
+    selfDepFailed = true;
+    assert(err.message.includes('itself'), 'Self-dependency correctly rejected with descriptive error');
+  }
+  assert(selfDepFailed, 'Attempt to create self-dependency was blocked');
+
+  // 2. Direct 2-hop Cycle Detection (A -> B, then trying B -> A)
+  // Let's create node A -> node B
+  const depAtoB = await DependencyService.createDependency({
+    sourceEntityType: 'story',
+    sourceEntityId: 'STR-TEST-A',
+    sourceEntityName: 'Test Story A',
+    targetEntityType: 'story',
+    targetEntityId: 'STR-TEST-B',
+    targetEntityName: 'Test Story B',
+    dependencyType: 'Blocks',
+    criticality: 'High',
+    status: 'Open',
+    projectId: 'PRJ-101',
+  }, { id: actor.id, name: actor.name });
+  assert(depAtoB !== null && depAtoB.id !== undefined, 'Created initial dependency A -> B');
+
+  let directCycleFailed = false;
+  try {
+    // Attempt B -> A (blocks)
+    await DependencyService.createDependency({
+      sourceEntityType: 'story',
+      sourceEntityId: 'STR-TEST-B',
+      sourceEntityName: 'Test Story B',
+      targetEntityType: 'story',
+      targetEntityId: 'STR-TEST-A',
+      targetEntityName: 'Test Story A',
+      dependencyType: 'Blocks',
+    }, { id: actor.id, name: actor.name });
+  } catch (err: any) {
+    directCycleFailed = true;
+    assert(err.message.includes('Circular') || err.message.includes('cycle'), 'Direct 2-hop cycle correctly rejected by cycle detector');
+  }
+  assert(directCycleFailed, 'Direct circular dependency was blocked');
+
+  // 3. Indirect 3-hop Cycle Detection (A -> B -> C, then trying C -> A)
+  const depBtoC = await DependencyService.createDependency({
+    sourceEntityType: 'story',
+    sourceEntityId: 'STR-TEST-B',
+    sourceEntityName: 'Test Story B',
+    targetEntityType: 'story',
+    targetEntityId: 'STR-TEST-C',
+    targetEntityName: 'Test Story C',
+    dependencyType: 'Blocks',
+    criticality: 'Medium',
+    status: 'Open',
+    projectId: 'PRJ-101',
+  }, { id: actor.id, name: actor.name });
+  assert(depBtoC !== null, 'Created intermediate dependency B -> C');
+
+  let indirectCycleFailed = false;
+  try {
+    // Attempt C -> A (blocks)
+    await DependencyService.createDependency({
+      sourceEntityType: 'story',
+      sourceEntityId: 'STR-TEST-C',
+      sourceEntityName: 'Test Story C',
+      targetEntityType: 'story',
+      targetEntityId: 'STR-TEST-A',
+      targetEntityName: 'Test Story A',
+      dependencyType: 'Blocks',
+    }, { id: actor.id, name: actor.name });
+  } catch (err: any) {
+    indirectCycleFailed = true;
+    assert(err.message.includes('Circular') || err.message.includes('cycle'), 'Indirect 3-hop cycle (A->B->C->A) correctly rejected');
+  }
+  assert(indirectCycleFailed, 'Indirect multi-hop circular dependency was blocked');
+
+  // 4. Duplicate Relationship Rejection
+  let duplicateFailed = false;
+  try {
+    await DependencyService.createDependency({
+      sourceEntityType: 'story',
+      sourceEntityId: 'STR-TEST-A',
+      targetEntityType: 'story',
+      targetEntityId: 'STR-TEST-B',
+      dependencyType: 'Blocks',
+    }, { id: actor.id, name: actor.name });
+  } catch (err: any) {
+    duplicateFailed = true;
+    assert(err.message.includes('already exists') || err.message.includes('Duplicate'), 'Duplicate relationship correctly prevented');
+  }
+  assert(duplicateFailed, 'Duplicate dependency was blocked');
+
+  // 5. Creation with full validation & critical path
+  const createdDep = await DependencyService.createDependency({
+    sourceEntityType: 'feature',
+    sourceEntityId: 'FEAT-101',
+    sourceEntityName: 'Authentication Architecture',
+    targetEntityType: 'feature',
+    targetEntityId: 'FEAT-102',
+    targetEntityName: 'User Profile Settings',
+    dependencyType: 'Requires',
+    criticality: 'Critical',
+    status: 'Open',
+    isCriticalPath: true,
+    lagDays: 3,
+    targetDate: '2026-08-30',
+    description: 'Profile settings requires authentication tokens from Auth module',
+    projectId: 'PRJ-101',
+  }, { id: actor.id, name: actor.name });
+
+  assert(createdDep.code.startsWith('DEP-'), 'Created dependency assigned canonical DEP- code format');
+  assert(createdDep.criticality === 'Critical', 'Criticality persisted as Critical');
+  assert(createdDep.isCritical === true || createdDep.isCriticalPath === true, 'Critical path flag active');
+  assert(createdDep.lagDays === 3, 'Lag days persisted correctly (3 days)');
+  assert(createdDep.targetDate === '2026-08-30', 'Target date persisted');
+  assert(createdDep.dueDate === createdDep.targetDate, 'dueDate synchronized with targetDate');
+
+  // 6. Querying & Filtering
+  const projDeps = await DependencyService.getDependencies({ projectId: 'PRJ-101' });
+  assert(projDeps.length >= 1, `Dependencies queried by projectId (count: ${projDeps.length})`);
+
+  const criticalDeps = await DependencyService.getDependencies({ criticality: 'Critical' });
+  assert(criticalDeps.some(d => d.id === createdDep.id), 'Dependencies queried by criticality filter');
+
+  const paginatedDeps = await DependencyService.getPaginatedDependencies({ page: 1, limit: 5 });
+  assert(paginatedDeps.dependencies.length <= 5, 'Paginated dependencies obeyed limit');
+  assert(paginatedDeps.total >= 3, `Paginated total count accurate (${paginatedDeps.total})`);
+
+  // 7. Chain, Graph & KPIs
+  const chain = await DependencyService.getChain('STR-TEST-B');
+  assert(chain.entityId === 'STR-TEST-B', 'getChain returned correct target entity');
+  assert(chain.upstream.some(u => u.entityId === 'STR-TEST-A'), 'Chain upstream correctly identified STR-TEST-A as blocker');
+  assert(chain.downstream.some(d => d.entityId === 'STR-TEST-C'), 'Chain downstream correctly identified STR-TEST-C as blocked');
+
+  const graph = await DependencyService.getGraph({ projectId: 'PRJ-101' });
+  assert(graph.nodes.length > 0, `Dependency graph returned nodes (${graph.nodes.length})`);
+  assert(graph.edges.length > 0, `Dependency graph returned edges (${graph.edges.length})`);
+  assert(graph.summary !== undefined, 'Dependency graph returned summary metrics');
+
+  const kpis = await DependencyService.getKPIs('PRJ-101');
+  assert(kpis.total > 0, `KPIs returned total dependencies (${kpis.total})`);
+  assert(kpis.criticalCount >= 1, `KPIs returned critical count (${kpis.criticalCount})`);
+  assert(kpis.byStatus !== undefined && kpis.byCriticality !== undefined, 'KPIs grouped by status and criticality');
+
+  // 8. Lifecycle Transitions: Resolve Dependency
+  const resolvedDep = await DependencyService.updateDependency(
+    createdDep.id,
+    {
+      status: 'Resolved',
+      resolutionNotes: 'Auth module deployed and tested successfully',
+    },
+    { id: actor.id, name: actor.name }
+  );
+  assert(resolvedDep !== null && resolvedDep.status === 'Resolved', 'Dependency status transitioned to Resolved');
+  assert(resolvedDep?.resolvedAt !== undefined && resolvedDep.resolvedAt !== null, 'resolvedAt automatically populated');
+  assert(resolvedDep?.resolutionDate === resolvedDep?.resolvedAt, 'resolutionDate synchronized with resolvedAt');
+  assert(resolvedDep?.resolutionNotes?.includes('Auth module'), 'Resolution notes persisted');
+
+  // Lifecycle Transitions: Re-open Dependency (clears resolvedAt)
+  const reopenedDep = await DependencyService.updateDependency(
+    createdDep.id,
+    {
+      status: 'In Progress',
+    },
+    { id: actor.id, name: actor.name }
+  );
+  assert(reopenedDep !== null && reopenedDep.status === 'In Progress', 'Dependency re-opened to In Progress');
+  assert(reopenedDep?.resolvedAt === undefined || reopenedDep.resolvedAt === null, 'resolvedAt cleared when re-opening dependency');
+
+  // 9. Activity Log & Notifications verification
+  const recentActivitiesDeps = await ActivityRepository.findRecent(25);
+  const depCreatedLog = recentActivitiesDeps.find(a => a.entityId === createdDep.id && a.action === 'create');
+  assert(depCreatedLog !== undefined, 'Dependency creation recorded in enterprise activity log');
+
+  const depResolvedLog = recentActivitiesDeps.find(a => a.entityId === createdDep.id && a.action === 'resolve');
+  assert(depResolvedLog !== undefined, 'Dependency resolution recorded in enterprise activity log');
+
+  const adminNotifs = await NotificationRepository.findByUserId('usr_admin_1');
+  const depNotif = adminNotifs.find(n => n.type === 'dependency_blocked' || n.type === 'dependency_critical');
+  assert(depNotif !== undefined, 'Notification generated for critical/blocked dependency');
+
+  // 10. RBAC permissions check
+  assert(hasPermission('admin', ['project-manager']), 'Admin has permission for Dependency management');
+  assert(hasPermission('project-manager', ['project-manager', 'team-member']), 'PM has permission for Dependency management');
+  assert(hasPermission('product-manager', ['product-manager']), 'Product Manager has permission for Dependency management');
+  assert(!hasPermission('viewer', ['project-manager']), 'Viewer role is denied write permissions for Dependency management');
+
+  // 11. Cleanup test dependencies
+  await DependencyService.deleteDependency(depAtoB.id, { id: actor.id, name: actor.name });
+  await DependencyService.deleteDependency(depBtoC.id, { id: actor.id, name: actor.name });
+  await DependencyService.deleteDependency(createdDep.id, { id: actor.id, name: actor.name });
+
+  const deletedDepCheck = await DependencyService.getDependencyById(createdDep.id);
+  assert(deletedDepCheck === null, 'Dependency successfully deleted from repository');
+
   // Summary
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

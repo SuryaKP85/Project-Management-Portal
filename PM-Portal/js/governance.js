@@ -848,9 +848,13 @@ export const GovernanceModule = {
     if (this.searchQuery) {
       filtered = filtered.filter(
         (i) =>
-          i.title.toLowerCase().includes(this.searchQuery) ||
+          i.title?.toLowerCase().includes(this.searchQuery) ||
           (i.code && i.code.toLowerCase().includes(this.searchQuery)) ||
-          (i.rootCause && i.rootCause.toLowerCase().includes(this.searchQuery))
+          (i.description && i.description.toLowerCase().includes(this.searchQuery)) ||
+          (i.rootCauseCategory && i.rootCauseCategory.toLowerCase().includes(this.searchQuery)) ||
+          (i.rootCauseNotes && i.rootCauseNotes.toLowerCase().includes(this.searchQuery)) ||
+          (i.rootCause && i.rootCause.toLowerCase().includes(this.searchQuery)) ||
+          (i.resolution && i.resolution.toLowerCase().includes(this.searchQuery))
       );
     }
 
@@ -879,7 +883,7 @@ export const GovernanceModule = {
                 <th style="width: 110px;">Status</th>
                 <th style="width: 120px;">Assignee</th>
                 <th style="width: 130px;">Root Cause</th>
-                <th style="width: 110px;">Escalation</th>
+                <th style="width: 110px;">Target Date</th>
                 <th style="width: 120px; text-align: right;">Actions</th>
               </tr>
             </thead>
@@ -892,7 +896,27 @@ export const GovernanceModule = {
                       ? 'bg-danger text-white'
                       : iss.severity === 'High'
                       ? 'bg-warning text-dark font-bold'
+                      : iss.severity === 'Medium'
+                      ? 'bg-warning-subtle text-dark'
                       : 'bg-secondary-subtle text-secondary';
+
+                  const statusBadge =
+                    iss.status === 'Resolved' || iss.status === 'Closed'
+                      ? 'bg-success text-white'
+                      : iss.status === 'Blocked'
+                      ? 'bg-danger text-white'
+                      : iss.status === 'In Progress'
+                      ? 'bg-primary text-white'
+                      : iss.status === 'Investigating'
+                      ? 'bg-info text-dark'
+                      : iss.status === 'Rejected'
+                      ? 'bg-dark text-white'
+                      : 'bg-light text-dark border';
+
+                  const assigneeUser = this.users.find((u) => u.id === iss.assigneeId);
+                  const assigneeDisplay = iss.assigneeName || (assigneeUser ? `${assigneeUser.firstName} ${assigneeUser.lastName}` : 'Unassigned');
+                  const rootCauseDisplay = iss.rootCauseCategory || iss.rootCause || 'Unanalyzed';
+                  const targetDate = iss.targetResolutionDate ? iss.targetResolutionDate.split('T')[0] : (iss.dueDate ? iss.dueDate.split('T')[0] : '—');
 
                   return `
                   <tr>
@@ -903,10 +927,10 @@ export const GovernanceModule = {
                     </td>
                     <td><span class="badge ${sevBadge}">${iss.severity}</span></td>
                     <td><span class="text-xs font-semibold">${iss.priority}</span></td>
-                    <td><span class="badge bg-light text-dark border">${iss.status}</span></td>
-                    <td><span class="text-xs">${iss.assigneeName || 'Unassigned'}</span></td>
-                    <td><span class="badge bg-info-subtle text-info text-truncate" style="max-width: 120px;">${iss.rootCause || 'Unanalyzed'}</span></td>
-                    <td><span class="text-xs font-semibold ${iss.escalationLevel !== 'None' ? 'text-danger' : 'text-secondary'}">${iss.escalationLevel}</span></td>
+                    <td><span class="badge ${statusBadge}">${iss.status}</span></td>
+                    <td><span class="text-xs">${assigneeDisplay}</span></td>
+                    <td><span class="badge bg-info-subtle text-info text-truncate" style="max-width: 120px;" title="${iss.rootCauseNotes || rootCauseDisplay}">${rootCauseDisplay}</span></td>
+                    <td><span class="text-xs text-secondary">${targetDate}</span></td>
                     <td class="text-end">
                       <div class="btn-group btn-group-sm">
                         <button class="btn-enterprise btn-enterprise-secondary" onclick="window.GovernanceModule.openIssueDetails('${iss.id}')" title="Details & Links">
@@ -935,6 +959,27 @@ export const GovernanceModule = {
     const existing = issueId ? this.issues.find((i) => i.id === issueId) : null;
     const isEdit = !!existing;
 
+    const validStatuses = ['Open', 'Investigating', 'In Progress', 'Blocked', 'Resolved', 'Closed', 'Rejected'];
+    const validSeverities = ['Low', 'Medium', 'High', 'Critical'];
+    const validPriorities = ['Low', 'Medium', 'High', 'Urgent'];
+    const rootCauseCategories = [
+      'Technical',
+      'Requirement',
+      'Process',
+      'Resource',
+      'Communication',
+      'Vendor',
+      'Customer',
+      'Dependency',
+      'Quality',
+      'Environment',
+      'Other',
+    ];
+
+    const currentCategory = existing?.rootCauseCategory || existing?.rootCause || '';
+    const currentTargetDate = existing?.targetResolutionDate ? existing.targetResolutionDate.split('T')[0] : (existing?.dueDate ? existing.dueDate.split('T')[0] : '');
+    const currentResolution = existing?.resolution || existing?.resolutionNotes || '';
+
     const html = `
       <form id="gov-issue-form" class="row g-3">
         <div class="col-md-8">
@@ -944,19 +989,19 @@ export const GovernanceModule = {
         <div class="col-md-4">
           <label class="form-label font-bold text-xs text-secondary mb-1">Severity *</label>
           <select id="m-issue-sev" class="form-select">
-            ${['Critical', 'High', 'Medium', 'Low'].map((s) => `<option value="${s}" ${existing?.severity === s ? 'selected' : ''}>${s}</option>`).join('')}
+            ${validSeverities.map((s) => `<option value="${s}" ${existing?.severity === s ? 'selected' : ''}>${s}</option>`).join('')}
           </select>
         </div>
         <div class="col-md-4">
           <label class="form-label font-bold text-xs text-secondary mb-1">Priority</label>
           <select id="m-issue-prio" class="form-select">
-            ${['Urgent', 'High', 'Medium', 'Low'].map((p) => `<option value="${p}" ${existing?.priority === p ? 'selected' : ''}>${p}</option>`).join('')}
+            ${validPriorities.map((p) => `<option value="${p}" ${existing?.priority === p ? 'selected' : ''}>${p}</option>`).join('')}
           </select>
         </div>
         <div class="col-md-4">
           <label class="form-label font-bold text-xs text-secondary mb-1">Status</label>
           <select id="m-issue-status" class="form-select">
-            ${['Open', 'In Progress', 'Blocked', 'Escalated', 'Resolved', 'Closed', 'Rejected']
+            ${validStatuses
               .map((s) => `<option value="${s}" ${existing?.status === s ? 'selected' : ''}>${s}</option>`)
               .join('')}
           </select>
@@ -984,12 +1029,26 @@ export const GovernanceModule = {
           </select>
         </div>
         <div class="col-md-6">
-          <label class="form-label font-bold text-xs text-secondary mb-1">Root Cause Category</label>
-          <input type="text" id="m-issue-root" class="form-control" value="${existing?.rootCause || ''}" placeholder="e.g. Memory leak, Incomplete spec, Environment drift" />
+          <label class="form-label font-bold text-xs text-secondary mb-1">Reported By</label>
+          <select id="m-issue-reported-by" class="form-select">
+            <option value="">-- Select Reporter --</option>
+            ${this.users.map((u) => `<option value="${u.id}" ${existing?.reportedBy === u.id ? 'selected' : ''}>${u.firstName} ${u.lastName} (${u.role})</option>`).join('')}
+          </select>
         </div>
         <div class="col-md-6">
-          <label class="form-label font-bold text-xs text-secondary mb-1">Due / Resolution Date</label>
-          <input type="date" id="m-issue-date" class="form-control" value="${existing?.dueDate || ''}" />
+          <label class="form-label font-bold text-xs text-secondary mb-1">Target Resolution Date</label>
+          <input type="date" id="m-issue-target-date" class="form-control" value="${currentTargetDate}" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label font-bold text-xs text-secondary mb-1">Root Cause Category</label>
+          <select id="m-issue-root-cat" class="form-select">
+            <option value="">-- Select Root Cause Category --</option>
+            ${rootCauseCategories.map((c) => `<option value="${c}" ${currentCategory === c ? 'selected' : ''}>${c}</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label font-bold text-xs text-secondary mb-1">Root Cause Notes</label>
+          <input type="text" id="m-issue-root-notes" class="form-control" value="${existing?.rootCauseNotes || ''}" placeholder="Specific failure point or technical cause" />
         </div>
         <div class="col-12">
           <label class="form-label font-bold text-xs text-secondary mb-1">Detailed Description</label>
@@ -997,7 +1056,7 @@ export const GovernanceModule = {
         </div>
         <div class="col-12">
           <label class="form-label font-bold text-xs text-secondary mb-1">Resolution Summary</label>
-          <textarea id="m-issue-res" class="form-control" rows="2" placeholder="Final remediation and verification notes">${existing?.resolutionNotes || ''}</textarea>
+          <textarea id="m-issue-res" class="form-control" rows="2" placeholder="Final remediation and verification notes">${currentResolution}</textarea>
         </div>
       </form>
     `;
@@ -1017,10 +1076,12 @@ export const GovernanceModule = {
         escalationLevel: overlay.querySelector('#m-issue-esc').value,
         projectId: overlay.querySelector('#m-issue-project').value || undefined,
         assigneeId: overlay.querySelector('#m-issue-assignee').value || undefined,
-        rootCause: overlay.querySelector('#m-issue-root').value.trim(),
-        dueDate: overlay.querySelector('#m-issue-date').value || undefined,
-        description: overlay.querySelector('#m-issue-desc').value.trim(),
-        resolutionNotes: overlay.querySelector('#m-issue-res').value.trim(),
+        reportedBy: overlay.querySelector('#m-issue-reported-by').value || undefined,
+        rootCauseCategory: overlay.querySelector('#m-issue-root-cat').value || undefined,
+        rootCauseNotes: overlay.querySelector('#m-issue-root-notes').value.trim() || undefined,
+        targetResolutionDate: overlay.querySelector('#m-issue-target-date').value || undefined,
+        description: overlay.querySelector('#m-issue-desc').value.trim() || undefined,
+        resolution: overlay.querySelector('#m-issue-res').value.trim() || undefined,
       };
 
       try {
@@ -1034,7 +1095,7 @@ export const GovernanceModule = {
         await this.loadData();
         this.renderTabContent();
       } catch (err) {
-        this.app.showToast('Failed to save issue', 'danger');
+        this.app.showToast(err.message || 'Failed to save issue', 'danger');
         return false;
       }
     });
@@ -1044,23 +1105,71 @@ export const GovernanceModule = {
     const issue = await IssueService.getIssueById(issueId);
     if (!issue) return;
 
+    const assigneeUser = this.users.find((u) => u.id === issue.assigneeId);
+    const assigneeDisplay = issue.assigneeName || (assigneeUser ? `${assigneeUser.firstName} ${assigneeUser.lastName}` : 'Unassigned');
+
+    const reporterUser = this.users.find((u) => u.id === issue.reportedBy);
+    const reporterDisplay = reporterUser ? `${reporterUser.firstName} ${reporterUser.lastName}` : (issue.reportedBy || 'Unknown');
+
+    const targetDate = issue.targetResolutionDate ? issue.targetResolutionDate.split('T')[0] : (issue.dueDate ? issue.dueDate.split('T')[0] : 'None specified');
+    const resolvedTimestamp = issue.resolvedAt ? issue.resolvedAt.split('T')[0] : (issue.resolvedDate ? issue.resolvedDate.split('T')[0] : 'Not resolved');
+    const rootCategory = issue.rootCauseCategory || issue.rootCause || 'Unanalyzed';
+    const resolutionText = issue.resolution || issue.resolutionNotes || 'Pending resolution';
+
     const html = `
       <div class="d-flex flex-column gap-3">
         <div class="p-3 bg-light rounded border">
-          <div class="d-flex justify-content-between align-items-start">
+          <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
             <div>
               <span class="badge bg-secondary font-monospace">${issue.code}</span>
               <h5 class="font-bold my-1">${issue.title}</h5>
-              <div class="text-xs text-secondary">Assignee: ${issue.assigneeName || 'Unassigned'} | Severity: <strong class="text-danger">${issue.severity}</strong> | Status: <strong>${issue.status}</strong></div>
+              <div class="text-xs text-secondary">
+                Assignee: <strong>${assigneeDisplay}</strong> | 
+                Reporter: <strong>${reporterDisplay}</strong> | 
+                Severity: <strong class="text-danger">${issue.severity}</strong> | 
+                Status: <strong>${issue.status}</strong>
+              </div>
             </div>
-            <span class="badge bg-warning text-dark font-bold">${issue.priority} Priority</span>
+            <div class="d-flex gap-1">
+              <span class="badge bg-warning text-dark font-bold">${issue.priority} Priority</span>
+              ${issue.escalationLevel && issue.escalationLevel !== 'None' ? `<span class="badge bg-danger text-white">${issue.escalationLevel}</span>` : ''}
+            </div>
           </div>
           <p class="text-xs mt-2 mb-0">${issue.description || 'No description provided.'}</p>
         </div>
 
-        <div class="p-2 border rounded bg-white text-xs">
-          <span class="font-bold text-info"><i class="fa-solid fa-magnifying-glass me-1"></i>Root Cause Analysis:</span>
-          <p class="mb-0 mt-1 text-secondary">${issue.rootCause || 'Root cause not yet cataloged.'}</p>
+        <div class="row g-2">
+          <div class="col-md-6">
+            <div class="p-2.5 border rounded bg-white text-xs h-100">
+              <span class="font-bold text-secondary text-uppercase d-block mb-1"><i class="fa-solid fa-calendar-check text-primary me-1"></i> Timeline Commitments</span>
+              <div class="d-flex justify-content-between py-1 border-bottom">
+                <span class="text-muted">Target Resolution:</span>
+                <strong>${targetDate}</strong>
+              </div>
+              <div class="d-flex justify-content-between py-1">
+                <span class="text-muted">Resolved Date:</span>
+                <strong>${resolvedTimestamp}</strong>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="p-2.5 border rounded bg-white text-xs h-100">
+              <span class="font-bold text-secondary text-uppercase d-block mb-1"><i class="fa-solid fa-magnifying-glass text-info me-1"></i> Root Cause Analysis</span>
+              <div class="d-flex justify-content-between py-1 border-bottom">
+                <span class="text-muted">Category:</span>
+                <span class="badge bg-info-subtle text-info">${rootCategory}</span>
+              </div>
+              <div class="py-1">
+                <span class="text-muted">Notes: </span>
+                <span>${issue.rootCauseNotes || 'None'}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="p-2.5 border rounded bg-white text-xs">
+          <span class="font-bold text-success text-uppercase d-block mb-1"><i class="fa-solid fa-check-double me-1"></i> Remediation & Resolution</span>
+          <p class="mb-0 text-secondary">${resolutionText}</p>
         </div>
 
         <!-- Connected Work Items -->
@@ -1118,9 +1227,77 @@ export const GovernanceModule = {
   // 4. DEPENDENCIES & GRAPH TAB
   // =========================================================================
   renderDependenciesTab(container) {
-    const deps = this.dependencies;
+    let deps = this.dependencies || [];
+
+    if (this.filterProjectId !== 'all') {
+      deps = deps.filter(d => d.projectId === this.filterProjectId || d.sourceEntityId === this.filterProjectId || d.targetEntityId === this.filterProjectId);
+    }
+    if (this.filterSeverity !== 'all') {
+      deps = deps.filter(d => d.criticality === this.filterSeverity);
+    }
+    if (this.filterStatus !== 'all') {
+      deps = deps.filter(d => d.status === this.filterStatus);
+    }
+    if (this.searchQuery) {
+      const q = this.searchQuery.toLowerCase();
+      deps = deps.filter(d =>
+        (d.code && d.code.toLowerCase().includes(q)) ||
+        (d.sourceEntityName && d.sourceEntityName.toLowerCase().includes(q)) ||
+        (d.targetEntityName && d.targetEntityName.toLowerCase().includes(q)) ||
+        (d.dependencyType && d.dependencyType.toLowerCase().includes(q)) ||
+        (d.description && d.description.toLowerCase().includes(q))
+      );
+    }
+
+    const totalCount = deps.length;
+    const blockingCount = deps.filter(d => d.dependencyType === 'Blocks' || d.status === 'Blocked').length;
+    const critPathCount = deps.filter(d => d.isCriticalPath || d.isCritical || d.criticality === 'Critical').length;
+    const overdueCount = deps.filter(d => d.isOverdue).length;
+
+    const criticalityBadges = {
+      Critical: 'bg-danger text-white',
+      High: 'bg-warning text-dark fw-bold',
+      Medium: 'bg-primary-subtle text-primary',
+      Low: 'bg-secondary-subtle text-secondary',
+    };
 
     container.innerHTML = `
+      <!-- KPI Stats Grid -->
+      <div class="stats-grid-executive mb-4">
+        <div class="kpi-card">
+          <div class="kpi-header">
+            <span class="kpi-title">Total Dependencies</span>
+            <div class="kpi-icon-wrapper kpi-icon-primary"><i class="fa-solid fa-diagram-project text-primary"></i></div>
+          </div>
+          <h2 class="kpi-value">${totalCount}</h2>
+          <div class="kpi-footer"><span class="kpi-trend neutral">Active Cross-Initiative Linkages</span></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-header">
+            <span class="kpi-title">Blocking / Blocked</span>
+            <div class="kpi-icon-wrapper kpi-icon-danger"><i class="fa-solid fa-hand text-danger"></i></div>
+          </div>
+          <h2 class="kpi-value text-danger">${blockingCount}</h2>
+          <div class="kpi-footer"><span class="kpi-trend negative">Impediment Risk Linkages</span></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-header">
+            <span class="kpi-title">Critical Path</span>
+            <div class="kpi-icon-wrapper kpi-icon-warning"><i class="fa-solid fa-bolt text-warning"></i></div>
+          </div>
+          <h2 class="kpi-value text-warning">${critPathCount}</h2>
+          <div class="kpi-footer"><span class="kpi-trend neutral">Schedule-Impacting Paths</span></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-header">
+            <span class="kpi-title">Overdue Deliveries</span>
+            <div class="kpi-icon-wrapper kpi-icon-danger"><i class="fa-solid fa-clock-rotate-left text-danger"></i></div>
+          </div>
+          <h2 class="kpi-value ${overdueCount > 0 ? 'text-danger' : 'text-success'}">${overdueCount}</h2>
+          <div class="kpi-footer"><span class="kpi-trend ${overdueCount > 0 ? 'negative' : 'positive'}">Target Date Passed</span></div>
+        </div>
+      </div>
+
       <div class="enterprise-card mb-4" style="background-color: var(--bg-card); border: 1px solid var(--border-color);">
         <div class="p-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2" style="background-color: var(--bg-light);">
           <div class="d-flex align-items-center gap-2">
@@ -1156,18 +1333,19 @@ export const GovernanceModule = {
           <table class="table-enterprise w-100" style="font-size: 0.83rem;">
             <thead>
               <tr style="border-bottom: 2px solid var(--border-color); background-color: var(--bg-main);">
-                <th style="width: 100px;">Code</th>
+                <th style="width: 90px;">Code</th>
                 <th>Source Item (Predecessor)</th>
-                <th style="width: 110px; text-align: center;">Relation</th>
+                <th style="width: 120px; text-align: center;">Relation</th>
                 <th>Target Item (Successor)</th>
-                <th style="width: 110px;">Status</th>
-                <th style="width: 100px; text-align: center;">Critical Path</th>
-                <th style="width: 110px;">Due Date</th>
-                <th style="width: 110px; text-align: right;">Actions</th>
+                <th style="width: 100px; text-align: center;">Criticality</th>
+                <th style="width: 100px; text-align: center;">Status</th>
+                <th style="width: 90px; text-align: center;">Critical Path</th>
+                <th style="width: 110px;">Target Date</th>
+                <th style="width: 120px; text-align: right;">Actions</th>
               </tr>
             </thead>
             <tbody>
-              ${deps.length === 0 ? `<tr><td colspan="8" class="text-center p-4 text-secondary">No dependencies logged yet.</td></tr>` : ''}
+              ${deps.length === 0 ? `<tr><td colspan="9" class="text-center p-4 text-secondary">No dependencies matching criteria.</td></tr>` : ''}
               ${deps
                 .map(
                   (d) => `
@@ -1179,7 +1357,7 @@ export const GovernanceModule = {
                     <div class="text-xs text-secondary text-truncate" style="max-width: 200px;">${d.sourceEntityName}</div>
                   </td>
                   <td class="text-center">
-                    <span class="badge ${d.dependencyType === 'Blocks' ? 'bg-danger' : d.dependencyType === 'Requires' ? 'bg-primary' : 'bg-secondary'}">${d.dependencyType}</span>
+                    <span class="badge ${d.dependencyType === 'Blocks' ? 'bg-danger' : d.dependencyType === 'Requires' || d.dependencyType === 'Depends On' ? 'bg-primary' : 'bg-secondary'}">${d.dependencyType}</span>
                     <div style="font-size: 0.68rem;" class="text-secondary mt-1">&rarr;</div>
                   </td>
                   <td>
@@ -1187,17 +1365,23 @@ export const GovernanceModule = {
                     <strong class="text-primary font-monospace">${d.targetEntityCode}</strong>
                     <div class="text-xs text-secondary text-truncate" style="max-width: 200px;">${d.targetEntityName}</div>
                   </td>
-                  <td>
-                    <span class="badge ${d.status === 'Resolved' ? 'bg-success' : d.status === 'At Risk' ? 'bg-warning text-dark' : 'bg-light text-dark border'}">${d.status}</span>
+                  <td class="text-center">
+                    <span class="badge ${criticalityBadges[d.criticality] || 'bg-secondary text-white'}">${d.criticality || 'Medium'}</span>
                   </td>
                   <td class="text-center">
-                    ${d.isCriticalPath ? '<span class="badge bg-danger-subtle text-danger font-bold">YES</span>' : '<span class="text-secondary">No</span>'}
+                    <span class="badge ${d.status === 'Resolved' || d.status === 'Closed' ? 'bg-success' : d.status === 'At Risk' ? 'bg-warning text-dark' : d.status === 'Blocked' ? 'bg-danger' : 'bg-light text-dark border'}">${d.status}</span>
+                  </td>
+                  <td class="text-center">
+                    ${d.isCriticalPath || d.isCritical ? '<span class="badge bg-danger-subtle text-danger font-bold">YES</span>' : '<span class="text-secondary">No</span>'}
                   </td>
                   <td>
-                    <span class="text-xs ${d.isOverdue ? 'text-danger font-bold' : ''}">${d.dueDate || 'Open'} ${d.isOverdue ? '(Overdue)' : ''}</span>
+                    <span class="text-xs ${d.isOverdue ? 'text-danger font-bold' : ''}">${d.targetDate || d.dueDate || '—'} ${d.isOverdue ? '(Overdue)' : ''}</span>
                   </td>
                   <td class="text-end">
                     <div class="btn-group btn-group-sm">
+                      <button class="btn-enterprise btn-enterprise-secondary" onclick="window.GovernanceModule.openDependencyDetails('${d.id}')" title="View Details">
+                        <i class="fa-solid fa-eye"></i>
+                      </button>
                       <button class="btn-enterprise btn-enterprise-secondary" onclick="window.GovernanceModule.openDependencyModal('${d.id}')" title="Edit">
                         <i class="fa-solid fa-pen-to-square"></i>
                       </button>
@@ -1307,7 +1491,7 @@ export const GovernanceModule = {
     this.switchTab('traceability');
   },
 
-  openDependencyModal(depId = null) {
+  openDependencyModal(depId = null, prefill = null) {
     const existing = depId ? this.dependencies.find((d) => d.id === depId) : null;
     const isEdit = !!existing;
 
@@ -1317,55 +1501,64 @@ export const GovernanceModule = {
       ...this.deliveryItems.map((i) => ({ type: i.type, id: i.id, code: i.code || i.id, name: i.title || i.name })),
     ];
 
+    const selectedSourceId = existing?.sourceEntityId || prefill?.sourceEntityId || '';
+    const selectedTargetId = existing?.targetEntityId || prefill?.targetEntityId || '';
+    const currentDueDate = existing?.targetDate ? existing.targetDate.split('T')[0] : (existing?.dueDate ? existing.dueDate.split('T')[0] : '');
+
+    const depTypes = ['Blocks', 'Depends On', 'Relates To', 'Predecessor', 'Successor', 'Requires', 'Mitigates', 'Duplicates'];
+    const depStatuses = ['Open', 'In Progress', 'At Risk', 'Blocked', 'Resolved', 'Closed', 'Cancelled'];
+    const depCriticalities = ['Critical', 'High', 'Medium', 'Low'];
+
     const html = `
       <form id="gov-dep-form" class="row g-3">
         <div class="col-md-6">
           <label class="form-label font-bold text-xs text-secondary mb-1">Source Item (Predecessor) *</label>
           <select id="m-dep-source" class="form-select" required>
-            ${options.map((o) => `<option value="${o.type}|${o.id}|${o.code}|${o.name}" ${existing?.sourceEntityId === o.id ? 'selected' : ''}>[${o.type.toUpperCase()}] ${o.code} - ${o.name}</option>`).join('')}
+            ${options.map((o) => `<option value="${o.type}|${o.id}|${o.code}|${o.name}" ${selectedSourceId === o.id ? 'selected' : ''}>[${o.type.toUpperCase()}] ${o.code} - ${o.name}</option>`).join('')}
           </select>
         </div>
         <div class="col-md-6">
           <label class="form-label font-bold text-xs text-secondary mb-1">Target Item (Successor) *</label>
           <select id="m-dep-target" class="form-select" required>
-            ${options.map((o) => `<option value="${o.type}|${o.id}|${o.code}|${o.name}" ${existing?.targetEntityId === o.id ? 'selected' : ''}>[${o.type.toUpperCase()}] ${o.code} - ${o.name}</option>`).join('')}
+            ${options.map((o) => `<option value="${o.type}|${o.id}|${o.code}|${o.name}" ${selectedTargetId === o.id ? 'selected' : ''}>[${o.type.toUpperCase()}] ${o.code} - ${o.name}</option>`).join('')}
           </select>
         </div>
         <div class="col-md-4">
           <label class="form-label font-bold text-xs text-secondary mb-1">Relationship Type</label>
           <select id="m-dep-type" class="form-select">
-            <option value="Blocks" ${existing?.dependencyType === 'Blocks' ? 'selected' : ''}>Blocks</option>
-            <option value="Requires" ${existing?.dependencyType === 'Requires' ? 'selected' : ''}>Requires</option>
-            <option value="RelatesTo" ${existing?.dependencyType === 'RelatesTo' ? 'selected' : ''}>Relates To</option>
+            ${depTypes.map((t) => `<option value="${t}" ${(existing?.dependencyType || 'Blocks') === t ? 'selected' : ''}>${t}</option>`).join('')}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label font-bold text-xs text-secondary mb-1">Criticality</label>
+          <select id="m-dep-criticality" class="form-select">
+            ${depCriticalities.map((c) => `<option value="${c}" ${(existing?.criticality || 'Medium') === c ? 'selected' : ''}>${c}</option>`).join('')}
           </select>
         </div>
         <div class="col-md-4">
           <label class="form-label font-bold text-xs text-secondary mb-1">Status</label>
           <select id="m-dep-status" class="form-select">
-            <option value="Identified" ${existing?.status === 'Identified' ? 'selected' : ''}>Identified</option>
-            <option value="Active" ${existing?.status === 'Active' ? 'selected' : ''}>Active</option>
-            <option value="At Risk" ${existing?.status === 'At Risk' ? 'selected' : ''}>At Risk</option>
-            <option value="Resolved" ${existing?.status === 'Resolved' ? 'selected' : ''}>Resolved</option>
+            ${depStatuses.map((s) => `<option value="${s}" ${(existing?.status || 'Open') === s ? 'selected' : ''}>${s}</option>`).join('')}
           </select>
         </div>
         <div class="col-md-4">
           <label class="form-label font-bold text-xs text-secondary mb-1">Critical Path</label>
           <select id="m-dep-crit" class="form-select">
-            <option value="false" ${!existing?.isCriticalPath ? 'selected' : ''}>No</option>
-            <option value="true" ${existing?.isCriticalPath ? 'selected' : ''}>Yes (Critical Path)</option>
+            <option value="false" ${!(existing?.isCriticalPath || existing?.isCritical) ? 'selected' : ''}>No</option>
+            <option value="true" ${existing?.isCriticalPath || existing?.isCritical ? 'selected' : ''}>Yes (Critical Path)</option>
           </select>
         </div>
-        <div class="col-md-6">
+        <div class="col-md-4">
           <label class="form-label font-bold text-xs text-secondary mb-1">Lag Days</label>
           <input type="number" id="m-dep-lag" class="form-control" value="${existing?.lagDays || 0}" />
         </div>
-        <div class="col-md-6">
-          <label class="form-label font-bold text-xs text-secondary mb-1">Target Resolution Date</label>
-          <input type="date" id="m-dep-due" class="form-control" value="${existing?.dueDate || ''}" />
+        <div class="col-md-4">
+          <label class="form-label font-bold text-xs text-secondary mb-1">Target Date / Due Date</label>
+          <input type="date" id="m-dep-due" class="form-control" value="${currentDueDate}" />
         </div>
         <div class="col-12">
           <label class="form-label font-bold text-xs text-secondary mb-1">Description / Constraint Notes</label>
-          <textarea id="m-dep-desc" class="form-control" rows="2" placeholder="Detail the dependency constraint or API contract requirement">${existing?.description || ''}</textarea>
+          <textarea id="m-dep-desc" class="form-control" rows="2" placeholder="Detail the dependency constraint, technical interface, or deliverable prerequisite">${existing?.description || ''}</textarea>
         </div>
       </form>
     `;
@@ -1389,11 +1582,15 @@ export const GovernanceModule = {
         targetEntityCode: tgtVal[2],
         targetEntityName: tgtVal[3],
         dependencyType: overlay.querySelector('#m-dep-type').value,
+        criticality: overlay.querySelector('#m-dep-criticality').value,
         status: overlay.querySelector('#m-dep-status').value,
         isCriticalPath: overlay.querySelector('#m-dep-crit').value === 'true',
+        isCritical: overlay.querySelector('#m-dep-crit').value === 'true' || overlay.querySelector('#m-dep-criticality').value === 'Critical',
         lagDays: parseInt(overlay.querySelector('#m-dep-lag').value, 10) || 0,
+        targetDate: overlay.querySelector('#m-dep-due').value || undefined,
         dueDate: overlay.querySelector('#m-dep-due').value || undefined,
         description: overlay.querySelector('#m-dep-desc').value.trim(),
+        projectId: prefill?.projectId || (srcVal[0] === 'project' ? srcVal[1] : (tgtVal[0] === 'project' ? tgtVal[1] : undefined)),
       };
 
       try {
@@ -1415,6 +1612,156 @@ export const GovernanceModule = {
         return false;
       }
     });
+  },
+
+  async openDependencyDetails(depId) {
+    try {
+      const dep = await DependencyService.getDependencyById(depId);
+      if (!dep) {
+        this.app.showToast('Dependency not found', 'warning');
+        return;
+      }
+
+      // Fetch upstream/downstream chains for both endpoints
+      const [srcChain, tgtChain] = await Promise.all([
+        DependencyService.getChain(dep.sourceEntityId).catch(() => null),
+        DependencyService.getChain(dep.targetEntityId).catch(() => null),
+      ]);
+
+      const criticalityBadge = {
+        Critical: 'bg-danger text-white',
+        High: 'bg-warning text-dark fw-bold',
+        Medium: 'bg-primary-subtle text-primary',
+        Low: 'bg-secondary-subtle text-secondary',
+      }[dep.criticality || 'Medium'] || 'bg-secondary text-white';
+
+      const statusBadge = {
+        Open: 'bg-light text-dark border',
+        'In Progress': 'bg-primary text-white',
+        'At Risk': 'bg-warning text-dark fw-bold',
+        Blocked: 'bg-danger text-white',
+        Resolved: 'bg-success text-white',
+        Closed: 'bg-secondary text-white',
+        Cancelled: 'bg-dark text-white',
+      }[dep.status] || 'bg-light text-dark border';
+
+      const html = `
+        <div class="d-flex flex-column gap-3">
+          <div class="p-3 bg-light rounded border">
+            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+              <div>
+                <span class="badge bg-secondary font-monospace">${dep.code}</span>
+                <h5 class="font-bold my-1">
+                  <span class="text-primary">${dep.sourceEntityCode || dep.sourceEntityName}</span>
+                  <i class="fa-solid fa-arrow-right text-secondary mx-2"></i>
+                  <span class="text-primary">${dep.targetEntityCode || dep.targetEntityName}</span>
+                </h5>
+                <div class="text-xs text-secondary">
+                  Relationship: <strong>${dep.dependencyType}</strong> | 
+                  Criticality: <strong class="text-danger">${dep.criticality || 'Medium'}</strong> | 
+                  Status: <strong>${dep.status}</strong>
+                </div>
+              </div>
+              <div class="d-flex gap-1">
+                <span class="badge ${criticalityBadge}">${dep.criticality || 'Medium'}</span>
+                <span class="badge ${statusBadge}">${dep.status}</span>
+                ${dep.isCriticalPath || dep.isCritical ? '<span class="badge bg-danger text-white"><i class="fa-solid fa-bolt me-1"></i>Critical Path</span>' : ''}
+              </div>
+            </div>
+            <p class="text-xs mt-2 mb-0">${dep.description || 'No detailed constraint notes provided.'}</p>
+          </div>
+
+          <div class="row g-2">
+            <div class="col-md-6">
+              <div class="p-2.5 border rounded bg-white text-xs h-100">
+                <span class="font-bold text-secondary text-uppercase d-block mb-1">
+                  <i class="fa-solid fa-circle-arrow-right text-primary me-1"></i> Predecessor (Source)
+                </span>
+                <div class="d-flex justify-content-between py-1 border-bottom">
+                  <span class="text-muted">Type:</span>
+                  <span class="badge bg-secondary-subtle text-secondary text-uppercase">${dep.sourceEntityType}</span>
+                </div>
+                <div class="d-flex justify-content-between py-1 border-bottom">
+                  <span class="text-muted">Code:</span>
+                  <strong>${dep.sourceEntityCode || dep.sourceEntityId}</strong>
+                </div>
+                <div class="py-1">
+                  <span class="text-muted">Name:</span>
+                  <div class="fw-semibold mt-0.5">${dep.sourceEntityName}</div>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="p-2.5 border rounded bg-white text-xs h-100">
+                <span class="font-bold text-secondary text-uppercase d-block mb-1">
+                  <i class="fa-solid fa-circle-arrow-left text-success me-1"></i> Successor (Target)
+                </span>
+                <div class="d-flex justify-content-between py-1 border-bottom">
+                  <span class="text-muted">Type:</span>
+                  <span class="badge bg-secondary-subtle text-secondary text-uppercase">${dep.targetEntityType}</span>
+                </div>
+                <div class="d-flex justify-content-between py-1 border-bottom">
+                  <span class="text-muted">Code:</span>
+                  <strong>${dep.targetEntityCode || dep.targetEntityId}</strong>
+                </div>
+                <div class="py-1">
+                  <span class="text-muted">Name:</span>
+                  <div class="fw-semibold mt-0.5">${dep.targetEntityName}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="row g-2">
+            <div class="col-md-6">
+              <div class="p-2.5 border rounded bg-white text-xs">
+                <span class="font-bold text-secondary text-uppercase d-block mb-1">
+                  <i class="fa-solid fa-calendar-day text-info me-1"></i> Schedule & Lag
+                </span>
+                <div class="d-flex justify-content-between py-1 border-bottom">
+                  <span class="text-muted">Target Date:</span>
+                  <strong>${dep.targetDate || dep.dueDate || 'Open'}</strong>
+                </div>
+                <div class="d-flex justify-content-between py-1 border-bottom">
+                  <span class="text-muted">Lag Days:</span>
+                  <strong>${dep.lagDays || 0} days</strong>
+                </div>
+                <div class="d-flex justify-content-between py-1">
+                  <span class="text-muted">Overdue Status:</span>
+                  <span class="${dep.isOverdue ? 'text-danger fw-bold' : 'text-success'}">${dep.isOverdue ? 'OVERDUE' : 'On Schedule'}</span>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="p-2.5 border rounded bg-white text-xs">
+                <span class="font-bold text-secondary text-uppercase d-block mb-1">
+                  <i class="fa-solid fa-network-wired text-primary me-1"></i> Chain Linkage Metrics
+                </span>
+                <div class="d-flex justify-content-between py-1 border-bottom">
+                  <span class="text-muted">Upstream Blockers:</span>
+                  <strong>${srcChain?.upstream?.length || 0} items</strong>
+                </div>
+                <div class="d-flex justify-content-between py-1">
+                  <span class="text-muted">Downstream Blocked:</span>
+                  <strong>${tgtChain?.downstream?.length || 0} items</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          ${dep.resolutionNotes ? `
+            <div class="p-2.5 border rounded bg-success-subtle text-xs">
+              <span class="font-bold text-success text-uppercase d-block mb-1"><i class="fa-solid fa-check-circle me-1"></i> Resolution Notes</span>
+              <p class="mb-0 text-dark">${dep.resolutionNotes}</p>
+            </div>
+          ` : ''}
+        </div>
+      `;
+
+      this.app.openModal(`Dependency Details [${dep.code}]`, html, () => true);
+    } catch (err) {
+      this.app.showToast('Error opening dependency details: ' + err.message, 'danger');
+    }
   },
 
   async deleteDependency(id) {

@@ -429,14 +429,19 @@ CREATE TABLE IF NOT EXISTS dependencies (
   target_entity_code VARCHAR(50),
   dependency_type VARCHAR(50) NOT NULL DEFAULT 'Blocks',
   status VARCHAR(50) NOT NULL DEFAULT 'Open',
+  criticality VARCHAR(50) NOT NULL DEFAULT 'Medium',
   owner_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+  project_id VARCHAR(64) REFERENCES projects(id) ON DELETE SET NULL,
   description TEXT,
+  target_date DATE,
   due_date DATE,
+  resolved_at TIMESTAMP WITH TIME ZONE,
   resolution_date TIMESTAMP WITH TIME ZONE,
   created_by VARCHAR(64),
   updated_by VARCHAR(64),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT uq_dep_relationship UNIQUE (source_entity_id, source_entity_type, target_entity_id, target_entity_type, dependency_type)
 );
 
 -- 20. Milestones Table
@@ -521,6 +526,9 @@ CREATE INDEX IF NOT EXISTS idx_issues_severity ON issues(severity);
 CREATE INDEX IF NOT EXISTS idx_deps_source ON dependencies(source_entity_id, source_entity_type);
 CREATE INDEX IF NOT EXISTS idx_deps_target ON dependencies(target_entity_id, target_entity_type);
 CREATE INDEX IF NOT EXISTS idx_deps_status ON dependencies(status);
+CREATE INDEX IF NOT EXISTS idx_deps_criticality ON dependencies(criticality);
+CREATE INDEX IF NOT EXISTS idx_deps_owner ON dependencies(owner_id);
+CREATE INDEX IF NOT EXISTS idx_deps_project ON dependencies(project_id);
 
 CREATE INDEX IF NOT EXISTS idx_milestones_project ON milestones(project_id);
 CREATE INDEX IF NOT EXISTS idx_milestones_status ON milestones(status);

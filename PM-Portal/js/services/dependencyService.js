@@ -44,4 +44,10 @@ export class DependencyService {
     const data = await apiClient.get(`/dependencies/graph${qs}`);
     return data.graph;
   }
+
+  static async getKPIs(projectId) {
+    const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
+    const data = await apiClient.get(`/dependencies/kpis${qs}`);
+    return data.kpis;
+  }
 }

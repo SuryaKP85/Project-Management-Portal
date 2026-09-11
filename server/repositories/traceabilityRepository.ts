@@ -424,6 +424,10 @@ export const TraceabilityRepository = {
           code: d.code,
           name: `${d.sourceEntityName} -> ${d.targetEntityName} (${d.dependencyType})`,
           status: d.status,
+          severity: d.criticality,
+          criticality: d.criticality,
+          dependencyType: d.dependencyType,
+          isCriticalPath: d.isCritical || d.isCriticalPath,
         });
       }
     }

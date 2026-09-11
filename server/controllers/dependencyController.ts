@@ -14,8 +14,16 @@ function getActor(req: Request) {
 export const DependencyController = {
   async listDependencies(req: Request, res: Response, next: NextFunction) {
     try {
-      const dependencies = await DependencyService.getAllDependencies(req.query as any);
-      res.json({ success: true, data: { dependencies } });
+      const result = await DependencyService.getAllDependencies(req.query as any);
+      res.json({
+        success: true,
+        data: {
+          dependencies: result.dependencies,
+          total: result.total,
+          page: result.page,
+          limit: result.limit,
+        },
+      });
     } catch (err) {
       next(err);
     }
@@ -36,26 +44,20 @@ export const DependencyController = {
   async createDependency(req: Request, res: Response, next: NextFunction) {
     try {
       const actor = getActor(req);
-      const result = await DependencyService.createDependency(req.body, actor);
-      if (result.error) {
-        return res.status(400).json({ success: false, error: { code: 'CIRCULAR_DEPENDENCY_ERROR', message: result.error } });
-      }
-      res.status(201).json({ success: true, data: { dependency: result.dependency } });
-    } catch (err) {
-      next(err);
+      const dependency = await DependencyService.createDependency(req.body, actor);
+      res.status(201).json({ success: true, data: { dependency } });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: err.message || 'Validation error' } });
     }
   },
 
   async updateDependency(req: Request, res: Response, next: NextFunction) {
     try {
       const actor = getActor(req);
-      const result = await DependencyService.updateDependency(req.params.id, req.body, actor);
-      if (result.error) {
-        return res.status(400).json({ success: false, error: { code: 'CIRCULAR_DEPENDENCY_ERROR', message: result.error } });
-      }
-      res.json({ success: true, data: { dependency: result.dependency } });
-    } catch (err) {
-      next(err);
+      const dependency = await DependencyService.updateDependency(req.params.id, req.body, actor);
+      res.json({ success: true, data: { dependency } });
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: err.message || 'Validation error' } });
     }
   },
 
@@ -85,6 +87,15 @@ export const DependencyController = {
     try {
       const graph = await DependencyService.getDependencyGraph(req.query as any);
       res.json({ success: true, data: { graph } });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async getKPIs(req: Request, res: Response, next: NextFunction) {
+    try {
+      const kpis = await DependencyService.getKPIs(req.query.projectId as string);
+      res.json({ success: true, data: { kpis } });
     } catch (err) {
       next(err);
     }

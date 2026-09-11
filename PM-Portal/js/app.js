@@ -287,7 +287,10 @@ class EnterprisePortalApp {
   switchPage(pageId) {
     // Hide active containers, show current container
     const allPages = document.querySelectorAll('.page-container');
-    const targetPage = document.getElementById(`page-${pageId}`);
+    let targetPage = document.getElementById(`page-${pageId}`);
+    if (!targetPage && (pageId === 'issues' || pageId === 'governance')) {
+      targetPage = document.getElementById('page-governance');
+    }
     
     if (!targetPage) {
       console.warn(`Target page view 'page-${pageId}' does not exist.`);
@@ -328,7 +331,9 @@ class EnterprisePortalApp {
         'weekend-planner': 'Weekend Delivery Planner',
         'forecast': 'Automatic Forecast Engine',
         'gantt': 'Interactive Gantt Workspace',
+        'governance': 'Governance & Delivery Control',
         'risks': 'Risk Registers & Audits',
+        'issues': 'Issues Tracker & Root Causes',
         'reports': 'Executive Reports',
         'settings': 'Portal Settings'
       };
@@ -376,6 +381,10 @@ class EnterprisePortalApp {
     } else if (pageId === 'risks') {
       window.portalRiskModule = RiskModule;
       RiskModule.init(this);
+    } else if (pageId === 'governance') {
+      GovernanceModule.init(this, 'dashboard');
+    } else if (pageId === 'issues') {
+      GovernanceModule.init(this, 'issues');
     } else if (pageId === 'reports') {
       ExcelEngineModule.init(this);
       ReportsHubModule.init(this);

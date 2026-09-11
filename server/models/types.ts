@@ -344,6 +344,9 @@ export interface TraceabilityNode {
   priority?: string;
   progress?: number;
   severity?: string;
+  criticality?: string;
+  dependencyType?: string;
+  isCriticalPath?: boolean;
 }
 
 export interface TraceabilityChain {
@@ -388,6 +391,7 @@ export type ActivityAction =
   | 'delete'
   | 'status_change'
   | 'severity_change'
+  | 'priority_change'
   | 'owner_change'
   | 'member_change'
   | 'login'
@@ -439,6 +443,8 @@ export type NotificationType =
   | 'critical_issue'
   | 'dependency_blocked'
   | 'dependency_overdue'
+  | 'dependency_critical'
+  | 'dependency_assigned'
   | 'milestone_alert'
   | 'milestone_at_risk'
   | 'milestone_missed'
@@ -662,8 +668,10 @@ export interface Risk {
   severity: RiskSeverity; // 1-4 Low, 5-9 Medium, 10-16 High, 17-25 Critical
   status: RiskStatus;
   mitigation?: string;
+  mitigationPlan?: string;
   contingencyPlan?: string;
   trigger?: string;
+  triggerCondition?: string;
   targetResolutionDate?: string;
   linkedItems?: GovernanceLink[];
   createdAt: string;
@@ -686,14 +694,17 @@ export type IssueSeverity = 'Critical' | 'High' | 'Medium' | 'Low';
 export type IssuePriority = 'Urgent' | 'High' | 'Medium' | 'Low';
 
 export type RootCauseCategory =
+  | 'Requirement'
   | 'Requirements'
   | 'Technical'
   | 'Process'
   | 'Resource'
+  | 'Communication'
   | 'Vendor'
   | 'Customer'
+  | 'Dependency'
+  | 'Quality'
   | 'Environment'
-  | 'Communication'
   | 'Other';
 
 export interface Issue {
@@ -705,6 +716,8 @@ export interface Issue {
   projectName?: string;
   productId?: string;
   productName?: string;
+  reportedBy?: string;
+  reportedByName?: string;
   ownerId?: string;
   ownerName?: string;
   assigneeId?: string;
@@ -720,6 +733,7 @@ export interface Issue {
   resolution?: string;
   reportedDate: string;
   targetResolutionDate?: string;
+  resolvedAt?: string;
   resolvedDate?: string;
   linkedItems?: GovernanceLink[];
   createdAt: string;
@@ -734,22 +748,38 @@ export type DependencyType =
   | 'Blocked By'
   | 'Depends On'
   | 'Required By'
-  | 'Related To';
+  | 'Related To'
+  | 'Predecessor'
+  | 'Successor'
+  | 'External';
 
 export type DependencyStatus =
   | 'Open'
   | 'In Progress'
   | 'At Risk'
+  | 'Blocked'
   | 'Resolved'
-  | 'Closed';
+  | 'Closed'
+  | 'Cancelled';
+
+export type DependencyCriticality =
+  | 'Low'
+  | 'Medium'
+  | 'High'
+  | 'Critical';
 
 export type DependencyEntityType =
+  | 'portfolio'
+  | 'product'
   | 'project'
   | 'epic'
   | 'feature'
   | 'story'
   | 'task'
+  | 'subtask'
   | 'sprint'
+  | 'risk'
+  | 'issue'
   | 'milestone'
   | 'release';
 
@@ -766,13 +796,19 @@ export interface Dependency {
   targetEntityCode?: string;
   dependencyType: DependencyType;
   status: DependencyStatus;
+  criticality: DependencyCriticality;
   ownerId?: string;
   ownerName?: string;
   description?: string;
+  targetDate?: string;
   dueDate?: string;
+  resolvedAt?: string;
   resolutionDate?: string;
+  projectId?: string;
   isOverdue?: boolean;
   isCritical?: boolean;
+  isCriticalPath?: boolean;
+  lagDays?: number;
   createdAt: string;
   updatedAt: string;
   createdBy?: string;

@@ -15,8 +15,24 @@ function getActor(req: Request) {
 export const IssueController = {
   async listIssues(req: Request, res: Response, next: NextFunction) {
     try {
+      const page = req.query.page ? Number(req.query.page) : undefined;
+      const limit = req.query.limit ? Number(req.query.limit) : undefined;
+
+      if (page !== undefined || limit !== undefined) {
+        const result = await IssueService.getPaginatedIssues(req.query as any);
+        return res.json({
+          success: true,
+          data: {
+            issues: result.issues,
+            total: result.total,
+            page: result.page,
+            limit: result.limit,
+          },
+        });
+      }
+
       const issues = await IssueService.getAllIssues(req.query as any);
-      res.json({ success: true, data: { issues } });
+      res.json({ success: true, data: { issues, total: issues.length } });
     } catch (err) {
       next(err);
     }
@@ -39,8 +55,11 @@ export const IssueController = {
       const actor = getActor(req);
       const issue = await IssueService.createIssue(req.body, actor);
       res.status(201).json({ success: true, data: { issue } });
-    } catch (err) {
-      next(err);
+    } catch (err: any) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: err.message },
+      });
     }
   },
 
@@ -52,8 +71,11 @@ export const IssueController = {
         return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Issue not found' } });
       }
       res.json({ success: true, data: { issue } });
-    } catch (err) {
-      next(err);
+    } catch (err: any) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: err.message },
+      });
     }
   },
 
@@ -65,8 +87,11 @@ export const IssueController = {
         return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Issue not found' } });
       }
       res.json({ success: true, data: { deleted: true } });
-    } catch (err) {
-      next(err);
+    } catch (err: any) {
+      res.status(400).json({
+        success: false,
+        error: { code: 'DELETE_ERROR', message: err.message },
+      });
     }
   },
 
