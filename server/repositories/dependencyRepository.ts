@@ -713,8 +713,11 @@ export const DependencyRepository = {
       dueDate: targetDate,
       resolvedAt,
       resolutionDate: resolvedAt,
+      resolutionNotes: data.resolutionNotes,
       isOverdue,
       isCritical,
+      isCriticalPath: data.isCriticalPath,
+      lagDays: data.lagDays,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       createdBy: data.createdBy || 'system',
@@ -920,7 +923,10 @@ export const DependencyRepository = {
         (d.targetEntityId === entityId &&
           (d.dependencyType === 'Blocks' || d.dependencyType === 'Required By' || d.dependencyType === 'Predecessor')) ||
         (d.sourceEntityId === entityId &&
-          (d.dependencyType === 'Depends On' || d.dependencyType === 'Blocked By' || d.dependencyType === 'Successor'))
+          (d.dependencyType === 'Depends On' ||
+            d.dependencyType === 'Requires' ||
+            d.dependencyType === 'Blocked By' ||
+            d.dependencyType === 'Successor'))
     );
 
     // What does this item block?
@@ -931,7 +937,10 @@ export const DependencyRepository = {
         (d.sourceEntityId === entityId &&
           (d.dependencyType === 'Blocks' || d.dependencyType === 'Required By' || d.dependencyType === 'Predecessor')) ||
         (d.targetEntityId === entityId &&
-          (d.dependencyType === 'Depends On' || d.dependencyType === 'Blocked By' || d.dependencyType === 'Successor'))
+          (d.dependencyType === 'Depends On' ||
+            d.dependencyType === 'Requires' ||
+            d.dependencyType === 'Blocked By' ||
+            d.dependencyType === 'Successor'))
     );
 
     return { blockingThisItem, thisItemBlocks };

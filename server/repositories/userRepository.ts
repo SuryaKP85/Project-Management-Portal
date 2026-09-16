@@ -11,6 +11,11 @@ async function seedDefaultUsers() {
   
   const adminHash = await hashPassword('iRely@123');
   const userHash = await hashPassword('User@123');
+  // The portal's default local accounts share these credentials. Seeding them
+  // server-side lets a single sign-in at login.html establish both the V1.1
+  // local session and the V2 JWT session with the same credentials.
+  const portalAdminHash = await hashPassword('Admin@123');
+  const portalUserHash = await hashPassword('iRely@123');
 
   const defaultUsers: User[] = [
     {
@@ -44,7 +49,10 @@ async function seedDefaultUsers() {
     {
       id: 'usr_dev_3',
       email: 'sarah.connor@company.com',
-      passwordHash: userHash,
+      // Aligned with the portal's local default credentials so the V2 session
+      // bridge works for this account too. Identity, role and title are
+      // unchanged — other modules and tests reference usr_dev_3 directly.
+      passwordHash: portalUserHash,
       firstName: 'Sarah',
       lastName: 'Connor',
       role: 'team-member',
@@ -55,12 +63,70 @@ async function seedDefaultUsers() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
+    // --- Portal default accounts (mirrors PM-Portal/js/authentication.js) ---
+    {
+      id: 'usr_portal_admin',
+      email: 'admin@company.com',
+      passwordHash: portalAdminHash,
+      firstName: 'System',
+      lastName: 'Administrator',
+      role: 'admin',
+      title: 'Portal Administrator',
+      department: 'Dev',
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    {
+      id: 'usr_portal_pm',
+      email: 'john.doe@company.com',
+      passwordHash: portalUserHash,
+      firstName: 'John',
+      lastName: 'Doe',
+      role: 'project-manager',
+      title: 'Project Manager',
+      department: 'Dev',
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    {
+      id: 'usr_portal_dev',
+      email: 'alice.smith@company.com',
+      passwordHash: portalUserHash,
+      firstName: 'Alice',
+      lastName: 'Smith',
+      role: 'team-member',
+      title: 'Developer',
+      department: 'Dev',
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    {
+      id: 'usr_portal_qa',
+      email: 'david.miller@company.com',
+      passwordHash: portalUserHash,
+      firstName: 'David',
+      lastName: 'Miller',
+      role: 'team-member',
+      title: 'QA Analyst',
+      department: 'QA',
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
   ];
 
   defaultUsers.forEach((u) => memoryUsers.set(u.id, u));
 }
 
-seedDefaultUsers();
+/**
+ * Seeding hashes passwords asynchronously, so it cannot complete during module
+ * evaluation. Every repository method awaits this promise before touching the
+ * in-memory store, otherwise an early caller can observe an empty store.
+ */
+const seedReady: Promise<void> = seedDefaultUsers();
 
 export function sanitizeUser(user: User): SafeUser {
   const { passwordHash, ...safe } = user;
@@ -69,6 +135,7 @@ export function sanitizeUser(user: User): SafeUser {
 
 export const UserRepository = {
   async findById(id: string): Promise<User | null> {
+    await seedReady;
     if (isDbConnected()) {
       const res = await query('SELECT * FROM users WHERE id = $1', [id]);
       if (res.rows.length === 0) return null;
@@ -94,6 +161,7 @@ export const UserRepository = {
   },
 
   async findByEmail(email: string): Promise<User | null> {
+    await seedReady;
     const normalizedEmail = email.toLowerCase().trim();
     if (isDbConnected()) {
       const res = await query('SELECT * FROM users WHERE LOWER(email) = $1', [normalizedEmail]);
@@ -125,6 +193,7 @@ export const UserRepository = {
   },
 
   async findAll(): Promise<SafeUser[]> {
+    await seedReady;
     if (isDbConnected()) {
       const res = await query('SELECT id, email, first_name, last_name, role, avatar_url, department, title, ms_user_id, ms_tenant_id, is_active, created_at, updated_at FROM users ORDER BY created_at ASC');
       return res.rows.map((row) => ({
@@ -147,6 +216,7 @@ export const UserRepository = {
   },
 
   async create(user: User): Promise<SafeUser> {
+    await seedReady;
     if (isDbConnected()) {
       await query(
         `INSERT INTO users (id, email, password_hash, first_name, last_name, role, avatar_url, department, title, ms_user_id, ms_tenant_id, is_active, created_at, updated_at)
@@ -174,6 +244,7 @@ export const UserRepository = {
   },
 
   async update(id: string, updates: Partial<User>): Promise<SafeUser | null> {
+    await seedReady;
     const existing = await this.findById(id);
     if (!existing) return null;
 

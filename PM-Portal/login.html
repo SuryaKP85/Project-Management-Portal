@@ -90,6 +90,7 @@
 
   <script type="module">
     import { Authentication } from './js/authentication.js';
+    import { AuthService } from './js/services/authService.js';
 
     document.addEventListener('DOMContentLoaded', () => {
       Authentication.init();
@@ -119,7 +120,7 @@
       const form = document.getElementById('login-form');
       const alertBox = document.getElementById('login-alert');
 
-      form.addEventListener('submit', (e) => {
+      form.addEventListener('submit', async (e) => {
         e.preventDefault();
         alertBox.classList.add('d-none');
 
@@ -134,6 +135,11 @@
           alertBox.classList.remove('d-none');
           return;
         }
+
+        // Establish the V2 JWT session with the same credentials so that
+        // API-backed modules (Governance, Dependencies, Delivery, Sprints)
+        // are authenticated. Best-effort: a failure never blocks local sign-in.
+        await AuthService.syncV2Session(email, password);
 
         if (result.mustChangePassword) {
           window.location.href = 'change-password.html';

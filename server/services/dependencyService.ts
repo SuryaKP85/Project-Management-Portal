@@ -41,6 +41,65 @@ export interface DependencyGraphEdge {
   criticality: string;
 }
 
+export interface DependencyGraphSummary {
+  totalCount: number;
+  criticalCount: number;
+  overdueCount: number;
+  nodeCount: number;
+  edgeCount: number;
+}
+
+export interface DependencyChainLink {
+  dependencyId: string;
+  code: string;
+  entityId: string;
+  entityType: DependencyEntityType;
+  entityName: string;
+  entityCode?: string;
+  dependencyType: DependencyType;
+  status: DependencyStatus;
+  criticality: DependencyCriticality;
+  direction: 'upstream' | 'downstream';
+  isCritical?: boolean;
+  isOverdue?: boolean;
+}
+
+export interface DependencyChainResult {
+  entityId: string;
+  upstream: DependencyChainLink[];
+  downstream: DependencyChainLink[];
+  /** @deprecated Retained for backward compatibility with pre-5C API consumers. */
+  blockingThisItem: Dependency[];
+  /** @deprecated Retained for backward compatibility with pre-5C API consumers. */
+  thisItemBlocks: Dependency[];
+}
+
+/**
+ * Projects a dependency edge into a chain link described from the perspective
+ * of `entityId`: the reported entity is always the *other* end of the edge.
+ */
+function toChainLink(
+  dep: Dependency,
+  direction: 'upstream' | 'downstream',
+  entityId: string
+): DependencyChainLink {
+  const isSource = dep.sourceEntityId === entityId;
+  return {
+    dependencyId: dep.id,
+    code: dep.code,
+    entityId: isSource ? dep.targetEntityId : dep.sourceEntityId,
+    entityType: isSource ? dep.targetEntityType : dep.sourceEntityType,
+    entityName: isSource ? dep.targetEntityName : dep.sourceEntityName,
+    entityCode: isSource ? dep.targetEntityCode : dep.sourceEntityCode,
+    dependencyType: dep.dependencyType,
+    status: dep.status,
+    criticality: dep.criticality,
+    direction,
+    isCritical: dep.isCritical,
+    isOverdue: dep.isOverdue,
+  };
+}
+
 export const VALID_ENTITY_TYPES: DependencyEntityType[] = [
   'portfolio',
   'product',
@@ -61,6 +120,7 @@ export const VALID_DEPENDENCY_TYPES: DependencyType[] = [
   'Blocks',
   'Blocked By',
   'Depends On',
+  'Requires',
   'Required By',
   'Related To',
   'Predecessor',
@@ -161,9 +221,19 @@ async function resolveEntity(
       let subtask = await SubtaskRepository.findById(id);
       if (!subtask) {
         const all = await SubtaskRepository.findAll();
-        subtask = all.find((s) => s.code === id || s.id === id) || null;
+        subtask = all.find((s) => s.id === id) || null;
       }
-      if (subtask) return { exists: true, name: subtask.title, code: subtask.code, projectId: subtask.projectId };
+      if (subtask) {
+        // Subtasks carry no code of their own and are not linked directly to a
+        // project; both are inherited from the parent task.
+        const parentTask = subtask.taskId ? await TaskRepository.findById(subtask.taskId) : null;
+        return {
+          exists: true,
+          name: subtask.title,
+          code: parentTask?.code,
+          projectId: parentTask?.projectId,
+        };
+      }
       break;
     }
     case 'sprint': {
@@ -218,7 +288,50 @@ async function resolveEntity(
   if (fallbackName) {
     return { exists: true, name: fallbackName, code: fallbackCode || id };
   }
+
+  // The entity is not held by any domain repository, but it may already be a
+  // known endpoint of an existing dependency (it was named and accepted when
+  // that dependency was created). Reuse the recorded details so that entity
+  // resolution stays consistent across calls — otherwise a follow-up request
+  // that omits the name, such as a duplicate-relationship attempt, would be
+  // rejected as an unknown entity instead of reaching the duplicate and cycle
+  // checks.
+  const known = await findKnownEntityFromDependencies(normType, id);
+  if (known) return known;
+
   return { exists: false, name: '' };
+}
+
+/**
+ * Looks up an entity's recorded name/code/projectId from existing dependency
+ * endpoints. Returns null when the entity has never been referenced.
+ */
+async function findKnownEntityFromDependencies(
+  type: DependencyEntityType,
+  id: string
+): Promise<{ exists: true; name: string; code?: string; projectId?: string } | null> {
+  const existing = await DependencyRepository.findAll();
+
+  for (const dep of existing) {
+    if (dep.sourceEntityId === id && dep.sourceEntityType === type) {
+      return {
+        exists: true,
+        name: dep.sourceEntityName,
+        code: dep.sourceEntityCode || id,
+        projectId: dep.projectId,
+      };
+    }
+    if (dep.targetEntityId === id && dep.targetEntityType === type) {
+      return {
+        exists: true,
+        name: dep.targetEntityName,
+        code: dep.targetEntityCode || id,
+        projectId: dep.projectId,
+      };
+    }
+  }
+
+  return null;
 }
 
 export const DependencyService = {
@@ -281,18 +394,44 @@ export const DependencyService = {
     return DependencyRepository.findByProject(projectId);
   },
 
-  async getDependencyChain(entityId: string): Promise<{
-    blockingThisItem: Dependency[];
-    thisItemBlocks: Dependency[];
-  }> {
-    return DependencyRepository.getDependencyChain(entityId);
+  async getPaginatedDependencies(filter?: {
+    projectId?: string;
+    sourceEntityType?: string;
+    sourceEntityId?: string;
+    targetEntityType?: string;
+    targetEntityId?: string;
+    entityId?: string;
+    entityType?: string;
+    dependencyType?: string;
+    status?: string;
+    criticality?: string;
+    ownerId?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+    isOverdue?: boolean;
+    isCritical?: boolean;
+  }): Promise<{ dependencies: Dependency[]; total: number; page?: number; limit?: number }> {
+    return this.getAllDependencies(filter);
   },
 
-  async getChain(entityId: string): Promise<{
-    blockingThisItem: Dependency[];
-    thisItemBlocks: Dependency[];
-  }> {
-    return DependencyRepository.getDependencyChain(entityId);
+  async getDependencyChain(entityId: string): Promise<DependencyChainResult> {
+    const { blockingThisItem, thisItemBlocks } = await DependencyRepository.getDependencyChain(entityId);
+
+    // Canonical chain shape consumed by the Governance UI and the Sprint 5C
+    // suite. The legacy blockingThisItem/thisItemBlocks keys are retained so
+    // existing API consumers continue to work unchanged.
+    return {
+      entityId,
+      upstream: blockingThisItem.map((dep) => toChainLink(dep, 'upstream', entityId)),
+      downstream: thisItemBlocks.map((dep) => toChainLink(dep, 'downstream', entityId)),
+      blockingThisItem,
+      thisItemBlocks,
+    };
+  },
+
+  async getChain(entityId: string): Promise<DependencyChainResult> {
+    return this.getDependencyChain(entityId);
   },
 
   async createDependency(
@@ -362,7 +501,7 @@ export const DependencyService = {
       if (!user) {
         throw new Error(`Invalid owner: User with ID "${data.ownerId}" does not exist`);
       }
-      ownerName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username || user.email;
+      ownerName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email;
     }
 
     const projectId = data.projectId || sourceInfo.projectId || targetInfo.projectId;
@@ -531,7 +670,7 @@ export const DependencyService = {
       if (!user) {
         throw new Error(`Invalid owner: User with ID "${updates.ownerId}" does not exist`);
       }
-      updates.ownerName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username || user.email;
+      updates.ownerName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email;
     }
 
     const res = await DependencyRepository.update(id, {
@@ -626,9 +765,21 @@ export const DependencyService = {
     return deleted;
   },
 
+  async getGraph(filter?: { search?: string; projectId?: string }): Promise<{
+    nodes: DependencyGraphNode[];
+    edges: DependencyGraphEdge[];
+    summary: DependencyGraphSummary;
+    criticalCount: number;
+    overdueCount: number;
+    totalCount: number;
+  }> {
+    return this.getDependencyGraph(filter);
+  },
+
   async getDependencyGraph(filter?: { search?: string; projectId?: string }): Promise<{
     nodes: DependencyGraphNode[];
     edges: DependencyGraphEdge[];
+    summary: DependencyGraphSummary;
     criticalCount: number;
     overdueCount: number;
     totalCount: number;
@@ -676,9 +827,20 @@ export const DependencyService = {
       });
     }
 
+    const nodes = Array.from(nodeMap.values());
+
     return {
-      nodes: Array.from(nodeMap.values()),
+      nodes,
       edges,
+      // Grouped summary consumed by the Sprint 5C graph contract. The flat
+      // counters below are retained for backward compatibility.
+      summary: {
+        totalCount: deps.length,
+        criticalCount,
+        overdueCount,
+        nodeCount: nodes.length,
+        edgeCount: edges.length,
+      },
       criticalCount,
       overdueCount,
       totalCount: deps.length,
@@ -688,10 +850,13 @@ export const DependencyService = {
   async getKPIs(projectId?: string): Promise<{
     total: number;
     critical: number;
+    criticalCount: number;
     blocked: number;
     inProgress: number;
     resolved: number;
     overdue: number;
+    byStatus: Record<DependencyStatus, number>;
+    byCriticality: Record<DependencyCriticality, number>;
   }> {
     const all = await DependencyRepository.findAll(projectId ? { projectId } : undefined);
     const critical = all.filter((d) => d.criticality === 'Critical' || d.isCritical).length;
@@ -700,13 +865,28 @@ export const DependencyService = {
     const resolved = all.filter((d) => d.status === 'Resolved' || d.status === 'Closed').length;
     const overdue = all.filter((d) => d.isOverdue).length;
 
+    const byStatus = VALID_STATUSES.reduce((acc, status) => {
+      acc[status] = all.filter((d) => d.status === status).length;
+      return acc;
+    }, {} as Record<DependencyStatus, number>);
+
+    const byCriticality = VALID_CRITICALITIES.reduce((acc, level) => {
+      acc[level] = all.filter((d) => d.criticality === level).length;
+      return acc;
+    }, {} as Record<DependencyCriticality, number>);
+
     return {
       total: all.length,
+      // `critical` is the legacy field name; `criticalCount` is the canonical
+      // Sprint 5C name. Both are emitted so existing consumers keep working.
       critical,
+      criticalCount: critical,
       blocked,
       inProgress,
       resolved,
       overdue,
+      byStatus,
+      byCriticality,
     };
   },
 };

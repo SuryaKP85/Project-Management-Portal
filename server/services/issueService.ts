@@ -89,6 +89,27 @@ export const IssueService = {
     return IssueRepository.findAll(filter);
   },
 
+  /**
+   * Paginated issue listing. Backed by the existing IssueRepository.findPaginated
+   * and already referenced by IssueController.listIssues for `?page=`/`?limit=`
+   * requests.
+   */
+  async getPaginatedIssues(filter?: {
+    projectId?: string;
+    productId?: string;
+    assigneeId?: string;
+    ownerId?: string;
+    category?: string;
+    severity?: string;
+    priority?: string;
+    status?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ issues: Issue[]; total: number; page: number; limit: number }> {
+    return IssueRepository.findPaginated(filter);
+  },
+
   async getIssueById(id: string): Promise<Issue | null> {
     return IssueRepository.findById(id);
   },

@@ -451,7 +451,7 @@ async function runTests() {
       category: 'Technical',
       rootCauseCategory: 'Technical',
       rootCauseNotes: 'Connection leaks in batch processing workers',
-      targetResolutionDate: '2026-10-15T00:00:00.000Z',
+      targetResolutionDate: '2026-10-15',
       reportedBy: 'usr_pm_2',
       assigneeId: 'usr_dev_3',
     },

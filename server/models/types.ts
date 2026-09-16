@@ -747,6 +747,7 @@ export type DependencyType =
   | 'Blocks'
   | 'Blocked By'
   | 'Depends On'
+  | 'Requires'
   | 'Required By'
   | 'Related To'
   | 'Predecessor'
@@ -804,6 +805,7 @@ export interface Dependency {
   dueDate?: string;
   resolvedAt?: string;
   resolutionDate?: string;
+  resolutionNotes?: string;
   projectId?: string;
   isOverdue?: boolean;
   isCritical?: boolean;

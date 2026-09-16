@@ -12,6 +12,7 @@ import { ReleaseService } from './services/releaseService.js';
 import { ProjectService } from './services/projectService.js';
 import { UserService } from './services/userService.js';
 import { DeliveryService } from './services/deliveryService.js';
+import { AuthService } from './services/authService.js';
 
 export const GovernanceModule = {
   app: null,
@@ -45,16 +46,31 @@ export const GovernanceModule = {
   },
 
   async loadData() {
+    // Reset the auth-failure flag for this load cycle. Authentication failures
+    // must surface as an explicit signed-out state rather than being collapsed
+    // into an empty result set, which is indistinguishable from "no data".
+    this.authError = null;
+
+    const guard = (promise, fallback) =>
+      promise.catch((err) => {
+        if (err && (err.status === 401 || err.status === 403)) {
+          this.authError = err;
+        } else {
+          console.error('Governance data request failed', err);
+        }
+        return fallback;
+      });
+
     try {
       const [summary, risks, issues, dependencies, milestones, releases, projects, users] = await Promise.all([
-        GovernanceService.getSummary().catch(() => null),
-        RiskService.getRisks().catch(() => []),
-        IssueService.getIssues().catch(() => []),
-        DependencyService.getDependencies().catch(() => []),
-        MilestoneService.getMilestones().catch(() => []),
-        ReleaseService.getReleases().catch(() => []),
-        ProjectService.getProjects().catch(() => []),
-        UserService.getUsers().catch(() => []),
+        guard(GovernanceService.getSummary(), null),
+        guard(RiskService.getRisks(), []),
+        guard(IssueService.getIssues(), []),
+        guard(DependencyService.getDependencies(), []),
+        guard(MilestoneService.getMilestones(), []),
+        guard(ReleaseService.getReleases(), []),
+        guard(ProjectService.getProjects(), []),
+        guard(UserService.getUsers(), []),
       ]);
 
       this.summary = summary;
@@ -168,8 +184,66 @@ export const GovernanceModule = {
   },
 
   render() {
+    if (this.authError) {
+      this.renderAuthRequired();
+      return;
+    }
     this.populateProjectFilter();
+    this.syncActiveTabButton();
     this.renderTabContent();
+  },
+
+  /**
+   * Keeps the tab header in step with this.activeTab. init() can open the
+   * module on a tab other than the default (e.g. the sidebar Dependencies
+   * entry), and without this the content and the highlighted tab disagree.
+   */
+  syncActiveTabButton() {
+    const container = document.getElementById('page-governance');
+    if (!container) return;
+    container.querySelectorAll('.gov-tab-btn').forEach((b) => {
+      b.classList.toggle('active', b.getAttribute('data-tab') === this.activeTab);
+    });
+  },
+
+  /**
+   * Renders an explicit signed-out state. Without this, a 401 from the V2 API
+   * is rendered as zeroed KPI cards and empty tables, which reads as "there is
+   * no governance data" instead of "you are not authenticated".
+   */
+  renderAuthRequired() {
+    const container = document.getElementById('gov-tab-content-area');
+    if (!container) return;
+
+    const bridgeFailure = AuthService.getV2BridgeFailure();
+
+    let message;
+    let action = '<a href="login.html" class="btn-enterprise btn-enterprise-primary">Sign in</a>';
+
+    if (this.authError && this.authError.status === 403) {
+      message = 'Your account does not have permission to view governance data.';
+      action = '';
+    } else if (bridgeFailure) {
+      // Signing in again will not help: the portal account authenticated
+      // locally but has no counterpart on the V2 API server.
+      message = `Signed in locally as <strong>${bridgeFailure.email}</strong>, but this account is not provisioned on the V2 API server, so governance data cannot be loaded.`;
+      action = `<div class="text-xs text-secondary">Ask an administrator to provision this account, or sign in with a portal account that exists on the server. If the server was restarted recently, sign in again to refresh the session.</div>`;
+    } else {
+      message = 'Your secure session has expired or was never established. Sign in again to load Risks, Issues, Dependencies, Milestones and Releases.';
+    }
+
+    container.innerHTML = `
+      <div class="p-4 text-center border rounded bg-light" role="alert">
+        <i class="fa-solid fa-lock text-warning" style="font-size: 2rem;"></i>
+        <h5 class="mt-3 mb-2 font-bold">Governance data unavailable</h5>
+        <p class="text-secondary mb-3">${message}</p>
+        ${action}
+      </div>
+    `;
+
+    if (this.app) {
+      this.app.showToast('Governance data requires an active secure session', 'warning');
+    }
   },
 
   populateProjectFilter() {
@@ -1318,7 +1392,9 @@ export const GovernanceModule = {
               <span class="text-xs font-bold text-secondary text-uppercase"><i class="fa-solid fa-bezier-curve me-1"></i> Directed Relationship Visualizer</span>
               <span class="text-xs text-secondary">Cycle-detection validated</span>
             </div>
-            ${this.renderDependencySvgGraph(deps)}
+            <div style="max-height: 360px; overflow: auto;">
+              ${this.renderDependencySvgGraph(deps)}
+            </div>
           </div>
         </div>
       </div>
@@ -1429,7 +1505,11 @@ export const GovernanceModule = {
 
     const nodes = Array.from(nodeMap.values());
     const width = Math.max(700, nodes.length * 150);
-    const height = 240;
+    // Height must follow the actual row count: the SVG viewport clips anything
+    // drawn below it, so a fixed height silently dropped rows 3+ (9+ nodes).
+    // Layout is 4 nodes per row at y = 50 + row * 85, each node 42px tall.
+    const rows = Math.ceil(nodes.length / 4);
+    const height = Math.max(240, 50 + (rows - 1) * 85 + 42 + 20);
 
     // Layout nodes across horizontal layers
     const nodePositions = new Map();

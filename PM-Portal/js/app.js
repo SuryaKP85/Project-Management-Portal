@@ -288,7 +288,7 @@ class EnterprisePortalApp {
     // Hide active containers, show current container
     const allPages = document.querySelectorAll('.page-container');
     let targetPage = document.getElementById(`page-${pageId}`);
-    if (!targetPage && (pageId === 'issues' || pageId === 'governance')) {
+    if (!targetPage && (pageId === 'issues' || pageId === 'governance' || pageId === 'dependencies')) {
       targetPage = document.getElementById('page-governance');
     }
     
@@ -334,6 +334,7 @@ class EnterprisePortalApp {
         'governance': 'Governance & Delivery Control',
         'risks': 'Risk Registers & Audits',
         'issues': 'Issues Tracker & Root Causes',
+        'dependencies': 'Dependencies & Critical Path',
         'reports': 'Executive Reports',
         'settings': 'Portal Settings'
       };
@@ -385,6 +386,8 @@ class EnterprisePortalApp {
       GovernanceModule.init(this, 'dashboard');
     } else if (pageId === 'issues') {
       GovernanceModule.init(this, 'issues');
+    } else if (pageId === 'dependencies') {
+      GovernanceModule.init(this, 'dependencies');
     } else if (pageId === 'reports') {
       ExcelEngineModule.init(this);
       ReportsHubModule.init(this);
