@@ -35,12 +35,12 @@ riskRoutes.delete(
 riskRoutes.post(
   '/risks/:id/links',
   authenticateToken,
-  requireRoles(['admin', 'project-manager', 'product-manager', 'developer']),
+  requireRoles(['admin', 'project-manager', 'product-manager']),
   RiskController.linkItem
 );
 riskRoutes.delete(
   '/risks/:id/links/:linkId',
   authenticateToken,
-  requireRoles(['admin', 'project-manager', 'product-manager', 'developer']),
+  requireRoles(['admin', 'project-manager', 'product-manager']),
   RiskController.unlinkItem
 );

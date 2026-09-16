@@ -29,7 +29,7 @@ export const ReleaseService = {
     await ActivityService.logActivity({
       entityType: 'release',
       entityId: release.id,
-      action: 'created',
+      action: 'create',
       actorId: actor?.id || 'usr_admin_1',
       actorName: actor?.name || 'Admin User',
       details: {
@@ -79,7 +79,7 @@ export const ReleaseService = {
         userId: updated.ownerId || 'usr_admin_1',
         title: `Release Milestone Shifted: [${updated.code}]`,
         message: `Release "${updated.name}" (${updated.version}) target scheduled for ${updated.releaseDate}.`,
-        type: 'RELEASE_DELAYED',
+        type: 'release_delayed',
         link: `/pm-portal/index.html?view=governance&tab=releases&id=${updated.id}`,
         isRead: false,
       });
@@ -97,7 +97,7 @@ export const ReleaseService = {
       await ActivityService.logActivity({
         entityType: 'release',
         entityId: id,
-        action: 'deleted',
+        action: 'delete',
         actorId: actor?.id || 'usr_admin_1',
         actorName: actor?.name || 'Admin User',
         details: { code: current.code, name: current.name, version: current.version },

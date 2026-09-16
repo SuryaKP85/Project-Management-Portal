@@ -27,12 +27,12 @@ releaseRoutes.delete(
 releaseRoutes.post(
   '/releases/:id/items',
   authenticateToken,
-  requireRoles(['admin', 'project-manager', 'product-manager', 'developer']),
+  requireRoles(['admin', 'project-manager', 'product-manager']),
   ReleaseController.addItem
 );
 releaseRoutes.delete(
   '/releases/:id/items/:itemId',
   authenticateToken,
-  requireRoles(['admin', 'project-manager', 'product-manager', 'developer']),
+  requireRoles(['admin', 'project-manager', 'product-manager']),
   ReleaseController.removeItem
 );

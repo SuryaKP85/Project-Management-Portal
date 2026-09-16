@@ -183,7 +183,7 @@ export const RiskService = {
         userId: risk.ownerId || actor?.id || 'usr_admin_1',
         title: `Critical Risk Identified: [${risk.code}]`,
         message: `Critical risk "${risk.title}" (Score: ${risk.riskScore}) requires immediate mitigation review.`,
-        type: 'CRITICAL_RISK_CREATED',
+        type: 'critical_risk',
         link: `/PM-Portal/index.html?page=risks&id=${risk.id}`,
         isRead: false,
       });
@@ -195,7 +195,7 @@ export const RiskService = {
         userId: risk.ownerId,
         title: `Risk Assigned: [${risk.code}]`,
         message: `You have been assigned as the owner of risk "${risk.title}" (Severity: ${risk.severity}).`,
-        type: 'RISK_ASSIGNED',
+        type: 'risk_assigned',
         link: `/PM-Portal/index.html?page=risks&id=${risk.id}`,
         isRead: false,
       });
@@ -323,7 +323,7 @@ export const RiskService = {
         userId: updated.ownerId || actor?.id || 'usr_admin_1',
         title: `Risk Escalated to Critical: [${updated.code}]`,
         message: `Risk "${updated.title}" has escalated to Critical severity (Score: ${updated.riskScore}).`,
-        type: 'RISK_ESCALATED',
+        type: 'risk_escalated',
         link: `/PM-Portal/index.html?page=risks&id=${updated.id}`,
         isRead: false,
       });
@@ -335,7 +335,7 @@ export const RiskService = {
         userId: updates.ownerId,
         title: `Risk Assigned: [${updated.code}]`,
         message: `You have been assigned as the owner of risk "${updated.title}" (Severity: ${updated.severity}).`,
-        type: 'RISK_ASSIGNED',
+        type: 'risk_assigned',
         link: `/PM-Portal/index.html?page=risks&id=${updated.id}`,
         isRead: false,
       });
@@ -448,11 +448,11 @@ export const RiskService = {
     const todayStr = new Date().toISOString().split('T')[0];
 
     // 1. Overdue Project Check
-    if (project && project.status !== 'completed' && project.targetDate && project.targetDate < todayStr && (project.progress || 0) < 100) {
+    if (project && project.status !== 'completed' && project.endDate && project.endDate < todayStr && (project.progress || 0) < 100) {
       flags.push({
         id: 'OVERDUE_PROJECT',
         label: 'Overdue Project Schedule ⚠️',
-        desc: `Target delivery date (${project.targetDate}) is past due with incomplete progress (${project.progress}%).`,
+        desc: `Target delivery date (${project.endDate}) is past due with incomplete progress (${project.progress}%).`,
         severity: 'Critical',
         points: 20,
       });
@@ -460,7 +460,7 @@ export const RiskService = {
     }
 
     // 2. Overdue Stories
-    const overdueStories = stories.filter((s) => s.status !== 'done' && s.targetDate && s.targetDate < todayStr);
+    const overdueStories = stories.filter((s) => s.status !== 'done' && s.dueDate && s.dueDate < todayStr);
     if (overdueStories.length > 0) {
       flags.push({
         id: 'OVERDUE_STORIES',

@@ -439,6 +439,8 @@ export type NotificationType =
   | 'mention'
   | 'risk_alert'
   | 'critical_risk'
+  | 'risk_assigned'
+  | 'risk_escalated'
   | 'issue_assigned'
   | 'critical_issue'
   | 'dependency_blocked'
@@ -450,6 +452,7 @@ export type NotificationType =
   | 'milestone_missed'
   | 'release_at_risk'
   | 'release_approaching'
+  | 'release_delayed'
   | 'status_alert'
   | 'approval_request'
   | 'system';

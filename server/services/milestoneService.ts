@@ -49,7 +49,7 @@ export const MilestoneService = {
     await ActivityService.logActivity({
       entityType: 'milestone',
       entityId: milestone.id,
-      action: 'created',
+      action: 'create',
       actorId: actor?.id || 'usr_admin_1',
       actorName: actor?.name || 'Admin User',
       details: {
@@ -98,7 +98,7 @@ export const MilestoneService = {
         userId: updated.ownerId || 'usr_admin_1',
         title: `Milestone Delayed: [${updated.code}]`,
         message: `Milestone "${updated.name}" delivery date moved to ${updated.targetDate}.`,
-        type: 'MILESTONE_MISSED',
+        type: 'milestone_missed',
         link: `/pm-portal/index.html?view=governance&tab=milestones&id=${updated.id}`,
         isRead: false,
       });
@@ -116,7 +116,7 @@ export const MilestoneService = {
       await ActivityService.logActivity({
         entityType: 'milestone',
         entityId: id,
-        action: 'deleted',
+        action: 'delete',
         actorId: actor?.id || 'usr_admin_1',
         actorName: actor?.name || 'Admin User',
         details: { code: current.code, name: current.name },

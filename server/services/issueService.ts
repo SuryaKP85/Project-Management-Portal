@@ -124,9 +124,13 @@ export const IssueService = {
     const severity = validateEnum(data.severity, VALID_ISSUE_SEVERITIES, 'severity', 'Medium');
     const priority = validateEnum(data.priority, VALID_ISSUE_PRIORITIES, 'priority', 'Medium');
     const category = requireNonEmptyString(data.category || 'General', 'Issue category');
-    const rootCauseCategory = data.rootCauseCategory === undefined || data.rootCauseCategory === ''
+    // Inbound JSON may carry '' from a cleared form select, which the validated
+    // RootCauseCategory domain type does not model. Widen the value here so the
+    // empty-string guard stays reachable instead of being typed away.
+    const rawRootCauseCategory = data.rootCauseCategory as RootCauseCategory | '' | undefined;
+    const rootCauseCategory = rawRootCauseCategory === undefined || rawRootCauseCategory === ''
       ? undefined
-      : validateEnum(data.rootCauseCategory, VALID_ROOT_CAUSE_CATEGORIES, 'root cause category', 'Other');
+      : validateEnum(rawRootCauseCategory, VALID_ROOT_CAUSE_CATEGORIES, 'root cause category', 'Other');
     const reportedDate = validateDate(data.reportedDate, 'Reported date', false) || new Date().toISOString().split('T')[0];
     const targetResolutionDate = validateDate(data.targetResolutionDate, 'Target resolution date');
 
@@ -221,9 +225,11 @@ export const IssueService = {
     }
     if (updates.category !== undefined) sanitized.category = requireNonEmptyString(updates.category, 'Issue category');
     if (updates.rootCauseCategory !== undefined) {
-      sanitized.rootCauseCategory = updates.rootCauseCategory === ''
+      // See createIssue: '' is a legitimate inbound value meaning "cleared".
+      const rawUpdatedRootCause = updates.rootCauseCategory as RootCauseCategory | '';
+      sanitized.rootCauseCategory = rawUpdatedRootCause === ''
         ? undefined
-        : validateEnum(updates.rootCauseCategory, VALID_ROOT_CAUSE_CATEGORIES, 'root cause category', 'Other');
+        : validateEnum(rawUpdatedRootCause, VALID_ROOT_CAUSE_CATEGORIES, 'root cause category', 'Other');
     }
 
     if (updates.reportedDate !== undefined) {
