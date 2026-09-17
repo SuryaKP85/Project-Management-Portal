@@ -383,6 +383,7 @@ export type ActivityEntityType =
   | 'release'
   | 'governance'
   | 'auth'
+  | 'ai'
   | 'system';
 
 export type ActivityAction =
@@ -409,7 +410,8 @@ export type ActivityAction =
   | 'resolve'
   | 'delay'
   | 'release'
-  | 'migrate';
+  | 'migrate'
+  | 'ai_query';
 
 export interface ActivityLog {
   id: string;

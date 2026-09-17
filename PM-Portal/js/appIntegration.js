@@ -13,6 +13,7 @@ import { AIForecastModule } from './aiForecast.js';
 import { AISummaryModule } from './aiSummary.js';
 import { AIEmailGeneratorModule } from './aiEmailGenerator.js';
 import { AIInsightsModule } from './aiInsights.js';
+import { AiAssistantService } from './services/aiAssistantService.js';
 
 export const AppIntegrationModule = {
   app: null,
@@ -447,6 +448,84 @@ export const AppIntegrationModule = {
       const voiceBtn = document.getElementById('ai-voice-btn');
       const voiceStatus = document.getElementById('voice-status-text');
 
+      /** Escapes text before it reaches innerHTML. */
+      const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+      ));
+
+      /** Renders a response from the secure server assistant. */
+      const renderServerAnswer = (data) => {
+        const urgencyClass = {
+          critical: 'bg-danger text-white',
+          high: 'bg-warning text-dark fw-bold',
+          medium: 'bg-primary-subtle text-primary',
+          low: 'bg-secondary-subtle text-secondary',
+        };
+
+        let html = `
+          <div class="mb-2 d-flex justify-content-between align-items-center border-bottom pb-1.5">
+            <span class="badge bg-primary-subtle text-primary border font-bold text-xxs uppercase">Secure Assistant &middot; ${esc(data.scope)}</span>
+            <span class="font-mono text-xxs text-muted">${esc(data.meta?.projectsInScope ?? 0)} projects in scope</span>
+          </div>
+          <p class="font-semibold text-xs text-primary mb-2">${esc(data.answer)}</p>
+        `;
+
+        if (Array.isArray(data.recommendations) && data.recommendations.length > 0) {
+          html += `<div class="list-group mb-2">`;
+          data.recommendations.forEach((r) => {
+            const badge = urgencyClass[String(r.urgency || '').toLowerCase()] || 'bg-secondary-subtle text-secondary';
+            html += `
+              <div class="list-group-item p-2 d-flex justify-content-between align-items-center bg-card">
+                <span class="font-bold text-xs text-primary">${esc(r.title || r.category || 'Recommendation')}</span>
+                <span class="badge ${badge} text-xxs">${esc(r.urgency || 'info')}</span>
+              </div>
+            `;
+          });
+          html += `</div>`;
+        }
+
+        if (Array.isArray(data.suggestedActions) && data.suggestedActions.length > 0) {
+          html += `<div class="d-flex flex-wrap gap-1.5">`;
+          data.suggestedActions.forEach((a) => {
+            html += `<span class="badge bg-secondary-subtle text-secondary text-xxs">${esc(a)}</span>`;
+          });
+          html += `</div>`;
+        }
+
+        resultsContainer.innerHTML = html;
+      };
+
+      /** Surfaces a deliberate server refusal rather than masking it locally. */
+      const renderServerRefusal = (err) => {
+        const label = err?.status === 429 ? 'Rate limited' : 'Assistant unavailable';
+        resultsContainer.innerHTML = `
+          <div class="p-2 border rounded bg-body-tertiary" role="alert">
+            <span class="badge bg-warning-subtle text-warning border font-bold text-xxs uppercase">${esc(label)}</span>
+            <p class="text-xs text-secondary mt-2 mb-0">${esc(err?.message || 'The secure assistant could not answer this request.')}</p>
+          </div>
+        `;
+      };
+
+      /**
+       * Secure path: sends only the question to the server assistant.
+       * Falls back to the local V1.1 engine only when the secure path is
+       * genuinely unavailable (network/timeout/5xx).
+       */
+      const executeSecureQuery = async (q) => {
+        if (!q.trim()) return;
+        try {
+          const data = await AiAssistantService.ask(q.trim());
+          renderServerAnswer(data);
+        } catch (err) {
+          if (AiAssistantService.shouldFallback(err)) {
+            console.warn('[AI] Secure assistant unavailable, using local rule engine:', err?.message);
+            executeQuery(q);
+          } else {
+            renderServerRefusal(err);
+          }
+        }
+      };
+
       const executeQuery = (q) => {
         if (!q.trim()) return;
         const res = AIEngine.parseNaturalLanguageQuery(q);
@@ -481,14 +560,25 @@ export const AppIntegrationModule = {
       };
 
       if (input) {
+        // Per-keystroke local preview, unchanged from V1.1. The secure endpoint
+        // is deliberately NOT called here: one request per character would
+        // exhaust the per-user AI rate limit within a single question.
         input.addEventListener('input', (e) => executeQuery(e.target.value));
+
+        // Explicit submit runs the secure server assistant.
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            executeSecureQuery(e.target.value);
+          }
+        });
       }
 
       document.querySelectorAll('.ai-chip').forEach(chip => {
         chip.addEventListener('click', (e) => {
           const q = e.target.getAttribute('data-query');
           if (input) input.value = q;
-          executeQuery(q);
+          executeSecureQuery(q);
         });
       });
 
@@ -498,7 +588,8 @@ export const AppIntegrationModule = {
           const isListening = AIEngine.toggleVoiceSearch((transcript) => {
             if (input) {
               input.value = transcript;
-              executeQuery(transcript);
+              // A completed utterance is an explicit submit, like pressing Enter.
+              executeSecureQuery(transcript);
             }
             if (voiceStatus) voiceStatus.textContent = 'Voice';
           });

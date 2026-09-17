@@ -1,5 +1,10 @@
 import { GoogleGenAI } from '@google/genai';
 import { AIProvider, AIProviderResponse } from './baseProvider';
+import {
+  PM_SYSTEM_INSTRUCTION,
+  buildGuardedContents,
+  taskSystemInstruction,
+} from '../promptGuard';
 
 let geminiClient: GoogleGenAI | null = null;
 
@@ -27,11 +32,9 @@ export const GeminiAIProvider: AIProvider = {
       throw new Error('Gemini API key is not configured on the server.');
     }
 
-    const systemInstruction = `You are the Surya PM Operating System AI Copilot.
-You specialize in enterprise Product Management, Project Delivery, Risk Forecasting, Resource Balancing, and Executive Governance.
-Provide clear, actionable, and structured insights for Project Managers and Engineering Directors.`;
-
-    const fullPrompt = `${systemInstruction}\n\nContext:\n${JSON.stringify(context || {})}\n\nUser Question:\n${prompt}`;
+    // System instructions travel in the SDK's dedicated channel; PM context and
+    // the user's question are delimited and labelled as untrusted data.
+    const guardedContents = buildGuardedContents(prompt, context);
 
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('Gemini API call timed out after 4000ms')), 4000)
@@ -41,7 +44,8 @@ Provide clear, actionable, and structured insights for Project Managers and Engi
       const response = await Promise.race([
         ai.models.generateContent({
           model: 'gemini-3.6-flash',
-          contents: fullPrompt,
+          contents: guardedContents,
+          config: { systemInstruction: PM_SYSTEM_INSTRUCTION },
         }),
         timeoutPromise,
       ]);
@@ -63,13 +67,20 @@ Provide clear, actionable, and structured insights for Project Managers and Engi
       throw new Error('Gemini API key is not configured.');
     }
 
-    const prompt = `Analyze this project data and provide 3 specific risk mitigations and health recommendations:
-${JSON.stringify(project, null, 2)}`;
+    const guardedContents = buildGuardedContents(
+      'Provide 3 specific risk mitigations and health recommendations for the supplied project.',
+      project
+    );
 
     try {
       const response = await ai.models.generateContent({
         model: 'gemini-3.6-flash',
-        contents: prompt,
+        contents: guardedContents,
+        config: {
+          systemInstruction: taskSystemInstruction(
+            'Analyse the supplied project record and return risk mitigations and health recommendations.'
+          ),
+        },
       });
 
       return {
@@ -95,22 +106,34 @@ ${JSON.stringify(project, null, 2)}`;
       throw new Error('Gemini API key is not configured.');
     }
 
-    const prompt = `Draft a concise, professional executive weekly status email for client: ${context.client} regarding project: ${context.project}.
-Current Status: ${context.status}
-Key Highlights:
-${context.keyHighlights.map((h) => `- ${h}`).join('\n')}
+    // The project/client/status/highlight values are user-authored and are
+    // therefore sealed as untrusted data rather than interpolated into the
+    // instruction text.
+    const guardedContents = buildGuardedContents(
+      'Draft the executive weekly status email described by the task instruction, using the supplied details.',
+      {
+        project: context.project,
+        client: context.client,
+        currentStatus: context.status,
+        keyHighlights: context.keyHighlights,
+      }
+    );
 
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.6-flash',
+        contents: guardedContents,
+        config: {
+          systemInstruction: taskSystemInstruction(
+            `Draft a concise, professional executive weekly status email to stakeholders, using only the supplied details.
 Format as:
 Subject: [Project] Status Update
 Dear Stakeholders,
 ...
 Best regards,
-Surya Project Management Team`;
-
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
-        contents: prompt,
+Surya Project Management Team`
+          ),
+        },
       });
 
       return {
