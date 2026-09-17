@@ -1,11 +1,32 @@
 /* settings.js - Portal Settings, User Management, RBAC & Sharing */
 
 import { Storage } from './storage.js';
+import { AuthService } from './services/authService.js';
+
+/** V2 UserRole -> compact label used in the sidebar/header chrome. */
+const V2_ROLE_LABELS = {
+  'admin': 'Admin Lead',
+  'project-manager': 'Project Manager',
+  'product-manager': 'Product Manager',
+  'team-member': 'Team Member',
+  'viewer': 'Viewer',
+};
+
+/** V2 UserRole -> descriptive label used in the Settings profile form. */
+const V2_ROLE_FORM_LABELS = {
+  'admin': 'Administrator (Full Access)',
+  'project-manager': 'Project Manager (Delivery)',
+  'product-manager': 'Product Manager (Strategy)',
+  'team-member': 'Team Member (Execution)',
+  'viewer': 'Viewer (Read Only)',
+};
 
 export const SettingsModule = {
   app: null,
   users: [],
   currentUser: null,
+  /** Authenticated V2 user from GET /api/v1/auth/me; authoritative when present. */
+  v2User: null,
 
   /**
    * Initializes the Settings Module
@@ -17,6 +38,10 @@ export const SettingsModule = {
     this.loadCurrentUser();
     this.setupEventListeners();
     this.render();
+    // Refresh the chrome from the authenticated V2 session. Deliberately not
+    // awaited: the local profile renders immediately and is replaced when the
+    // server responds.
+    this.hydrateFromServer();
   },
 
   /**
@@ -61,8 +86,10 @@ export const SettingsModule = {
   loadCurrentUser() {
     let active = Storage.get('current_user');
     if (!active || !active.id) {
+      // Display-only fallback held in memory. It is deliberately NOT persisted:
+      // writing it to storage recreated the V1 session marker after logout,
+      // which is the flag requireAuth() checks.
       active = this.users[0] || { id: 'USR001', name: 'Surya Prashanth', email: 'surya.prashanth.kp@gmail.com', dept: 'Project Manager', role: 'admin' };
-      Storage.set('current_user', active);
     }
     this.currentUser = active;
     if (this.app) {
@@ -212,40 +239,103 @@ export const SettingsModule = {
   },
 
   /**
+   * Loads the authenticated V2 user and refreshes the profile chrome.
+   * Best-effort: if the session is missing or the request fails, the existing
+   * V1.1 local profile continues to drive the UI unchanged.
+   */
+  async hydrateFromServer() {
+    try {
+      const user = await AuthService.getCurrentUser();
+      if (!user) return;
+      this.v2User = user;
+      this.syncAvatarAcrossUI();
+      this.renderProfileForm();
+    } catch (err) {
+      console.warn('Could not load authenticated profile; using local profile:', err && err.message);
+    }
+  },
+
+  /**
+   * Resolves the display profile, preferring the authenticated V2 user over the
+   * local V1.1 record. Returns display-ready values only.
+   */
+  resolveProfile() {
+    const v2 = this.v2User;
+    const v1 = this.currentUser || {};
+
+    const fullName = v2
+      ? `${v2.firstName || ''} ${v2.lastName || ''}`.trim() || v2.email || 'User'
+      : (v1.name || 'Surya Prashanth').trim();
+
+    // A locally uploaded V1 avatar (data URI) still wins, since it is an
+    // explicit user choice made in this portal.
+    const avatarSrc =
+      v1.avatar || (v2 && v2.avatarUrl) || this.buildInitialsAvatar(fullName);
+
+    const role = v2 ? v2.role : v1.role;
+
+    return {
+      fullName,
+      firstName: fullName.split(' ')[0] || fullName,
+      avatarSrc,
+      roleLabel: V2_ROLE_LABELS[role] || (role === 'admin' ? 'Admin Lead' : 'Team Member'),
+      roleFormLabel:
+        V2_ROLE_FORM_LABELS[role] ||
+        (role === 'admin' ? 'Administrator (Full Access)' : 'Standard Member (Entry Only)'),
+      email: (v2 && v2.email) || v1.email || '',
+      dept: (v2 && (v2.department || v2.title)) || v1.dept || 'Engineering',
+    };
+  },
+
+  /**
+   * Builds an initials avatar as an inline SVG data URI, so it can be assigned
+   * to the existing <img> elements without any markup change.
+   */
+  buildInitialsAvatar(fullName) {
+    const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+    const initials = parts.length >= 2
+      ? (parts[0][0] + parts[parts.length - 1][0])
+      : (parts[0] ? parts[0].slice(0, 2) : 'U');
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img">`
+      + `<rect width="64" height="64" rx="32" fill="#4f46e5"/>`
+      + `<text x="32" y="41" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif"`
+      + ` font-size="26" font-weight="600" fill="#ffffff">${initials.toUpperCase()}</text></svg>`;
+
+    return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+  },
+
+  /**
    * Synchronize profile picture and user name across top navbar and sidebar
    */
   syncAvatarAcrossUI() {
-    if (!this.currentUser) return;
-    const avatarSrc = this.currentUser.avatar || 'assets/baby_feet.jpg';
+    if (!this.currentUser && !this.v2User) return;
+    const profile = this.resolveProfile();
 
     // Settings Preview
     const setPrev = document.getElementById('settings-avatar-preview');
-    if (setPrev) setPrev.src = avatarSrc;
+    if (setPrev) setPrev.src = profile.avatarSrc;
 
     // Sidebar Avatar & Info (Bottom Left Corner)
     const sbAvatar = document.getElementById('sidebar-user-avatar');
-    if (sbAvatar) sbAvatar.src = avatarSrc;
+    if (sbAvatar) sbAvatar.src = profile.avatarSrc;
 
     const sbName = document.getElementById('sidebar-user-name');
-    if (sbName) {
-      const fullName = (this.currentUser.name || 'Surya Prashanth').trim();
-      const firstName = fullName.split(' ')[0] || fullName;
-      sbName.textContent = firstName;
-    }
+    if (sbName) sbName.textContent = profile.firstName;
 
     const sbRole = document.getElementById('sidebar-user-role');
-    if (sbRole) sbRole.textContent = this.currentUser.role === 'admin' ? 'Admin Lead' : 'Team Member';
+    if (sbRole) sbRole.textContent = profile.roleLabel;
 
     // Top Header Avatar (Top Right Corner)
     const hdrAvatar = document.getElementById('header-user-avatar');
-    if (hdrAvatar) hdrAvatar.src = avatarSrc;
+    if (hdrAvatar) {
+      hdrAvatar.src = profile.avatarSrc;
+      hdrAvatar.alt = profile.fullName;
+      hdrAvatar.title = `${profile.fullName} (${profile.roleLabel})`;
+    }
 
     const hdrName = document.getElementById('top-user-name');
-    if (hdrName) {
-      const fullName = (this.currentUser.name || 'Surya Prashanth').trim();
-      const firstName = fullName.split(' ')[0] || fullName;
-      hdrName.textContent = firstName;
-    }
+    if (hdrName) hdrName.textContent = profile.firstName;
   },
 
   /**
@@ -257,10 +347,20 @@ export const SettingsModule = {
     const emailInp = document.getElementById('settings-user-email');
     const deptInp = document.getElementById('settings-user-dept');
 
-    if (nameInp) nameInp.value = this.currentUser.name || '';
-    if (roleInp) roleInp.value = (this.currentUser.role === 'admin' ? 'Administrator (Full Access)' : 'Standard Member (Entry Only)');
-    if (emailInp) emailInp.value = this.currentUser.email || '';
-    if (deptInp) deptInp.value = this.currentUser.dept || 'Engineering';
+    if (!this.currentUser && !this.v2User) return;
+    const profile = this.resolveProfile();
+
+    if (nameInp) nameInp.value = profile.fullName;
+    if (roleInp) roleInp.value = profile.roleFormLabel;
+    if (emailInp) emailInp.value = profile.email;
+
+    // The department control is a <select> with a fixed option list. Assigning a
+    // value it does not offer silently blanks the control, so only apply a
+    // match and otherwise leave the current selection intact.
+    if (deptInp) {
+      const hasOption = Array.from(deptInp.options || []).some((o) => o.value === profile.dept);
+      if (hasOption) deptInp.value = profile.dept;
+    }
   },
 
   /**

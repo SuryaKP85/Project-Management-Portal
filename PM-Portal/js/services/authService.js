@@ -22,7 +22,10 @@ export class AuthService {
     try {
       await apiClient.post('/auth/logout', {});
     } finally {
+      // Runs even when the server call fails, so the client never keeps a
+      // token for a session it believes is over.
       apiClient.setAuthToken(null);
+      try { sessionStorage.removeItem('pm_v2_bridge_failure'); } catch { /* ignore */ }
     }
   }
 

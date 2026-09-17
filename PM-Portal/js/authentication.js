@@ -1,6 +1,7 @@
 /* authentication.js - Central Authentication and Session Management Service */
 
 import { Storage } from './storage.js';
+import { AuthService } from './services/authService.js';
 
 export const Authentication = {
   // Storage keys
@@ -102,10 +103,10 @@ export const Authentication = {
       this.saveUsers(users);
     }
 
-    // Default current user if non-existent for instant preview compatibility
-    if (!this.getCurrentUser()) {
-      this.setCurrentUser(users[0]);
-    }
+    // No session is established here by design. Auto-assigning users[0] as the
+    // current user re-created an administrator session on every visit to
+    // login.html, which silently undid logout. The seed registry above is still
+    // populated; a user must authenticate explicitly for a session to exist.
   },
 
   /**
@@ -282,10 +283,33 @@ export const Authentication = {
   },
 
   /**
-   * Logs out active user
+   * Logs out of both authentication generations.
+   *
+   * The V2 session is torn down first, because only the server can clear the
+   * HttpOnly auth_token cookie — script cannot reach it. A server failure must
+   * never strand the user in a half-logged-out state, so local V1/V2 state is
+   * cleared regardless of the outcome before redirecting.
    */
-  logout() {
+  async logout() {
+    try {
+      // Reuses the existing V2 endpoint via AuthService/apiClient; this also
+      // clears pm_v2_auth_token and pm_v2_bridge_failure.
+      await AuthService.logout();
+    } catch (err) {
+      console.warn('Server logout failed; clearing local session anyway:', err && err.message);
+    }
+
+    // V1 session state: current user + client-minted token.
     this.setCurrentUser(null);
+
+    // Defensive sweep in case the V2 teardown above could not complete.
+    try {
+      sessionStorage.removeItem('pm_v2_auth_token');
+      sessionStorage.removeItem('pm_v2_bridge_failure');
+    } catch (e) {
+      /* sessionStorage unavailable — nothing further to clear */
+    }
+
     window.location.href = 'login.html';
   },
 

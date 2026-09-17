@@ -29,6 +29,7 @@ import { SprintPlanningModule } from './sprintPlanning.js';
 import { MyWorkModule } from './myWork.js';
 import { GovernanceModule } from './governance.js';
 import { NotificationService } from './services/notificationService.js';
+import { Authentication } from './authentication.js';
 
 class EnterprisePortalApp {
   constructor() {
@@ -788,6 +789,14 @@ class EnterprisePortalApp {
 
 // Instantiate on Document Ready
 document.addEventListener('DOMContentLoaded', () => {
+  // Authentication guard for the portal shell. This runs in the same
+  // synchronous block as init(), immediately before it, so an unauthenticated
+  // visitor never reaches module initialisation: no data loads, no API calls
+  // and no interactive UI are set up. requireAuth() handles the redirect to
+  // login.html (and to change-password.html when required).
+  const user = Authentication.requireAuth();
+  if (!user) return;
+
   const portal = new EnterprisePortalApp();
   portal.init();
 });
