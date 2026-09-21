@@ -5,6 +5,7 @@ import { IssueRepository } from '../repositories/issueRepository';
 import { DependencyRepository } from '../repositories/dependencyRepository';
 import { NotificationRepository } from '../repositories/notificationRepository';
 import { MyWorkService } from './myWorkService';
+import { ProjectHealthService, ProjectHealthResult, HEALTH_MODEL_VERSION } from './projectHealthService';
 
 /**
  * Sprint 7A (Step 2) — server-side authorised AI context.
@@ -41,6 +42,49 @@ export interface AiContextActor {
   email?: string;
 }
 
+/**
+ * Compact, AI-oriented projection of a ProjectHealthService result.
+ *
+ * This is a DERIVED signal, not a prediction: it is produced by deterministic
+ * application logic in projectHealthService, so the same inputs always yield the
+ * same score. `basis` states that explicitly so the value is never presented to
+ * a model — or a reader — as something the AI estimated.
+ *
+ * Only a summary is carried here; the full payload with every factor remains
+ * available from GET /api/v1/projects/:id/health.
+ */
+export interface AiContextProjectHealth {
+  basis: 'deterministic-calculation';
+  score: number;
+  band: string;
+  /** Largest penalties first, capped — the reasons the score is not 100. */
+  topNegativeFactors: Array<{
+    id: string;
+    label: string;
+    value: number | string | null;
+    impact: number;
+  }>;
+  includedFactorCount: number;
+  /**
+   * How much of the model was evaluable. Carried so a model reading this
+   * context can qualify the score rather than treat it as complete.
+   */
+  coverage: {
+    measuredFactors: number;
+    applicableFactors: number;
+    percentage: number;
+  };
+  /** Factor ids that could not be measured server-side, so gaps are visible. */
+  unavailableFactors: string[];
+  /** Health-specific signals not already present elsewhere in the context. */
+  signals: {
+    scheduleLagPct: number | null;
+    daysRemaining: number | null;
+    blockedStories: number;
+    storiesAwaitingQa: number;
+  };
+}
+
 export interface AiContextProject {
   code: string;
   name: string;
@@ -53,6 +97,8 @@ export interface AiContextProject {
   budget?: number;
   /** Management scope only. */
   client?: string;
+  /** Deterministic health for this project; see AiContextProjectHealth. */
+  health?: AiContextProjectHealth;
 }
 
 export interface AiContextWorkItem {
@@ -89,12 +135,55 @@ export interface AiAuthorizedContext {
     projectsIncluded: number;
     workItemsIncluded: number;
     truncated: boolean;
+    /** Version of the deterministic health model used for project.health. */
+    healthModel: string;
   };
 }
 
 /** Hard caps. Context is a briefing, not a database dump. */
 const MAX_PROJECTS = 8;
 const MAX_WORK_ITEMS = 10;
+
+/** Most impactful penalties carried per project; keeps the context small. */
+const MAX_HEALTH_FACTORS = 3;
+
+/**
+ * Projects a full health result down to the compact context shape. Health is
+ * only ever computed for projects already inside the caller's scope, so this
+ * cannot widen visibility.
+ */
+function toContextHealth(result: ProjectHealthResult): AiContextProjectHealth {
+  const topNegativeFactors = result.factors
+    .filter((f) => f.included && f.delta < 0)
+    .sort((a, b) => a.delta - b.delta)
+    .slice(0, MAX_HEALTH_FACTORS)
+    .map((f) => ({
+      id: f.id,
+      label: f.label,
+      value: f.value,
+      impact: f.delta,
+    }));
+
+  return {
+    basis: 'deterministic-calculation',
+    score: result.score,
+    band: result.band,
+    topNegativeFactors,
+    includedFactorCount: result.meta.includedFactors,
+    coverage: {
+      measuredFactors: result.coverage.measuredFactors,
+      applicableFactors: result.coverage.applicableFactors,
+      percentage: result.coverage.percentage,
+    },
+    unavailableFactors: result.factors.filter((f) => !f.included).map((f) => f.id),
+    signals: {
+      scheduleLagPct: result.signals.scheduleLagPct,
+      daysRemaining: result.signals.daysRemaining,
+      blockedStories: result.signals.blockedStories,
+      storiesAwaitingQa: result.signals.storiesAwaitingQa,
+    },
+  };
+}
 
 const MANAGEMENT_ROLES: UserRole[] = ['admin', 'project-manager', 'product-manager'];
 
@@ -190,6 +279,17 @@ export const AiContextService = {
     const includedProjects = scopedProjects.slice(0, MAX_PROJECTS);
     const includedWorkItems = workItems.slice(0, MAX_WORK_ITEMS);
 
+    // 2b. Deterministic health, computed ONLY for the already-scoped and
+    // already-capped projects. Deriving it from includedProjects means health
+    // inherits the scope and the cap rather than re-deriving either, so it can
+    // never surface a project the caller could not already see.
+    const healthResults = await Promise.all(
+      includedProjects.map((p) => ProjectHealthService.computeHealth(p))
+    );
+    const healthByProjectId = new Map(
+      healthResults.map((result) => [result.projectId, toContextHealth(result)])
+    );
+
     const context: AiAuthorizedContext = {
       user: { name: displayName, role: actor.role },
       scope,
@@ -199,7 +299,12 @@ export const AiContextService = {
         overdue: myWork.summary.overdue,
         items: includedWorkItems,
       },
-      projects: includedProjects.map((p) => toContextProject(p, includeCommercials)),
+      projects: includedProjects.map((p) => {
+        const contextProject = toContextProject(p, includeCommercials);
+        const health = healthByProjectId.get(p.id);
+        if (health) contextProject.health = health;
+        return contextProject;
+      }),
       unreadNotifications: (await NotificationRepository.findByUserId(actor.userId, true)).length,
       meta: {
         generatedAt: new Date().toISOString(),
@@ -207,6 +312,7 @@ export const AiContextService = {
         projectsIncluded: includedProjects.length,
         workItemsIncluded: includedWorkItems.length,
         truncated: projectsInScope > includedProjects.length || workItems.length > includedWorkItems.length,
+        healthModel: HEALTH_MODEL_VERSION,
       },
     };
 

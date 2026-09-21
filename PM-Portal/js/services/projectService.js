@@ -26,6 +26,15 @@ export class ProjectService {
     return data;
   }
 
+  /**
+   * Deterministic project health, calculated server-side.
+   * The browser never computes this score; the response is the source of truth.
+   */
+  static async getProjectHealth(id) {
+    const data = await apiClient.get(`/projects/${id}/health`);
+    return data.health;
+  }
+
   static async migrateProjects(projects) {
     const data = await apiClient.post('/projects/migrate', { projects });
     return data;

@@ -6,6 +6,11 @@ import { validateBody } from '../middleware/validation';
 export const projectRoutes = Router();
 
 projectRoutes.get('/projects', authenticateToken, ProjectController.list);
+
+// Registered before '/projects/:id' so Express does not bind :id to 'health'.
+projectRoutes.get('/projects/health', authenticateToken, ProjectController.listHealth);
+projectRoutes.get('/projects/:id/health', authenticateToken, ProjectController.getHealth);
+
 projectRoutes.get('/projects/:id', authenticateToken, ProjectController.getById);
 projectRoutes.post(
   '/projects/migrate',

@@ -964,6 +964,683 @@ async function runTests() {
   if (originalTimeoutEnv === undefined) delete process.env.GEMINI_TIMEOUT_MS;
   else process.env.GEMINI_TIMEOUT_MS = originalTimeoutEnv;
 
+  // 22. Project Health Service (Sprint 8.1)
+  // Deterministic scoring from server-held data only. A fixed reference date is
+  // injected so every assertion is reproducible.
+  console.log('\n--- 22. Project Health Service ---');
+  const {
+    ProjectHealthService,
+    calculateExpectedProgress,
+    calculateDaysRemaining,
+    resolveBand,
+    HEALTH_MODEL_VERSION,
+  } = await import('../server/services/projectHealthService');
+
+  const REF_NOW = new Date('2026-06-30T00:00:00.000Z');
+  const healthOpts = { now: REF_NOW };
+  const factorOf = (res: any, id: string) => res.factors.find((f: any) => f.id === id);
+
+  // --- Helper correctness ---
+  // 2026-05-31 -> 2026-07-30 is a 60-day window; REF_NOW sits exactly 30 days in.
+  assert(
+    calculateExpectedProgress('2026-05-31', '2026-07-30', REF_NOW) === 50,
+    'Expected progress is 50% at the exact midpoint of the window'
+  );
+  assert(
+    calculateExpectedProgress('2026-01-01', '2026-12-31', REF_NOW) === 49,
+    'Expected progress tracks elapsed calendar days (180 of 364 = 49%)'
+  );
+  assert(
+    calculateExpectedProgress('2026-01-01', undefined, REF_NOW) === null,
+    'Expected progress is null when an end date is missing'
+  );
+  assert(calculateDaysRemaining('2026-07-10', REF_NOW) === 10, 'Days remaining computed forward');
+  assert(calculateDaysRemaining('2026-06-20', REF_NOW) === -10, 'Days remaining negative once past');
+  assert(
+    resolveBand(95) === 'Excellent' && resolveBand(80) === 'Healthy' && resolveBand(65) === 'Monitor' &&
+    resolveBand(50) === 'At Risk' && resolveBand(10) === 'Critical',
+    'Band thresholds match the V1 model'
+  );
+
+  // --- Healthy project: on schedule, signed SOW, no impediments ---
+  const healthyProject: any = {
+    id: 'PRJ-HEALTH-OK', code: 'PRJ-HEALTH-OK', name: 'Healthy Probe', client: 'ACME',
+    status: 'in-progress', risk: 'Low', progress: 50, budget: 1000,
+    startDate: '2026-01-01', endDate: '2026-12-31', sowStatus: 'Signed',
+    createdAt: REF_NOW.toISOString(), updatedAt: REF_NOW.toISOString(),
+  };
+  const healthy = await ProjectHealthService.computeHealth(healthyProject, healthOpts);
+  assert(healthy.score === 100, `Healthy project scores 100 (actual: ${healthy.score})`);
+  assert(healthy.band === 'Excellent', 'Healthy project lands in the Excellent band');
+  assert(factorOf(healthy, 'schedule_variance').delta === 0, 'On-schedule project takes no schedule penalty');
+  assert(factorOf(healthy, 'sow_approval').delta === 0, "SOW status 'Signed' is treated as approved");
+
+  // --- Schedule slippage ---
+  const laggingProject = { ...healthyProject, id: 'PRJ-HEALTH-LAG', code: 'PRJ-HEALTH-LAG', progress: 20 };
+  const lagging = await ProjectHealthService.computeHealth(laggingProject, healthOpts);
+  // expected 49% elapsed vs 20% reported progress = 29 points behind
+  assert(factorOf(lagging, 'schedule_variance').value === 29, 'Schedule lag measured as 29%');
+  assert(factorOf(lagging, 'schedule_variance').delta === -25, 'Severe schedule lag penalised -25');
+  assert(lagging.score === 75, `Lagging project scores 75 (actual: ${lagging.score})`);
+
+  const moderateProject = { ...healthyProject, id: 'PRJ-HEALTH-MOD', code: 'PRJ-HEALTH-MOD', progress: 35 };
+  const moderate = await ProjectHealthService.computeHealth(moderateProject, healthOpts);
+  assert(factorOf(moderate, 'schedule_variance').delta === -15, 'Moderate schedule lag penalised -15');
+
+  const aheadProject = { ...healthyProject, id: 'PRJ-HEALTH-AHEAD', code: 'PRJ-HEALTH-AHEAD', progress: 75 };
+  const ahead = await ProjectHealthService.computeHealth(aheadProject, healthOpts);
+  assert(factorOf(ahead, 'schedule_variance').delta === 5, 'Ahead of schedule earns +5');
+  assert(ahead.score === 100, 'Bonus cannot push the score above 100');
+
+  // --- Overdue delivery ---
+  const overdueProject = {
+    ...healthyProject, id: 'PRJ-HEALTH-OVERDUE', code: 'PRJ-HEALTH-OVERDUE',
+    startDate: '2026-01-01', endDate: '2026-05-01', progress: 60,
+  };
+  const overdue = await ProjectHealthService.computeHealth(overdueProject, healthOpts);
+  assert(factorOf(overdue, 'overdue_delivery').delta === -35, 'Past end date with incomplete progress penalised -35');
+  assert(overdue.signals.isPastEndDate === true, 'isPastEndDate signal set');
+
+  const completedProject = { ...overdueProject, id: 'PRJ-HEALTH-DONE', code: 'PRJ-HEALTH-DONE', status: 'completed', progress: 100 };
+  const completed = await ProjectHealthService.computeHealth(completedProject, healthOpts);
+  assert(factorOf(completed, 'overdue_delivery').delta === 0, 'Completed project takes no overdue penalty');
+
+  // --- Unavailable factors are explicit, never silently zero ---
+  const burn = factorOf(healthy, 'burn_rate');
+  assert(burn.included === false, 'Burn rate is reported as unavailable');
+  assert(typeof burn.unavailableReason === 'string' && burn.unavailableReason.length > 10, 'Burn rate states why it is unavailable');
+  assert(burn.value === null && burn.delta === 0, 'Unavailable factor contributes nothing and carries no value');
+  const weekend = factorOf(healthy, 'weekend_support');
+  assert(weekend.included === false, 'Weekend support bonus is reported as unavailable');
+  assert(healthy.meta.unavailableFactors === 2, `Two factors reported unavailable (actual: ${healthy.meta.unavailableFactors})`);
+
+  const noDatesProject = { ...healthyProject, id: 'PRJ-HEALTH-NODATE', code: 'PRJ-HEALTH-NODATE', startDate: undefined, endDate: undefined };
+  const noDates = await ProjectHealthService.computeHealth(noDatesProject, healthOpts);
+  assert(factorOf(noDates, 'schedule_variance').included === false, 'Missing dates make schedule variance unavailable');
+  assert(noDates.signals.scheduleLagPct === null, 'Schedule lag signal is null rather than 0 when undeterminable');
+
+  const noSowProject = { ...healthyProject, id: 'PRJ-HEALTH-NOSOW', code: 'PRJ-HEALTH-NOSOW', sowStatus: undefined };
+  const noSow = await ProjectHealthService.computeHealth(noSowProject, healthOpts);
+  assert(factorOf(noSow, 'sow_approval').included === false, 'Missing SOW status is unavailable, not a penalty');
+
+  const pendingSowProject = { ...healthyProject, id: 'PRJ-HEALTH-SOW', code: 'PRJ-HEALTH-SOW', sowStatus: 'Pending Executive Sign-off' };
+  const pendingSow = await ProjectHealthService.computeHealth(pendingSowProject, healthOpts);
+  assert(factorOf(pendingSow, 'sow_approval').delta === -15, 'Unapproved SOW penalised -15');
+
+  // --- Impediment factors against a real seeded project -------------------
+  const { StoryRepository: StoryRepo } = await import('../server/repositories/storyRepository');
+  const { RiskService: RS } = await import('../server/services/riskService');
+  const { IssueService: IS } = await import('../server/services/issueService');
+  const { MilestoneRepository: MilestoneRepo } = await import('../server/repositories/milestoneRepository');
+  const healthActor = { id: actor.id, name: actor.name };
+  const HP = 'PRJ-101';
+
+  const baseline = await ProjectHealthService.getProjectHealth(HP, healthOpts);
+  assert(baseline !== null, 'Health resolves for a seeded project by code');
+  assert(baseline!.projectCode === 'PRJ-101', 'Resolved project carries its code');
+  assert((await ProjectHealthService.getProjectHealth('NOPE-404', healthOpts)) === null, 'Unknown project returns null');
+
+  // Blocked work
+  const blockedStory: any = await StoryRepo.create({ title: 'S81 blocked probe', projectId: HP, status: 'blocked', priority: 'high' } as any);
+  const afterBlocked = await ProjectHealthService.getProjectHealth(HP, healthOpts);
+  assert(
+    factorOf(afterBlocked, 'blocked_work').value > factorOf(baseline, 'blocked_work').value,
+    'Blocked story increases the blocked-work signal'
+  );
+  assert(factorOf(afterBlocked, 'blocked_work').delta <= -8, 'Blocked story applies at least an -8 penalty');
+
+  // Critical risk
+  const probeRisk: any = await RS.createRisk(
+    { title: 'S81 critical risk probe', projectId: HP, probability: 5, impact: 5, status: 'Identified' } as any,
+    healthActor
+  );
+  const afterRisk = await ProjectHealthService.getProjectHealth(HP, healthOpts);
+  assert(
+    factorOf(afterRisk, 'unmitigated_risks').value === factorOf(afterBlocked, 'unmitigated_risks').value + 1,
+    'Open critical risk increments the risk signal'
+  );
+  assert(
+    factorOf(afterRisk, 'unmitigated_risks').delta === factorOf(afterBlocked, 'unmitigated_risks').delta - 10,
+    'Each open high/critical risk costs 10 points'
+  );
+
+  // Open critical issue
+  const probeIssue: any = await IS.createIssue(
+    { title: 'S81 critical issue probe', projectId: HP, severity: 'Critical', priority: 'High', category: 'Technical' } as any,
+    healthActor
+  );
+  const afterIssue = await ProjectHealthService.getProjectHealth(HP, healthOpts);
+  assert(
+    factorOf(afterIssue, 'open_critical_issues').value === factorOf(afterRisk, 'open_critical_issues').value + 1,
+    'Open critical issue increments the issue signal'
+  );
+  assert(factorOf(afterIssue, 'open_critical_issues').delta < 0, 'Open critical issue applies a penalty');
+
+  // Milestone slippage
+  const probeMilestone: any = await MilestoneRepo.create({
+    name: 'S81 slipped milestone probe', projectId: HP, targetDate: '2026-01-15', status: 'Planned',
+  } as any);
+  const afterMilestone = await ProjectHealthService.getProjectHealth(HP, healthOpts);
+  assert(
+    factorOf(afterMilestone, 'milestone_slippage').value > factorOf(afterIssue, 'milestone_slippage').value,
+    'Milestone past its target date counts as slipped'
+  );
+  assert(factorOf(afterMilestone, 'milestone_slippage').delta <= -10, 'Slipped milestone applies at least a -10 penalty');
+
+  // Multiple factors together + clamping
+  assert(
+    afterMilestone!.score < baseline!.score,
+    `Accumulated impediments lower the score (${baseline!.score} -> ${afterMilestone!.score})`
+  );
+  assert(afterMilestone!.score >= 0 && afterMilestone!.score <= 100, 'Score stays within 0-100 with many factors');
+  const negativeFactors = afterMilestone!.factors.filter((f: any) => f.included && f.delta < 0);
+  assert(negativeFactors.length >= 3, `Multiple penalties recorded simultaneously (${negativeFactors.length})`);
+
+  // Score never below 0 even under extreme penalties
+  const doomed: any = {
+    ...healthyProject, id: 'PRJ-101', code: 'PRJ-101', progress: 0,
+    startDate: '2026-01-01', endDate: '2026-02-01', sowStatus: 'Pending Executive Sign-off',
+  };
+  const doomedResult = await ProjectHealthService.computeHealth(doomed, healthOpts);
+  assert(doomedResult.score >= 0, `Score floors at 0 (actual: ${doomedResult.score})`);
+  assert(doomedResult.band === 'Critical', 'Heavily penalised project lands in Critical band');
+
+  // --- Determinism ---
+  const runA = await ProjectHealthService.getProjectHealth(HP, healthOpts);
+  const runB = await ProjectHealthService.getProjectHealth(HP, healthOpts);
+  assert(JSON.stringify(runA) === JSON.stringify(runB), 'Identical input yields byte-identical output');
+  assert(runA!.computedAt === REF_NOW.toISOString(), 'computedAt reflects the injected reference time');
+  assert(runA!.meta.model === HEALTH_MODEL_VERSION, 'Result records the scoring model version');
+
+  // --- Result shape ---
+  ['projectId', 'projectCode', 'projectName', 'score', 'band', 'factors', 'signals', 'computedAt', 'meta']
+    .forEach((k) => assert(k in runA!, `Health result exposes '${k}'`));
+  assert(
+    runA!.factors.every((f: any) => 'id' in f && 'measured' in f && 'value' in f && 'delta' in f && 'included' in f),
+    'Every factor explains what was measured, its value, contribution and availability'
+  );
+
+  // Cleanup probes
+  await StoryRepo.delete(blockedStory.id);
+  await RS.deleteRisk(probeRisk.id, healthActor);
+  await IS.deleteIssue(probeIssue.id, healthActor);
+  await MilestoneRepo.delete(probeMilestone.id);
+
+  // 23. Project Health API (Sprint 8.2)
+  // Exercised in-process against the real controller handlers and the real
+  // auth middleware, matching this suite's existing style (no HTTP harness).
+  console.log('\n--- 23. Project Health API ---');
+  const { ProjectController } = await import('../server/controllers/projectController');
+  const { projectRoutes } = await import('../server/routes/projectRoutes');
+  const { authenticateToken: authMw } = await import('../server/middleware/authMiddleware');
+
+  /** Minimal response double capturing status and JSON body. */
+  function mockRes(): any {
+    const res: any = {
+      statusCode: 200,
+      body: undefined,
+      status(code: number) { this.statusCode = code; return this; },
+      json(payload: any) { this.body = payload; return this; },
+      setHeader() { return this; },
+    };
+    return res;
+  }
+  const adminReq = (over: any = {}) => ({
+    params: {}, query: {}, body: {}, headers: {}, cookies: {},
+    user: { userId: actor.id, email: 'admin@company.com', role: 'admin', firstName: 'A', lastName: 'D' },
+    ...over,
+  });
+  const noop = () => { /* next() must not be reached in these cases */ };
+
+  // --- Route registration & ordering ---
+  const routeLayers = (projectRoutes as any).stack
+    .filter((l: any) => l.route)
+    .map((l: any) => ({
+      path: l.route.path,
+      methods: Object.keys(l.route.methods),
+      handlers: l.route.stack.map((s: any) => s.name),
+    }));
+  const batchLayer = routeLayers.find((r: any) => r.path === '/projects/health' && r.methods.includes('get'));
+  const singleLayer = routeLayers.find((r: any) => r.path === '/projects/:id/health' && r.methods.includes('get'));
+  const byIdLayer = routeLayers.find((r: any) => r.path === '/projects/:id' && r.methods.includes('get'));
+
+  assert(!!batchLayer, 'GET /projects/health route is registered');
+  assert(!!singleLayer, 'GET /projects/:id/health route is registered');
+  assert(
+    routeLayers.indexOf(batchLayer) < routeLayers.indexOf(byIdLayer),
+    "'/projects/health' is registered before '/projects/:id' so it is not captured as an id"
+  );
+  assert(
+    batchLayer.handlers.includes('authenticateToken') && singleLayer.handlers.includes('authenticateToken'),
+    'Both health routes reuse the existing authenticateToken middleware'
+  );
+  assert(
+    !batchLayer.handlers.some((h: string) => h.includes('requireRoles')) &&
+    !singleLayer.handlers.some((h: string) => h.includes('requireRoles')),
+    'Health reads carry no extra role gate, matching every other GET route (no new authorization model)'
+  );
+
+  // --- Unauthenticated -> 401 (real middleware) ---
+  const unauthRes = mockRes();
+  authMw({ headers: {}, cookies: {} } as any, unauthRes as any, noop as any);
+  assert(unauthRes.statusCode === 401, 'Unauthenticated request is rejected with 401');
+  assert(unauthRes.body?.error?.code === 'UNAUTHORIZED', '401 uses the standard UNAUTHORIZED error code');
+
+  // --- Valid project -> 200 + schema ---
+  const okRes = mockRes();
+  await ProjectController.getHealth(adminReq({ params: { id: 'PRJ-101' } }) as any, okRes as any, noop as any);
+  assert(okRes.statusCode === 200, 'Valid project returns 200');
+  assert(okRes.body?.success === true, 'Response uses the standard success envelope');
+  assert(okRes.body?.data?.health !== undefined, "Payload is nested under data.health");
+
+  const apiHealth = okRes.body.data.health;
+  ['projectId', 'projectCode', 'projectName', 'score', 'band', 'factors', 'signals', 'computedAt', 'meta']
+    .forEach((k) => assert(k in apiHealth, `Health response exposes '${k}'`));
+  assert(typeof apiHealth.score === 'number' && apiHealth.score >= 0 && apiHealth.score <= 100, 'Score is a number within 0-100');
+  assert(typeof apiHealth.band === 'string' && apiHealth.band.length > 0, 'Band is present');
+  assert(typeof apiHealth.computedAt === 'string' && !Number.isNaN(Date.parse(apiHealth.computedAt)), 'computedAt is a valid timestamp');
+  assert(Array.isArray(apiHealth.factors) && apiHealth.factors.length > 0, 'Factors array is populated');
+  assert(
+    apiHealth.factors.every((f: any) => 'id' in f && 'measured' in f && 'value' in f && 'delta' in f && 'included' in f),
+    'Factor-level attribution preserved through the API layer'
+  );
+  assert(
+    apiHealth.factors.some((f: any) => f.included === false && typeof f.unavailableReason === 'string'),
+    'Unavailable factors keep their reason through the API layer'
+  );
+  assert(apiHealth.signals && typeof apiHealth.signals === 'object', 'Signals object present');
+
+  // --- No internal/sensitive leakage ---
+  const serialised = JSON.stringify(okRes.body);
+  ['passwordHash', 'password', 'budget', 'managerId', 'apiKey', 'auth_token']
+    .forEach((s) => assert(!serialised.includes(s), `Health payload does not expose '${s}'`));
+
+  // --- Unknown project -> 404 ---
+  const missRes = mockRes();
+  await ProjectController.getHealth(adminReq({ params: { id: 'NOPE-404' } }) as any, missRes as any, noop as any);
+  assert(missRes.statusCode === 404, 'Unknown project returns 404');
+  assert(missRes.body?.error?.code === 'NOT_FOUND', '404 uses the standard NOT_FOUND code');
+
+  // --- Invalid identifier -> 400 ---
+  for (const badId of ['bad id!', '../etc/passwd', '', 'x'.repeat(65)]) {
+    const badRes = mockRes();
+    await ProjectController.getHealth(adminReq({ params: { id: badId } }) as any, badRes as any, noop as any);
+    assert(badRes.statusCode === 400, `Invalid identifier rejected with 400: '${badId.slice(0, 20)}'`);
+    assert(badRes.body?.error?.code === 'VALIDATION_ERROR', 'Invalid identifier uses VALIDATION_ERROR');
+  }
+
+  // --- Authorized role access (all read roles reach the handler) ---
+  for (const role of ['admin', 'project-manager', 'product-manager', 'team-member', 'viewer']) {
+    const roleRes = mockRes();
+    await ProjectController.getHealth(
+      adminReq({ params: { id: 'PRJ-101' }, user: { userId: actor.id, email: 't@x.com', role, firstName: 'T', lastName: 'U' } }) as any,
+      roleRes as any,
+      noop as any
+    );
+    assert(roleRes.statusCode === 200, `Role '${role}' can read project health`);
+  }
+
+  // --- Batch endpoint ---
+  const batchRes = mockRes();
+  await ProjectController.listHealth(adminReq() as any, batchRes as any, noop as any);
+  assert(batchRes.statusCode === 200, 'Batch health returns 200');
+  const batch = batchRes.body.data;
+  ['results', 'total', 'returned', 'limit', 'maxLimit', 'truncated'].forEach((k) =>
+    assert(k in batch, `Batch response exposes '${k}'`)
+  );
+  assert(Array.isArray(batch.results) && batch.results.length > 0, 'Batch returns results');
+  assert(batch.limit === 20, 'Batch applies the default limit of 20');
+  assert(batch.maxLimit === 50, 'Batch advertises its server-side maximum');
+  assert(
+    batch.results.every((r: any) => typeof r.score === 'number' && Array.isArray(r.factors)),
+    'Every batch entry carries a score and factor attribution'
+  );
+
+  // Limit respected
+  const limitedRes = mockRes();
+  await ProjectController.listHealth(adminReq({ query: { limit: '2' } }) as any, limitedRes as any, noop as any);
+  assert(limitedRes.body.data.returned === 2, 'Batch honours an explicit limit');
+  assert(limitedRes.body.data.truncated === true, 'Batch flags truncation when results are capped');
+
+  // Over-large limit clamped, never unbounded
+  const clampRes = mockRes();
+  await ProjectController.listHealth(adminReq({ query: { limit: '9999' } }) as any, clampRes as any, noop as any);
+  assert(clampRes.body.data.limit === 50, 'Over-large limit is clamped to the server maximum');
+  assert(clampRes.body.data.returned <= 50, 'Batch never returns more than the server maximum');
+
+  // Invalid limit -> 400
+  for (const badLimit of ['0', '-5', 'abc']) {
+    const badLimitRes = mockRes();
+    await ProjectController.listHealth(adminReq({ query: { limit: badLimit } }) as any, badLimitRes as any, noop as any);
+    assert(badLimitRes.statusCode === 400, `Invalid limit rejected with 400: '${badLimit}'`);
+    assert(badLimitRes.body?.error?.code === 'VALIDATION_ERROR', 'Invalid limit uses VALIDATION_ERROR');
+  }
+
+  // --- Scoring stays in the service (API layer adds no scoring logic) ---
+  const controllerSource = await import('fs').then((fs) =>
+    fs.readFileSync('server/controllers/projectController.ts', 'utf8')
+  );
+  assert(
+    !/score\s*[-+]=|BASE_SCORE|Math\.max\(0,\s*Math\.min\(100/.test(controllerSource),
+    'Controller contains no scoring arithmetic; calculation stays in projectHealthService'
+  );
+
+  // 24. Project Health in AI Context (Sprint 8.3)
+  console.log('\n--- 24. Project Health in AI Context ---');
+  const { AiContextService: AiCtx } = await import('../server/services/aiContextService');
+  const { UserRepository: UserRepo24 } = await import('../server/repositories/userRepository');
+  const { ProjectRepository: ProjRepo24 } = await import('../server/repositories/projectRepository');
+  const { AiAssistantService: AiAsst24 } = await import('../server/services/aiAssistantService');
+
+  const all24 = await UserRepo24.findAll();
+  const pickUser = (email: string) => all24.find((u: any) => u.email === email)!;
+  const ctxFor = (u: any) =>
+    AiCtx.buildContext({ userId: u.id, role: u.role, firstName: u.firstName, lastName: u.lastName, email: u.email });
+
+  const adminUser24 = pickUser('admin@company.com');          // organisation scope
+  const pmUser24 = pickUser('alex.morgan@company.com');       // managed scope, 3 of 4 projects
+  const memberUser24 = pickUser('sarah.connor@company.com');  // personal scope, 1 project
+  const isolatedUser24 = pickUser('alice.smith@company.com'); // personal scope, no projects
+
+  const adminCtx24 = await ctxFor(adminUser24);
+  const pmCtx24 = await ctxFor(pmUser24);
+  const memberCtx24 = await ctxFor(memberUser24);
+  const isolatedCtx24 = await ctxFor(isolatedUser24);
+
+  // --- Health present for authorized projects ---
+  assert(adminCtx24.projects.length > 0, 'Admin context contains projects');
+  assert(
+    adminCtx24.projects.every((p: any) => p.health !== undefined),
+    'Every authorized project in context carries health'
+  );
+  const sampleHealth24 = adminCtx24.projects[0].health;
+  assert(typeof sampleHealth24.score === 'number', 'Context health exposes a numeric score');
+  assert(typeof sampleHealth24.band === 'string', 'Context health exposes a band');
+  assert(Array.isArray(sampleHealth24.topNegativeFactors), 'Context health exposes negative factors');
+  assert(Array.isArray(sampleHealth24.unavailableFactors), 'Context health exposes unavailable factor ids');
+  assert(sampleHealth24.signals !== undefined, 'Context health exposes relevant signals');
+
+  // --- Derived signal, explicitly NOT an AI prediction ---
+  assert(
+    adminCtx24.projects.every((p: any) => p.health.basis === 'deterministic-calculation'),
+    'Health is labelled a deterministic calculation, not a prediction'
+  );
+  assert(typeof adminCtx24.meta.healthModel === 'string' && adminCtx24.meta.healthModel.length > 0,
+    'Context records the health model version');
+
+  // --- Health matches the service exactly (no duplicated calculation) ---
+  const firstProjCode = adminCtx24.projects[0].code;
+  const serviceHealth24 = await ProjectHealthService.getProjectHealth(firstProjCode);
+  assert(
+    adminCtx24.projects[0].health.score === serviceHealth24!.score &&
+    adminCtx24.projects[0].health.band === serviceHealth24!.band,
+    'Context health equals ProjectHealthService output (single source of truth)'
+  );
+  const ctxSource24 = await import('fs').then((fs) =>
+    fs.readFileSync('server/services/aiContextService.ts', 'utf8')
+  );
+  assert(
+    !/score\s*[-+]=|BASE_SCORE|resolveBand\s*\(/.test(ctxSource24),
+    'AiContextService contains no health scoring arithmetic of its own'
+  );
+
+  // --- Scope is NOT widened by health ---
+  assert(adminCtx24.scope === 'organisation' && pmCtx24.scope === 'managed' && memberCtx24.scope === 'personal',
+    'Existing scopes unchanged after health integration');
+  assert(
+    pmCtx24.meta.projectsInScope < adminCtx24.meta.projectsInScope,
+    `Managed scope still narrower than organisation (${pmCtx24.meta.projectsInScope} < ${adminCtx24.meta.projectsInScope})`
+  );
+  assert(
+    memberCtx24.meta.projectsInScope < pmCtx24.meta.projectsInScope,
+    `Personal scope still narrowest (${memberCtx24.meta.projectsInScope} < ${pmCtx24.meta.projectsInScope})`
+  );
+  const allProjectCount24 = (await ProjRepo24.findAll()).length;
+  assert(
+    pmCtx24.meta.projectsInScope < allProjectCount24,
+    'Manager still does not see every project merely because health exists'
+  );
+
+  // A project outside scope must not appear via health
+  const adminCodes24 = new Set(adminCtx24.projects.map((p: any) => p.code));
+  const pmCodes24 = new Set(pmCtx24.projects.map((p: any) => p.code));
+  const missingForPm = [...adminCodes24].filter((c) => !pmCodes24.has(c));
+  assert(missingForPm.length > 0, 'At least one project is outside the managers scope (control for the next check)');
+  assert(
+    missingForPm.every((code) => !JSON.stringify(pmCtx24).includes(String(code))),
+    'Out-of-scope project codes never leak into the managers context through health'
+  );
+
+  // --- Isolated user: no projects, therefore no health ---
+  assert(isolatedCtx24.projects.length === 0, 'User with no associated projects receives no projects');
+  assert(
+    !JSON.stringify(isolatedCtx24).includes('"health"'),
+    'No health payload is produced for a user with no in-scope projects'
+  );
+  assert(isolatedCtx24.governance === undefined, 'Read-only scope still receives no governance block');
+  assert(
+    !isolatedCtx24.projects.some((p: any) => p.budget !== undefined || p.client !== undefined),
+    'Commercial fields still withheld from read-only scope'
+  );
+
+  // --- Caps and truncation still enforced ---
+  assert(adminCtx24.projects.length <= 8, 'Project cap of 8 still enforced with health attached');
+  assert(adminCtx24.myWork.items.length <= 10, 'Work-item cap of 10 still enforced');
+  assert(
+    adminCtx24.meta.projectsIncluded === adminCtx24.projects.length,
+    'projectsIncluded matches the number of projects carried'
+  );
+  assert(
+    adminCtx24.projects.filter((p: any) => p.health).length === adminCtx24.meta.projectsIncluded,
+    'Health is computed for exactly the capped project set, never the full scope'
+  );
+
+  // Force truncation: seed beyond the cap and confirm behaviour holds
+  const bulkIds24: string[] = [];
+  for (let i = 0; i < 10; i++) {
+    const p: any = await ProjRepo24.create({
+      id: `PRJ-CAP-${i}`, code: `PRJ-CAP-${i}`, name: `Cap probe ${i}`, client: 'Probe',
+      managerId: adminUser24.id, status: 'in-progress', risk: 'Low', progress: 50, budget: 1000,
+    } as any);
+    bulkIds24.push(p.id);
+  }
+  const truncCtx24 = await ctxFor(adminUser24);
+  assert(truncCtx24.meta.projectsInScope > 8, `More projects in scope than the cap (${truncCtx24.meta.projectsInScope})`);
+  assert(truncCtx24.projects.length === 8, 'Project list still capped at 8 under load');
+  assert(truncCtx24.meta.truncated === true, 'Truncation flag still set when the cap bites');
+  assert(
+    truncCtx24.projects.filter((p: any) => p.health).length === 8,
+    'Health computed for 8 projects only, not all in scope'
+  );
+  assert(JSON.stringify(truncCtx24).length < 12000, 'Context with health stays compact');
+
+  // --- Factor attribution and unavailable factors preserved ---
+  const withPenalty24 = truncCtx24.projects.find((p: any) => p.health.topNegativeFactors.length > 0);
+  if (withPenalty24) {
+    const f = withPenalty24.health.topNegativeFactors[0];
+    assert('id' in f && 'label' in f && 'impact' in f && 'value' in f, 'Negative factors keep id/label/value/impact');
+    assert(f.impact < 0, 'Negative factor impact is a penalty');
+    assert(withPenalty24.health.topNegativeFactors.length <= 3, 'Negative factors capped at 3 per project');
+  }
+  assert(
+    adminCtx24.projects.every((p: any) => p.health.unavailableFactors.includes('burn_rate')),
+    'Unavailable burn_rate factor is reported in context health'
+  );
+  assert(
+    adminCtx24.projects.every((p: any) => p.health.unavailableFactors.includes('weekend_support')),
+    'Unavailable weekend_support factor is reported in context health'
+  );
+
+  // --- Client-supplied context cannot inject or replace health ---
+  const injected24: any = await AiAsst24.ask(
+    {
+      userId: memberUser24.id, role: memberUser24.role,
+      firstName: memberUser24.firstName, lastName: memberUser24.lastName, email: memberUser24.email,
+      // These must be ignored entirely — the signature takes identity only.
+      ...({ context: { projects: [{ code: 'FAKE-999', health: { score: 100, band: 'Excellent' } }] } } as any),
+    },
+    'what is my project health'
+  );
+  assert(injected24.scope === 'personal', 'Assistant scope still derived from role, not client input');
+  assert(!JSON.stringify(injected24).includes('FAKE-999'), 'Client-supplied fake project never reaches the answer');
+  const memberCtxAfter24 = await ctxFor(memberUser24);
+  assert(
+    !memberCtxAfter24.projects.some((p: any) => p.code === 'FAKE-999'),
+    'Client-supplied health cannot be injected into the authorized context'
+  );
+  assert(
+    memberCtxAfter24.projects.every((p: any) => p.health.basis === 'deterministic-calculation'),
+    'All health in context remains server-computed'
+  );
+
+  // Cleanup cap probes
+  for (const id of bulkIds24) await ProjRepo24.delete(id);
+  const restored24 = await ctxFor(adminUser24);
+  assert(restored24.meta.projectsInScope === adminCtx24.meta.projectsInScope, 'Probe projects removed cleanly');
+
+  // 25. Health Model Calibration (Sprint 8.5A — R1/R2/R3)
+  console.log('\n--- 25. Health Model Calibration ---');
+  const REF25 = new Date('2026-06-30T00:00:00.000Z');
+  const opts25 = { now: REF25 };
+  const f25 = (res: any, id: string) => res.factors.find((f: any) => f.id === id);
+
+  const baseProject25: any = {
+    id: 'PRJ-CAL', code: 'PRJ-CAL', name: 'Calibration Probe', client: 'ACME',
+    status: 'in-progress', risk: 'Low', progress: 50, budget: 1000,
+    startDate: '2026-01-01', endDate: '2026-12-31', sowStatus: 'Signed',
+    createdAt: REF25.toISOString(), updatedAt: REF25.toISOString(),
+  };
+
+  // --- R1: overdue suppresses schedule variance -------------------------
+  const overdue25 = await ProjectHealthService.computeHealth(
+    { ...baseProject25, startDate: '2026-01-01', endDate: '2026-05-01', progress: 40 }, opts25
+  );
+  const ov25 = f25(overdue25, 'overdue_delivery');
+  const sv25 = f25(overdue25, 'schedule_variance');
+  assert(ov25.delta === -35, 'Overdue project still carries the -35 overdue penalty');
+  assert(sv25.delta === 0, 'Overdue project receives NO schedule-variance penalty (R1)');
+  assert(sv25.included === true, 'Suppressed schedule variance is still reported as measured');
+  assert(sv25.value !== null, 'Suppressed schedule variance still reports the measured lag');
+  assert(sv25.supersededBy === 'overdue_delivery', 'Suppressed factor names the factor that supersedes it');
+  assert(typeof sv25.supersededReason === 'string' && sv25.supersededReason.length > 10, 'Suppression is explained');
+  assert(overdue25.score === 65, `Overdue-only project scores 100-35=65 (actual: ${overdue25.score})`);
+
+  // Not overdue -> variance still penalises normally (no regression)
+  const lagging25 = await ProjectHealthService.computeHealth({ ...baseProject25, progress: 20 }, opts25);
+  assert(f25(lagging25, 'schedule_variance').delta === -25, 'Non-overdue severe lag still penalised -25');
+  assert(f25(lagging25, 'overdue_delivery').delta === 0, 'Non-overdue project takes no overdue penalty');
+  assert(f25(lagging25, 'schedule_variance').supersededBy === undefined, 'Active factor carries no superseded marker');
+  assert(lagging25.score === 75, `Lagging-but-not-overdue still scores 75 (actual: ${lagging25.score})`);
+
+  // Completed-but-late: neither penalty
+  const done25 = await ProjectHealthService.computeHealth(
+    { ...baseProject25, endDate: '2026-05-01', progress: 100, status: 'completed' }, opts25
+  );
+  assert(f25(done25, 'overdue_delivery').delta === 0 && f25(done25, 'schedule_variance').delta === 0,
+    'Completed project takes neither overdue nor variance penalty');
+
+  // --- R2: risk penalty caps at -30 --------------------------------------
+  const { RiskService: RS25 } = await import('../server/services/riskService');
+  const actor25 = { id: actor.id, name: actor.name };
+  const CAL = 'PRJ-102';
+  const riskBefore25 = await ProjectHealthService.getProjectHealth(CAL, opts25);
+  const baseRiskCount = f25(riskBefore25, 'unmitigated_risks').value;
+
+  const madeRisks25: string[] = [];
+  for (let i = 0; i < 5; i++) {
+    const r: any = await RS25.createRisk(
+      { title: `S85A cap probe ${i}`, projectId: CAL, probability: 5, impact: 5, status: 'Identified' } as any,
+      actor25
+    );
+    madeRisks25.push(r.id);
+  }
+  const capped25 = await ProjectHealthService.getProjectHealth(CAL, opts25);
+  const riskFactor25 = f25(capped25, 'unmitigated_risks');
+  assert(riskFactor25.value >= 5, `At least 5 open high/critical risks present (${riskFactor25.value})`);
+  assert(riskFactor25.value * 10 > 30, 'Uncapped penalty would have exceeded 30 (control)');
+  assert(riskFactor25.delta === -30, `Risk penalty capped at -30 (actual: ${riskFactor25.delta})`);
+
+  // Below the cap, risks still scale linearly. Delete down to a count that is
+  // strictly under the ceiling so this genuinely exercises the linear path.
+  for (const id of madeRisks25.slice(1)) await RS25.deleteRisk(id, actor25);
+  const partial25 = await ProjectHealthService.getProjectHealth(CAL, opts25);
+  const partialFactor25 = f25(partial25, 'unmitigated_risks');
+  assert(partialFactor25.value * 10 < 30, `Risk count is strictly below the cap (n=${partialFactor25.value})`);
+  assert(
+    partialFactor25.delta === -(partialFactor25.value * 10),
+    `Below the cap risks still cost exactly 10 each (n=${partialFactor25.value}, delta=${partialFactor25.delta})`
+  );
+  for (const id of madeRisks25.slice(0, 1)) await RS25.deleteRisk(id, actor25);
+  const restoredRisk25 = await ProjectHealthService.getProjectHealth(CAL, opts25);
+  assert(f25(restoredRisk25, 'unmitigated_risks').value === baseRiskCount, 'Risk probes cleaned up');
+
+  // --- R3: coverage ------------------------------------------------------
+  const cov25 = lagging25.coverage;
+  assert(cov25 !== undefined, 'Health result exposes coverage');
+  ['measuredFactors', 'applicableFactors', 'unavailableFactors', 'ratio', 'percentage']
+    .forEach((k) => assert(k in cov25, `Coverage exposes '${k}'`));
+  assert(cov25.applicableFactors === lagging25.factors.length, 'applicableFactors equals the total factor count');
+  assert(
+    cov25.measuredFactors === lagging25.factors.filter((f: any) => f.included).length,
+    'measuredFactors equals the included factor count'
+  );
+  assert(
+    cov25.measuredFactors + cov25.unavailableFactors === cov25.applicableFactors,
+    'Coverage counts reconcile'
+  );
+  assert(cov25.measuredFactors === 9 && cov25.applicableFactors === 11,
+    `Coverage is 9 of 11 with burn-rate and weekend unavailable (actual ${cov25.measuredFactors}/${cov25.applicableFactors})`);
+  assert(cov25.percentage === 82, `Coverage percentage is 82 (actual: ${cov25.percentage})`);
+  assert(cov25.ratio === 0.82, `Coverage ratio is 0.82 (actual: ${cov25.ratio})`);
+  assert(
+    lagging25.meta.includedFactors === cov25.measuredFactors &&
+    lagging25.meta.unavailableFactors === cov25.unavailableFactors,
+    'Legacy meta counters stay consistent with coverage'
+  );
+
+  // Coverage drops when a further factor becomes unmeasurable
+  const noDates25 = await ProjectHealthService.computeHealth(
+    { ...baseProject25, startDate: undefined, endDate: undefined }, opts25
+  );
+  assert(noDates25.coverage.measuredFactors === 8,
+    `Missing dates reduce coverage to 8 measured (actual: ${noDates25.coverage.measuredFactors})`);
+  assert(noDates25.coverage.percentage === 73, `Reduced coverage reports 73% (actual: ${noDates25.coverage.percentage})`);
+
+  // Coverage is deterministic
+  const covA = await ProjectHealthService.getProjectHealth(CAL, opts25);
+  const covB = await ProjectHealthService.getProjectHealth(CAL, opts25);
+  assert(JSON.stringify(covA!.coverage) === JSON.stringify(covB!.coverage), 'Coverage is deterministic');
+  assert(JSON.stringify(covA) === JSON.stringify(covB), 'Full calibrated result remains deterministic');
+
+  // --- Healthy example unchanged by calibration --------------------------
+  const healthy25 = await ProjectHealthService.computeHealth(baseProject25, opts25);
+  assert(healthy25.score === 100 && healthy25.band === 'Excellent', 'Healthy example still scores 100/Excellent');
+  assert(healthy25.coverage.measuredFactors === 9, 'Healthy example reports 9 measured factors');
+
+  // --- Model version reflects the calibration ----------------------------
+  assert(healthy25.meta.model === 'v2-calibrated-2026-09', 'Model version records the calibrated model');
+
+  // --- Coverage reaches the AI context -----------------------------------
+  const calCtx25 = await AiCtx.buildContext({
+    userId: adminUser24.id, role: adminUser24.role,
+    firstName: adminUser24.firstName, lastName: adminUser24.lastName, email: adminUser24.email,
+  });
+  assert(
+    calCtx25.projects.every((p: any) => p.health.coverage !== undefined),
+    'AI context health carries coverage'
+  );
+  const ctxCov25 = calCtx25.projects[0].health.coverage;
+  ['measuredFactors', 'applicableFactors', 'percentage'].forEach((k) =>
+    assert(k in ctxCov25, `AI context coverage exposes '${k}'`));
+  const ctxProjCode25 = calCtx25.projects[0].code;
+  const svcForCtx25 = await ProjectHealthService.getProjectHealth(ctxProjCode25);
+  assert(
+    ctxCov25.measuredFactors === svcForCtx25!.coverage.measuredFactors &&
+    ctxCov25.percentage === svcForCtx25!.coverage.percentage,
+    'AI context coverage matches the service exactly'
+  );
+  assert(calCtx25.meta.healthModel === 'v2-calibrated-2026-09', 'AI context records the calibrated model version');
+
   // Summary
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

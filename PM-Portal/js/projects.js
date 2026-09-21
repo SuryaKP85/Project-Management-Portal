@@ -1382,6 +1382,9 @@ export const ProjectsModule = {
     // Render linked delivery work breakdown (Epics, Features, Stories, Tasks)
     this.renderProjectDeliveryItems(proj.id);
 
+    // Render server-calculated project health (Sprint 8.4)
+    this.renderProjectHealth(proj.id);
+
     // Render linked project risks (Sprint 5A)
     this.renderProjectRisks(proj.id);
 
@@ -1552,6 +1555,148 @@ export const ProjectsModule = {
   /**
    * Renders Linked Project Risks (Sprint 5A) inside project detail
    */
+  /**
+   * Renders server-calculated Project Health (Sprint 8.4) inside project detail.
+   *
+   * The score is fetched from GET /api/v1/projects/:id/health and rendered
+   * as-is. No health arithmetic happens in the browser: the server response is
+   * the single source of truth.
+   */
+  async renderProjectHealth(projectId) {
+    const container = document.getElementById('project-health-container');
+    const bandBadge = document.getElementById('project-health-band-badge');
+    if (!container) return;
+
+    const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
+      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
+
+    const setBadge = (text, cls) => {
+      if (!bandBadge) return;
+      bandBadge.textContent = text;
+      bandBadge.className = `badge ms-1 ${cls}`;
+    };
+
+    // Loading
+    setBadge('…', 'bg-secondary');
+    container.innerHTML = `
+      <div class="text-center py-3 text-muted">
+        <i class="fa-solid fa-spinner fa-spin me-2"></i> Calculating project health...
+      </div>
+    `;
+
+    try {
+      const health = await ProjectService.getProjectHealth(projectId);
+      if (!health) throw new Error('Empty health response');
+
+      const bandStyles = {
+        Excellent: { badge: 'bg-success', bar: '#16a34a', text: 'text-success' },
+        Healthy: { badge: 'bg-success', bar: '#16a34a', text: 'text-success' },
+        Monitor: { badge: 'bg-info text-dark', bar: '#0ea5e9', text: 'text-info' },
+        'At Risk': { badge: 'bg-warning text-dark', bar: '#f59e0b', text: 'text-warning' },
+        Critical: { badge: 'bg-danger', bar: '#dc2626', text: 'text-danger' },
+      };
+      const style = bandStyles[health.band] || bandStyles.Monitor;
+      setBadge(health.band, style.badge);
+
+      const negatives = (health.factors || [])
+        .filter((f) => f.included && f.delta < 0)
+        .sort((a, b) => a.delta - b.delta);
+
+      const unavailable = (health.factors || []).filter((f) => !f.included);
+
+      const negativesHtml = negatives.length > 0
+        ? `
+          <div class="list-group">
+            ${negatives.map((f) => `
+              <div class="list-group-item d-flex justify-content-between align-items-center py-2" style="background-color: var(--bg-card);">
+                <div>
+                  <div class="fw-semibold" style="font-size: 0.85rem;">${esc(f.label)}</div>
+                  <div class="text-xs text-secondary">${esc(f.measured)}${f.value !== null && f.value !== undefined ? ` &middot; <span class="font-monospace">${esc(f.value)}</span>` : ''}</div>
+                </div>
+                <span class="badge bg-danger-subtle text-danger font-monospace">${f.delta}</span>
+              </div>
+            `).join('')}
+          </div>
+        `
+        : `<div class="text-xs text-secondary fst-italic">No factors are currently reducing this project's score.</div>`;
+
+      // Unavailable factors are shown explicitly so a missing signal is never
+      // mistaken for a healthy one.
+      const unavailableHtml = unavailable.length > 0
+        ? `
+          <div class="mt-3 p-2 rounded" style="background-color: var(--bg-light); border: 1px dashed var(--border-color);">
+            <div class="text-xs fw-semibold text-secondary mb-1">
+              <i class="fa-solid fa-circle-info me-1"></i>
+              Not measured (${unavailable.length}) &mdash; score reflects available data only
+            </div>
+            ${unavailable.map((f) => `
+              <div class="text-xs text-secondary">
+                &bull; <strong>${esc(f.label)}</strong>: ${esc(f.unavailableReason || 'Not available server-side.')}
+              </div>
+            `).join('')}
+          </div>
+        `
+        : '';
+
+      container.innerHTML = `
+        <div class="row g-3 align-items-center mb-3">
+          <div class="col-auto text-center">
+            <div class="fw-bold ${style.text}" style="font-size: 2.4rem; line-height: 1;">${esc(health.score)}</div>
+            <div class="text-xs text-secondary">out of 100</div>
+          </div>
+          <div class="col">
+            <div class="progress" style="height: 10px;">
+              <div class="progress-bar" role="progressbar"
+                   style="width: ${Number(health.score) || 0}%; background-color: ${style.bar};"
+                   aria-valuenow="${esc(health.score)}" aria-valuemin="0" aria-valuemax="100"></div>
+            </div>
+            <div class="d-flex justify-content-between mt-1">
+              <span class="text-xs text-secondary">
+                ${esc(health.meta?.includedFactors ?? 0)} factors measured
+                &middot; ${esc(health.meta?.unavailableFactors ?? 0)} not measured
+              </span>
+              <span class="text-xs text-secondary font-monospace" title="Deterministic scoring model version">
+                ${esc(health.meta?.model || '')}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="text-xs fw-semibold text-secondary text-uppercase mb-2">
+          Top contributing factors
+        </div>
+        ${negativesHtml}
+        ${unavailableHtml}
+      `;
+    } catch (err) {
+      const status = err && err.status;
+      setBadge('Unavailable', 'bg-secondary');
+
+      let message = `Could not load project health: ${esc(err?.message || 'Unknown error')}`;
+      let icon = 'fa-triangle-exclamation text-danger';
+
+      if (status === 404) {
+        message = 'Health is not available because this project could not be found on the server.';
+        icon = 'fa-circle-question text-secondary';
+      } else if (status === 401) {
+        message = 'Your secure session has expired. Sign in again to view project health.';
+        icon = 'fa-lock text-warning';
+      } else if (status === 403) {
+        message = 'You do not have permission to view health for this project.';
+        icon = 'fa-lock text-warning';
+      }
+
+      // Never renders a score on failure: an error must not look like a healthy project.
+      container.innerHTML = `
+        <div class="p-3 text-center rounded" style="background-color: var(--bg-light); border: 1px dashed var(--border-color);" role="alert">
+          <i class="fa-solid ${icon} me-1"></i>
+          <span class="text-xs text-secondary">${message}</span>
+        </div>
+      `;
+    }
+  },
+
   async renderProjectRisks(projectId) {
     const container = document.getElementById('project-risks-container');
     const badgeCount = document.getElementById('project-risks-count-badge');
