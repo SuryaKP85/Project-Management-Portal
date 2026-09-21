@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { AIProvider, AIProviderResponse } from './baseProvider';
+import { config, GEMINI_DEFAULT_MODEL, GEMINI_DEFAULT_TIMEOUT_MS } from '../../config/env';
 import {
   PM_SYSTEM_INSTRUCTION,
   buildGuardedContents,
@@ -19,6 +20,51 @@ function getClient(): GoogleGenAI | null {
   return geminiClient;
 }
 
+/**
+ * Resolves the model for this call. Reads the environment first so an override
+ * applies without a restart, mirroring how the API key is read above, and falls
+ * back to the configured default.
+ */
+export function resolveGeminiModel(): string {
+  const fromEnv = (process.env.GEMINI_MODEL || '').trim();
+  if (fromEnv) return fromEnv;
+  return config.geminiModel || GEMINI_DEFAULT_MODEL;
+}
+
+/**
+ * Resolves the per-call timeout in milliseconds. A non-numeric or non-positive
+ * override is ignored in favour of the configured default, so a malformed value
+ * cannot disable the ceiling entirely.
+ */
+export function resolveGeminiTimeoutMs(): number {
+  const parsedEnv = parseInt((process.env.GEMINI_TIMEOUT_MS || '').trim(), 10);
+  if (Number.isFinite(parsedEnv) && parsedEnv > 0) return parsedEnv;
+  return config.geminiTimeoutMs > 0 ? config.geminiTimeoutMs : GEMINI_DEFAULT_TIMEOUT_MS;
+}
+
+/**
+ * Applies the configured ceiling to a single Gemini call. The timer is always
+ * cleared, so a fast response does not leave a pending handle holding the event
+ * loop open.
+ */
+export async function withGeminiTimeout<T>(operation: Promise<T>, label: string): Promise<T> {
+  const timeoutMs = resolveGeminiTimeoutMs();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`Gemini ${label} timed out after ${timeoutMs}ms`)),
+      timeoutMs
+    );
+  });
+
+  try {
+    return await Promise.race([operation, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export const GeminiAIProvider: AIProvider = {
   name: 'gemini',
 
@@ -35,25 +81,22 @@ export const GeminiAIProvider: AIProvider = {
     // System instructions travel in the SDK's dedicated channel; PM context and
     // the user's question are delimited and labelled as untrusted data.
     const guardedContents = buildGuardedContents(prompt, context);
-
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Gemini API call timed out after 4000ms')), 4000)
-    );
+    const model = resolveGeminiModel();
 
     try {
-      const response = await Promise.race([
+      const response = await withGeminiTimeout(
         ai.models.generateContent({
-          model: 'gemini-3.6-flash',
+          model,
           contents: guardedContents,
           config: { systemInstruction: PM_SYSTEM_INSTRUCTION },
         }),
-        timeoutPromise,
-      ]);
+        'query'
+      );
 
       return {
         provider: 'gemini',
         text: response.text || 'Analysis completed.',
-        metadata: { model: 'gemini-3.6-flash' },
+        metadata: { model },
       };
     } catch (err: any) {
       console.warn('Gemini API query notice:', err.message);
@@ -73,15 +116,18 @@ export const GeminiAIProvider: AIProvider = {
     );
 
     try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
-        contents: guardedContents,
-        config: {
-          systemInstruction: taskSystemInstruction(
-            'Analyse the supplied project record and return risk mitigations and health recommendations.'
-          ),
-        },
-      });
+      const response = await withGeminiTimeout(
+        ai.models.generateContent({
+          model: resolveGeminiModel(),
+          contents: guardedContents,
+          config: {
+            systemInstruction: taskSystemInstruction(
+              'Analyse the supplied project record and return risk mitigations and health recommendations.'
+            ),
+          },
+        }),
+        'project insights'
+      );
 
       return {
         provider: 'gemini',
@@ -120,21 +166,24 @@ export const GeminiAIProvider: AIProvider = {
     );
 
     try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
-        contents: guardedContents,
-        config: {
-          systemInstruction: taskSystemInstruction(
-            `Draft a concise, professional executive weekly status email to stakeholders, using only the supplied details.
+      const response = await withGeminiTimeout(
+        ai.models.generateContent({
+          model: resolveGeminiModel(),
+          contents: guardedContents,
+          config: {
+            systemInstruction: taskSystemInstruction(
+              `Draft a concise, professional executive weekly status email to stakeholders, using only the supplied details.
 Format as:
 Subject: [Project] Status Update
 Dear Stakeholders,
 ...
 Best regards,
 Surya Project Management Team`
-          ),
-        },
-      });
+            ),
+          },
+        }),
+        'draft email'
+      );
 
       return {
         provider: 'gemini',

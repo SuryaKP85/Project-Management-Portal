@@ -872,6 +872,98 @@ async function runTests() {
     'Unserialisable context degrades safely instead of throwing'
   );
 
+  // 21. Gemini Provider Configuration (Sprint 7B Step 2)
+  // Gemini is NOT enabled here: no API key is set, so these assert configuration
+  // resolution, timeout behaviour and fallback — not live model calls.
+  console.log('\n--- 21. Gemini Provider Configuration ---');
+  const {
+    resolveGeminiModel,
+    resolveGeminiTimeoutMs,
+    withGeminiTimeout,
+    GeminiAIProvider: GeminiProv,
+  } = await import('../server/ai/providers/geminiProvider');
+  const { GEMINI_DEFAULT_MODEL, GEMINI_DEFAULT_TIMEOUT_MS } = await import('../server/config/env');
+
+  const originalModelEnv = process.env.GEMINI_MODEL;
+  const originalTimeoutEnv = process.env.GEMINI_TIMEOUT_MS;
+
+  // --- Default model ---
+  delete process.env.GEMINI_MODEL;
+  assert(GEMINI_DEFAULT_MODEL === 'gemini-3.6-flash', 'Configured default model is gemini-3.6-flash');
+  assert(resolveGeminiModel() === 'gemini-3.6-flash', 'resolveGeminiModel() returns the default when unset');
+
+  // --- Environment model override ---
+  process.env.GEMINI_MODEL = 'gemini-3.8-flash';
+  assert(resolveGeminiModel() === 'gemini-3.8-flash', 'GEMINI_MODEL overrides the default model');
+  process.env.GEMINI_MODEL = '   ';
+  assert(resolveGeminiModel() === 'gemini-3.6-flash', 'Blank GEMINI_MODEL falls back to the default');
+  delete process.env.GEMINI_MODEL;
+
+  // --- Timeout configuration ---
+  delete process.env.GEMINI_TIMEOUT_MS;
+  assert(GEMINI_DEFAULT_TIMEOUT_MS === 12000, 'Configured default Gemini timeout is 12000ms');
+  assert(resolveGeminiTimeoutMs() === 12000, 'resolveGeminiTimeoutMs() returns the default when unset');
+  process.env.GEMINI_TIMEOUT_MS = '2500';
+  assert(resolveGeminiTimeoutMs() === 2500, 'GEMINI_TIMEOUT_MS overrides the default timeout');
+  process.env.GEMINI_TIMEOUT_MS = 'not-a-number';
+  assert(resolveGeminiTimeoutMs() === 12000, 'Non-numeric GEMINI_TIMEOUT_MS is ignored');
+  process.env.GEMINI_TIMEOUT_MS = '-5';
+  assert(resolveGeminiTimeoutMs() === 12000, 'Non-positive GEMINI_TIMEOUT_MS is ignored');
+  delete process.env.GEMINI_TIMEOUT_MS;
+
+  // --- Timeout helper behaviour ---
+  process.env.GEMINI_TIMEOUT_MS = '80';
+  let timedOut = false;
+  try {
+    await withGeminiTimeout(new Promise((resolve) => setTimeout(resolve, 1000)), 'slow-probe');
+  } catch (err: any) {
+    timedOut = true;
+    assert(/timed out after 80ms/.test(err.message), 'Timeout error reports the configured duration');
+    assert(/slow-probe/.test(err.message), 'Timeout error identifies the operation');
+  }
+  assert(timedOut, 'withGeminiTimeout rejects an operation exceeding the configured timeout');
+
+  const fastValue = await withGeminiTimeout(Promise.resolve('fast'), 'fast-probe');
+  assert(fastValue === 'fast', 'withGeminiTimeout resolves normally when the call completes in time');
+  delete process.env.GEMINI_TIMEOUT_MS;
+
+  // --- All three provider methods share the timeout + model resolution ---
+  const providerSource = await import('fs').then((fs) =>
+    fs.readFileSync('server/ai/providers/geminiProvider.ts', 'utf8')
+  );
+  const timeoutCallSites = (providerSource.match(/await withGeminiTimeout\(/g) || []).length;
+  const modelCallSites = (providerSource.match(/resolveGeminiModel\(\)/g) || []).length - 1; // minus declaration
+  assert(timeoutCallSites === 3, `All three Gemini methods apply the shared timeout (found ${timeoutCallSites})`);
+  assert(modelCallSites === 3, `All three Gemini methods resolve the configured model (found ${modelCallSites})`);
+  assert(
+    !/model:\s*'gemini-[\d.]+-flash'/.test(providerSource),
+    'No hardcoded model id remains in the provider'
+  );
+
+  // --- Prompt-injection boundary preserved ---
+  assert(
+    (providerSource.match(/systemInstruction/g) || []).length >= 3,
+    'systemInstruction channel retained on all three methods'
+  );
+  assert(
+    (providerSource.match(/buildGuardedContents\(/g) || []).length >= 3,
+    'Untrusted-data wrapping retained on all three methods'
+  );
+
+  // --- LocalRule fallback while Gemini is unavailable ---
+  assert(GeminiProv.isAvailable() === false, 'Gemini remains unavailable without an API key');
+  const fallbackProvider = AIService.getProvider();
+  assert(fallbackProvider.name === 'local-rules', 'Provider selection falls back to local rules');
+  const fallbackResult = await AIService.query('risk overview');
+  assert(fallbackResult.provider === 'local-rules', 'AIService.query answers via the local rule provider');
+  assert(fallbackResult.text.length > 10, 'Local rule fallback still returns a usable response');
+
+  // Restore environment
+  if (originalModelEnv === undefined) delete process.env.GEMINI_MODEL;
+  else process.env.GEMINI_MODEL = originalModelEnv;
+  if (originalTimeoutEnv === undefined) delete process.env.GEMINI_TIMEOUT_MS;
+  else process.env.GEMINI_TIMEOUT_MS = originalTimeoutEnv;
+
   // Summary
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
