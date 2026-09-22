@@ -116,7 +116,7 @@ async function resolveOptionalOwner(ownerId?: string) {
 export interface RoadmapLinkedGoal {
   linkId: string;
   goalId: string;
-  code?: string;
+  /** Goals have no code; they are identified by goalId and labelled by name. */
   name?: string;
   status?: string;
   progress?: number;
@@ -171,9 +171,9 @@ export const RoadmapService = {
   },
 
   /**
-   * Resolves the goals aligned to an item. Names and codes are read from the
-   * Goal repository at query time rather than trusted from the stored link, so
-   * a renamed goal cannot leave a stale label behind.
+   * Resolves the goals aligned to an item. Names are read from the Goal
+   * repository at query time rather than trusted from the stored link, so a
+   * renamed goal cannot leave a stale label behind.
    */
   async getLinkedGoals(roadmapId: string): Promise<RoadmapLinkedGoal[]> {
     const links = await GovernanceLinkRepository.getLinksFor(LINK_SOURCE, roadmapId);
@@ -185,7 +185,6 @@ export const RoadmapService = {
       resolved.push({
         linkId: link.id,
         goalId: link.targetId,
-        code: goal?.id,
         name: goal?.objective ?? link.targetName,
         status: goal?.status,
         progress: goal?.progress,

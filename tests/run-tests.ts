@@ -2898,6 +2898,7 @@ async function runTests() {
   const s3 = await RoadmapService.createItem({ name: 'S96B live C' }, actor26);
   assert(suffix(s3.code) > suffix(s2.code), `Deleted highest code is not re-issued through the service (${s2.code} -> ${s3.code})`);
   assert(!/size \+ 101|\.size \+/.test(repoSource31.slice(repoSource31.indexOf('async create('))), 'Size-based code generation is gone from create()');
+  assert(!/async count\(/.test(repoSource31), 'RoadmapRepository no longer defines an unused count() method');
 
   // Cleanup: the fresh instance is discarded with its module; live probes removed.
   await RoadmapService.deleteItem(s1.id, actor26);
@@ -2940,9 +2941,10 @@ async function runTests() {
   await RoadmapController.getById(req27({ params: { id: 'rm_1' } }) as any, shapeRes33 as any, next27 as any);
   const shapeKeys33 = Object.keys(shapeRes33.body.data.item.linkedGoals[0]).sort();
   assert(
-    JSON.stringify(shapeKeys33) === JSON.stringify(['code', 'goalId', 'linkId', 'name', 'progress', 'status']),
-    `linkedGoals entry shape is unchanged (${shapeKeys33.join(',')})`
+    JSON.stringify(shapeKeys33) === JSON.stringify(['goalId', 'linkId', 'name', 'progress', 'status']),
+    `linkedGoals entry carries exactly goalId/linkId/name/progress/status (${shapeKeys33.join(',')})`
   );
+  assert(!('code' in shapeRes33.body.data.item.linkedGoals[0]), 'linkedGoals entries carry no code (goals have none)');
   assert('progress' in shapeRes33.body.data.item && 'progressSource' in shapeRes33.body.data.item, 'Item keeps derived progress fields');
 
   // B. Delete the probe goal

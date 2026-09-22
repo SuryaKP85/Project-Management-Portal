@@ -11,6 +11,15 @@ import { RoadmapService } from './services/roadmapService.js';
 /** V2 roles permitted to create/amend roadmap items; delete is admin-only. */
 const ROADMAP_WRITE_ROLES = ['admin', 'project-manager', 'product-manager'];
 
+/**
+ * Full HTML escaping for values rendered as markup text. One definition shared
+ * by every renderer in this module; the Roadmap modal's attribute-only `esc`
+ * (quotes only, for input values) is a different helper and stays separate.
+ */
+const escapeHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+));
+
 export const PortfoliosModule = {
   app: null,
   portfolios: [],
@@ -256,9 +265,7 @@ export const PortfoliosModule = {
   renderRoadmap(container) {
     this.populateRoadmapFilters();
 
-    const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
-      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-    ));
+    const esc = escapeHtml;
 
     // Error states first: a failure must never look like an empty roadmap.
     if (this.roadmapError) {
@@ -555,9 +562,7 @@ export const PortfoliosModule = {
     const esc = (v) => String(v ?? '').replace(/"/g, '&quot;');
     // Goal objectives are rendered as markup here, so they need full escaping
     // rather than the attribute-only helper used for the input values above.
-    const escText = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
-      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-    ));
+    const escText = escapeHtml;
     const sel = (a, b) => (a === b ? 'selected' : '');
     const canWrite = this.canWriteRoadmap();
 
@@ -946,9 +951,7 @@ export const PortfoliosModule = {
       return;
     }
 
-    const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
-      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-    ));
+    const esc = escapeHtml;
 
     // Initiatives come straight from GET /goals/:id/roadmap. A goal may own
     // none, one or several; the server's own codes are shown, never invented.

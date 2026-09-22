@@ -11,7 +11,8 @@ import { apiClient } from './apiClient.js';
 export class RoadmapService {
   /**
    * @param {{productId?:string, portfolioId?:string, projectId?:string,
-   *          ownerId?:string, status?:string, priority?:string, search?:string}} params
+   *          ownerId?:string, status?:string, priority?:string, search?:string,
+   *          goalId?:string}} params  goalId narrows to initiatives aligned to that goal
    */
   static async getItems(params = {}) {
     const query = new URLSearchParams();

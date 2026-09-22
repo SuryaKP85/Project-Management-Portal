@@ -694,8 +694,7 @@ export type GovernanceLinkTargetType =
   | 'sprint'
   | 'milestone'
   | 'release'
-  | 'goal'
-  | 'roadmap';
+  | 'goal';
 
 export interface GovernanceLink {
   id: string;

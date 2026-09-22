@@ -118,7 +118,14 @@ export interface AiContextInitiative {
 
 export interface AiContextProjectStrategy {
   basis: 'retrieved-relationship';
-  /** 'none' when no roadmap initiative is chartered as this project. */
+  /**
+   * CHARTER alignment, read from RoadmapItem.projectId: 'aligned' means at
+   * least one roadmap initiative is chartered as this project; 'none' means no
+   * initiative points at it. It says nothing about Goal links — an 'aligned'
+   * project may carry initiatives whose `goals` arrays are empty. This is a
+   * different notion from the Portfolios UI, where "alignment" means the
+   * Goal <-> RoadmapItem links themselves.
+   */
   alignment: 'aligned' | 'none';
   initiatives: AiContextInitiative[];
   /** True when this project's initiatives or their goals were capped. */

@@ -585,8 +585,9 @@ CREATE INDEX IF NOT EXISTS idx_roadmap_sequence ON roadmap_items(sequence, creat
 
 -- Roadmap code generator (Sprint 9.6B). Codes are 'RM-' || nextval; the
 -- sequence never re-issues a value, survives restarts and is atomic across
--- connections. Starts after the in-memory seeds RM-101..RM-103. The repository
--- raises it past any higher existing code on first use, never lowers it.
+-- connections. Starts after the in-memory seeds RM-101..RM-103. Before each
+-- generated code the repository raises it past any higher existing code (for
+-- example one supplied explicitly or inserted directly); it never lowers it.
 CREATE SEQUENCE IF NOT EXISTS roadmap_code_seq START WITH 104 INCREMENT BY 1;
 
 

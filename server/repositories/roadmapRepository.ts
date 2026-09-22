@@ -304,10 +304,6 @@ export const RoadmapRepository = {
     return memoryRoadmapItems.get(id) || null;
   },
 
-  async count(filter?: RoadmapFilter): Promise<number> {
-    return (await this.findAll(filter)).length;
-  },
-
   /** Next sequence value, placing new items at the end of the list. */
   async nextSequence(): Promise<number> {
     const items = await this.findAll();
