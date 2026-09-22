@@ -2687,6 +2687,223 @@ async function runTests() {
   assert(strategyOnly(postSealed30) === strategyOnly(preSealed30), 'Sealed strategic context returns to the pre-test state');
   assert(parseSealed(postSealed30).meta.projectsInScope === parseSealed(preSealed30).meta.projectsInScope, '§30 probe items removed cleanly');
 
+  // 31. Roadmap PostgreSQL schema contract (Sprint 9.6A)
+  // Static: proves the DDL and the repository SQL agree without needing a live
+  // database, and that no repository references a table the schema lacks.
+  console.log('\n--- 31. Roadmap PostgreSQL Schema Contract ---');
+  const fs31 = await import('fs');
+  const path31 = await import('path');
+  const schemaSql31 = fs31.readFileSync('server/db/schema.sql', 'utf8');
+  const repoSource31 = fs31.readFileSync('server/repositories/roadmapRepository.ts', 'utf8');
+
+  // --- B. the roadmap_items DDL block ---
+  const ddlMatch31 = schemaSql31.match(/CREATE TABLE IF NOT EXISTS roadmap_items \(([\s\S]*?)\n\);/);
+  assert(!!ddlMatch31, 'schema.sql defines roadmap_items');
+  const ddlBody31 = ddlMatch31 ? ddlMatch31[1] : '';
+  const ddlColumns31 = ddlBody31
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('--'))
+    .map((l) => l.split(/\s+/)[0])
+    .filter((tok) => /^[a-z_]+$/.test(tok));
+  assert(ddlColumns31.length === 21, `roadmap_items declares 21 columns (${ddlColumns31.length})`);
+
+  // --- C. every column the repository touches ---
+  const referenced31 = new Set<string>();
+  const insertMatch31 = repoSource31.match(/INSERT INTO roadmap_items \(([\s\S]*?)\)\s*VALUES/);
+  assert(!!insertMatch31, 'Repository INSERT statement located');
+  (insertMatch31 ? insertMatch31[1] : '').split(',').map((c) => c.trim()).filter(Boolean).forEach((c) => referenced31.add(c));
+  const insertCount31 = referenced31.size;
+
+  const updateBlocks31 = [...repoSource31.matchAll(/UPDATE roadmap_items SET([\s\S]*?)WHERE/g)];
+  assert(updateBlocks31.length === 2, `Repository has two UPDATE statements (update, reorder) (${updateBlocks31.length})`);
+  updateBlocks31.forEach((m) => [...m[1].matchAll(/([a-z_]+)\s*=\s*\$\d+/g)].forEach((c) => referenced31.add(c[1])));
+
+  const mapRowBlock31 = repoSource31.match(/function mapRow\([\s\S]*?\n}/);
+  assert(!!mapRowBlock31, 'mapRow located');
+  [...(mapRowBlock31 ? mapRowBlock31[0] : '').matchAll(/\br\.([a-z_]+)/g)].forEach((c) => referenced31.add(c[1]));
+
+  [...repoSource31.matchAll(/ORDER BY ([a-z_ ,ASC]+?)['`]/g)]
+    .flatMap((m) => m[1].split(','))
+    .map((t) => t.trim().split(/\s+/)[0])
+    .filter((t) => /^[a-z_]+$/.test(t))
+    .forEach((c) => referenced31.add(c));
+  [...repoSource31.matchAll(/WHERE ([a-z_]+) = \$\d+/g)].forEach((c) => referenced31.add(c[1]));
+
+  assert(insertCount31 === 21, `INSERT writes all 21 columns (${insertCount31})`);
+  assert(referenced31.has('sequence') && referenced31.has('created_at'), 'ORDER BY columns captured');
+  assert(referenced31.has('id'), 'WHERE column captured');
+
+  // --- D. both directions ---
+  const ddlSet31 = new Set(ddlColumns31);
+  const missingFromDdl31 = [...referenced31].filter((c) => !ddlSet31.has(c));
+  assert(missingFromDdl31.length === 0, `Every repository column exists in the DDL (missing: ${missingFromDdl31.join(', ') || 'none'})`);
+  // Columns the DDL may carry that the repository deliberately never reads.
+  const UNUSED_DDL_COLUMNS31: string[] = [];
+  const unusedInRepo31 = ddlColumns31.filter((c) => !referenced31.has(c) && !UNUSED_DDL_COLUMNS31.includes(c));
+  assert(unusedInRepo31.length === 0, `Every DDL column is used by the repository (unmapped: ${unusedInRepo31.join(', ') || 'none'})`);
+
+  // --- E. constraints ---
+  assert(/\bid VARCHAR\(64\) PRIMARY KEY/.test(ddlBody31), 'PRIMARY KEY on id');
+  assert(/\bcode VARCHAR\(50\) UNIQUE NOT NULL/.test(ddlBody31), 'UNIQUE NOT NULL on code');
+  const fk31 = (col: string, table: string) =>
+    new RegExp(`\\b${col} VARCHAR\\(64\\) REFERENCES ${table}\\(id\\) ON DELETE SET NULL`).test(ddlBody31);
+  assert(fk31('owner_id', 'users'), 'FK owner_id -> users(id) ON DELETE SET NULL');
+  assert(fk31('product_id', 'products'), 'FK product_id -> products(id) ON DELETE SET NULL');
+  assert(fk31('portfolio_id', 'portfolios'), 'FK portfolio_id -> portfolios(id) ON DELETE SET NULL');
+  assert(fk31('project_id', 'projects'), 'FK project_id -> projects(id) ON DELETE SET NULL');
+  assert(!/NOT NULL REFERENCES/.test(ddlBody31), 'No association on roadmap_items is mandatory');
+  assert(/\bstart_date DATE\b/.test(ddlBody31) && /\btarget_date DATE\b/.test(ddlBody31), 'Dates use the DATE type');
+  assert(/\bsequence INTEGER NOT NULL DEFAULT 0/.test(ddlBody31), 'sequence is a non-null INTEGER');
+
+  // --- F. indexes ---
+  const idx31 = (name: string, cols: string) =>
+    new RegExp(`CREATE INDEX IF NOT EXISTS ${name} ON roadmap_items\\(${cols}\\);`).test(schemaSql31);
+  assert(idx31('idx_roadmap_project', 'project_id'), 'Index on project_id');
+  assert(idx31('idx_roadmap_product', 'product_id'), 'Index on product_id');
+  assert(idx31('idx_roadmap_portfolio', 'portfolio_id'), 'Index on portfolio_id');
+  assert(idx31('idx_roadmap_owner', 'owner_id'), 'Index on owner_id');
+  assert(idx31('idx_roadmap_status', 'status'), 'Index on status');
+  assert(idx31('idx_roadmap_priority', 'priority'), 'Index on priority');
+  assert(idx31('idx_roadmap_sequence', 'sequence, created_at'), 'Composite index on (sequence, created_at) for ORDER BY');
+  assert(/CREATE SEQUENCE IF NOT EXISTS roadmap_code_seq START WITH 104 INCREMENT BY 1;/.test(schemaSql31),
+    'roadmap_code_seq sequence declared idempotently, starting after the seeds');
+  assert(/nextval\('roadmap_code_seq'\)/.test(repoSource31) && /FROM roadmap_code_seq/.test(repoSource31),
+    'Repository generates codes from roadmap_code_seq and reads its state for the sync');
+
+  // --- G. every table any repository touches has DDL ---
+  // Sequences are relational objects too: a FROM against one is legitimate.
+  const schemaTables31 = new Set(
+    [...schemaSql31.matchAll(/CREATE (?:TABLE|SEQUENCE) IF NOT EXISTS ([a-z_]+)/g)].map((m) => m[1])
+  );
+  // Non-application tables a repository may legitimately reference (none today).
+  const EXTERNAL_TABLES31: string[] = [];
+  const repoDir31 = 'server/repositories';
+  const referencedTables31 = new Set<string>();
+  for (const file of fs31.readdirSync(repoDir31).filter((f) => f.endsWith('.ts'))) {
+    const src = fs31.readFileSync(path31.join(repoDir31, file), 'utf8');
+    // Uppercase keywords only, followed by a lowercase identifier: skips
+    // subqueries "FROM (", template placeholders "FROM ${", and prose.
+    for (const m of src.matchAll(/\b(?:FROM|INTO|UPDATE)\s+([a-z][a-z0-9_]*)\b/g)) referencedTables31.add(m[1]);
+  }
+  assert(referencedTables31.has('roadmap_items') && referencedTables31.has('governance_links'), 'Table scan captures roadmap and link tables (control)');
+  const tablesWithoutDdl31 = [...referencedTables31].filter((t) => !schemaTables31.has(t) && !EXTERNAL_TABLES31.includes(t));
+  assert(tablesWithoutDdl31.length === 0, `Every repository table has DDL in schema.sql (missing: ${tablesWithoutDdl31.join(', ') || 'none'})`);
+
+  // --- H. governance_links stays polymorphic ---
+  const govDdl31 = schemaSql31.match(/CREATE TABLE IF NOT EXISTS governance_links \(([\s\S]*?)\n\);/);
+  assert(!!govDdl31 && !/REFERENCES/.test(govDdl31[1]), 'governance_links carries no foreign keys (polymorphic by design)');
+  assert(!/REFERENCES roadmap_items/.test(schemaSql31), 'No table declares a FK to roadmap_items');
+  assert(schemaSql31.indexOf('CREATE TABLE IF NOT EXISTS projects') < schemaSql31.indexOf('CREATE TABLE IF NOT EXISTS roadmap_items'),
+    'roadmap_items is declared after every parent table it references');
+
+  // --- Repository PG-path behaviour is expressed in source (live proof is in tests/roadmap-postgres.test.ts) ---
+  const deleteBlock31 = repoSource31.match(/async delete\([\s\S]*?\n  },/);
+  assert(!!deleteBlock31 && /rowCount/.test(deleteBlock31[0]), 'PG delete decides from rowCount, not the memory map');
+  const reorderBlock31 = repoSource31.match(/async reorder\([\s\S]*?\n  },/);
+  assert(!!reorderBlock31 && /rowCount/.test(reorderBlock31[0]), 'PG reorder counts rows PostgreSQL actually updated');
+  assert(/startDate: toDateOnly\(r\.start_date\)/.test(repoSource31) && /createdAt: toIsoString\(r\.created_at\)/.test(repoSource31),
+    'mapRow normalises PG temporal values to the string contract');
+  assert(/getFullYear\(\)/.test(repoSource31), 'DATE normalisation uses local calendar components, not toISOString');
+
+  // Memory-mode behaviour is unchanged: delete/reorder still work without a DB.
+  const memProbe31 = await RoadmapService.createItem({ name: 'S96A memory probe' }, actor26);
+  assert((await RoadmapService.reorderItems([{ id: memProbe31.id, sequence: 999 }], actor26)).applied === 1, 'Memory-mode reorder still applies');
+  assert((await RoadmapRepository.findById(memProbe31.id))!.sequence === 999, 'Memory-mode reorder persisted in the store');
+  assert((await RoadmapService.reorderItems([{ id: 'rm_missing_96a', sequence: 1 }], actor26)).applied === 0, 'Memory-mode reorder still skips unknown ids');
+  assert((await RoadmapService.deleteItem(memProbe31.id, actor26)) === true, 'Memory-mode delete still returns true');
+  assert((await RoadmapService.deleteItem(memProbe31.id, actor26)) === false, 'Memory-mode delete of a missing item still returns false');
+  const seedDates31 = await RoadmapRepository.findById('rm_1');
+  assert(seedDates31!.startDate === '2026-01-15' && seedDates31!.targetDate === '2026-10-31', 'Memory-mode dates untouched');
+
+  // 32. Roadmap code generation (Sprint 9.6B)
+  console.log('\n--- 32. Roadmap Code Generation ---');
+  const { nextCodeNumber: nextCode32, ROADMAP_CODE_PATTERN: CODE_RE32 } = await import('../server/repositories/roadmapRepository');
+
+  // --- Pure helper ---
+  assert(nextCode32([]) === 101, 'nextCodeNumber([]) is 101');
+  assert(nextCode32(['RM-7', 'RM-X', 'RM-12']) === 13, "nextCodeNumber(['RM-7','RM-X','RM-12']) is 13");
+  assert(nextCode32(['ROAD-101', 'RM-ABC', 'rm-500', null, undefined]) === 101, 'Malformed and non-string codes are ignored');
+  assert(nextCode32(['RM-101', 'RM-102', 'RM-103']) === 104, 'Seed codes yield 104');
+  assert(nextCode32(['RM-0250']) === 251, 'Leading zeros parse numerically');
+  assert(CODE_RE32.test('RM-104') && !CODE_RE32.test('RM-104 ') && !CODE_RE32.test('RM-'), 'Code pattern is strict');
+
+  // --- Fresh process simulation ---
+  // The repository keeps its counter in module state, and earlier sections have
+  // already consumed codes. A query-string import yields a second, pristine
+  // module instance (seeds only, counter unset) — the same state a new process
+  // starts from — without adding a test-only reset hook to production code.
+  const freshSpec32 = '../server/repositories/roadmapRepository' + '?s96b-fresh';
+  const FreshRepo32 = (await import(freshSpec32)).RoadmapRepository;
+  const freshSeeds32 = await FreshRepo32.findAll();
+  assert(
+    JSON.stringify(freshSeeds32.map((i: any) => i.code)) === JSON.stringify(['RM-101', 'RM-102', 'RM-103']),
+    'Fresh instance holds exactly the seeded codes RM-101..RM-103'
+  );
+  const g104 = await FreshRepo32.create({ name: 'S96B first' });
+  assert(g104.code === 'RM-104', `First generated code after the seeds is RM-104 (${g104.code})`);
+  const g105 = await FreshRepo32.create({ name: 'S96B second' });
+  assert(g105.code === 'RM-105', `Second generated code is RM-105 (${g105.code})`);
+  assert((await FreshRepo32.delete(g105.id)) === true, 'RM-105 deleted');
+  const g106 = await FreshRepo32.create({ name: 'S96B third' });
+  assert(g106.code === 'RM-106', `Deleted RM-105 is not re-issued; next is RM-106 (${g106.code})`);
+  assert(!(await FreshRepo32.findAll()).some((i: any) => i.code === 'RM-105'), 'RM-105 no longer exists (control)');
+
+  const e250 = await FreshRepo32.create({ name: 'S96B explicit', code: 'RM-250' });
+  assert(e250.code === 'RM-250', 'Explicit valid code is preserved exactly');
+  const g251 = await FreshRepo32.create({ name: 'S96B after explicit' });
+  assert(g251.code === 'RM-251', `Explicit RM-250 advances the generator to RM-251 (${g251.code})`);
+
+  const malformed32 = ['RM-X', 'ROAD-101', 'RM-ABC'];
+  const malformedItems32 = [];
+  for (const code of malformed32) malformedItems32.push(await FreshRepo32.create({ name: `S96B ${code}`, code }));
+  assert(malformedItems32.every((i: any, n: number) => i.code === malformed32[n]), 'Malformed explicit codes are accepted as supplied');
+  const g252 = await FreshRepo32.create({ name: 'S96B after malformed' });
+  assert(g252.code === 'RM-252', `Malformed codes do not move the generator (${g252.code})`);
+
+  let dupRejected32 = false;
+  try { await FreshRepo32.create({ name: 'S96B dup', code: 'RM-250' }); } catch { dupRejected32 = true; }
+  assert(dupRejected32, 'Duplicate explicit code is rejected');
+  let dupMalformedRejected32 = false;
+  try { await FreshRepo32.create({ name: 'S96B dup', code: 'RM-X' }); } catch { dupMalformedRejected32 = true; }
+  assert(dupMalformedRejected32, 'Duplicate malformed explicit code is rejected too');
+  assert((await FreshRepo32.findAll()).filter((i: any) => i.code === 'RM-250').length === 1, 'Rejected duplicate left no phantom row');
+
+  const burst32 = await Promise.all([1, 2, 3, 4, 5].map((n) => FreshRepo32.create({ name: `S96B burst ${n}` })));
+  const burstCodes32 = burst32.map((i: any) => i.code);
+  assert(new Set(burstCodes32).size === 5, `Five concurrent creates produce five distinct codes (${burstCodes32.join(',')})`);
+  assert(burstCodes32.every((c: string) => CODE_RE32.test(c)), 'Concurrent codes all match RM-###');
+  assert(
+    JSON.stringify(burstCodes32) === JSON.stringify(['RM-253', 'RM-254', 'RM-255', 'RM-256', 'RM-257']),
+    'Concurrent codes are consecutive and in issue order'
+  );
+  const allFresh32 = await FreshRepo32.findAll();
+  assert(new Set(allFresh32.map((i: any) => i.code)).size === allFresh32.length, 'No duplicate codes anywhere in the fresh store');
+  assert(
+    ['rm_1', 'rm_2', 'rm_3'].every((id) => allFresh32.some((i: any) => i.id === id)) &&
+      allFresh32.find((i: any) => i.id === 'rm_1').code === 'RM-101',
+    'Seed ids and codes untouched by generation'
+  );
+
+  // --- The live instance behind RoadmapService uses the same generator ---
+  const liveBefore32 = await RoadmapRepository.findAll();
+  const liveNext32 = nextCode32(liveBefore32.map((i) => i.code));
+  const s1 = await RoadmapService.createItem({ name: 'S96B live A' }, actor26);
+  const s2 = await RoadmapService.createItem({ name: 'S96B live B' }, actor26);
+  const suffix = (c: string) => Number(CODE_RE32.exec(c)![1]);
+  assert(CODE_RE32.test(s1.code) && CODE_RE32.test(s2.code), 'Service-created codes match RM-###');
+  assert(suffix(s1.code) >= liveNext32 && suffix(s2.code) === suffix(s1.code) + 1, 'Service codes are monotonic and never below the existing maximum');
+  assert(!liveBefore32.some((i) => i.code === s1.code || i.code === s2.code), 'Service codes collide with nothing that existed');
+  assert((await RoadmapService.deleteItem(s2.id, actor26)) === true, 'Highest live item deleted');
+  const s3 = await RoadmapService.createItem({ name: 'S96B live C' }, actor26);
+  assert(suffix(s3.code) > suffix(s2.code), `Deleted highest code is not re-issued through the service (${s2.code} -> ${s3.code})`);
+  assert(!/size \+ 101|\.size \+/.test(repoSource31.slice(repoSource31.indexOf('async create('))), 'Size-based code generation is gone from create()');
+
+  // Cleanup: the fresh instance is discarded with its module; live probes removed.
+  await RoadmapService.deleteItem(s1.id, actor26);
+  await RoadmapService.deleteItem(s3.id, actor26);
+  assert((await RoadmapRepository.findAll()).length === liveBefore32.length, 'Live store restored to its pre-§32 size');
+
   // Summary
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

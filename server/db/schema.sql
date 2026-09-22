@@ -543,4 +543,50 @@ CREATE INDEX IF NOT EXISTS idx_gov_links_target ON governance_links(target_id, t
 
 CREATE INDEX IF NOT EXISTS idx_release_items ON release_items(release_id);
 
+-- ====================================================================
+-- Sprint 9: Roadmap & Strategic Alignment
+-- ====================================================================
+
+-- 24. Roadmap Items Table (Sprint 9)
+-- Goal alignment lives in governance_links (governance_type = 'roadmap'),
+-- which is intentionally polymorphic and therefore carries no FK here.
+CREATE TABLE IF NOT EXISTS roadmap_items (
+  id VARCHAR(64) PRIMARY KEY,
+  code VARCHAR(50) UNIQUE NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  status VARCHAR(50) NOT NULL DEFAULT 'proposed',
+  priority VARCHAR(30) NOT NULL DEFAULT 'medium',
+  start_date DATE,
+  target_date DATE,
+  owner_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+  owner_name VARCHAR(150),
+  product_id VARCHAR(64) REFERENCES products(id) ON DELETE SET NULL,
+  product_name VARCHAR(200),
+  portfolio_id VARCHAR(64) REFERENCES portfolios(id) ON DELETE SET NULL,
+  portfolio_name VARCHAR(200),
+  project_id VARCHAR(64) REFERENCES projects(id) ON DELETE SET NULL,
+  project_name VARCHAR(255),
+  sequence INTEGER NOT NULL DEFAULT 0,
+  created_by VARCHAR(64),
+  updated_by VARCHAR(64),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Sprint 9 Indices
+CREATE INDEX IF NOT EXISTS idx_roadmap_project ON roadmap_items(project_id);
+CREATE INDEX IF NOT EXISTS idx_roadmap_product ON roadmap_items(product_id);
+CREATE INDEX IF NOT EXISTS idx_roadmap_portfolio ON roadmap_items(portfolio_id);
+CREATE INDEX IF NOT EXISTS idx_roadmap_owner ON roadmap_items(owner_id);
+CREATE INDEX IF NOT EXISTS idx_roadmap_status ON roadmap_items(status);
+CREATE INDEX IF NOT EXISTS idx_roadmap_priority ON roadmap_items(priority);
+CREATE INDEX IF NOT EXISTS idx_roadmap_sequence ON roadmap_items(sequence, created_at);
+
+-- Roadmap code generator (Sprint 9.6B). Codes are 'RM-' || nextval; the
+-- sequence never re-issues a value, survives restarts and is atomic across
+-- connections. Starts after the in-memory seeds RM-101..RM-103. The repository
+-- raises it past any higher existing code on first use, never lowers it.
+CREATE SEQUENCE IF NOT EXISTS roadmap_code_seq START WITH 104 INCREMENT BY 1;
+
 

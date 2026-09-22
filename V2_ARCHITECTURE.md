@@ -128,6 +128,8 @@ Role hierarchy and permissions:
 5. **`activity_logs`**: `id`, `entity_type`, `entity_id`, `action`, `actor_id`, `actor_name`, `details (JSONB)`, `ip_address`, `created_at`.
 6. **`notifications`**: `id`, `user_id`, `title`, `message`, `type`, `is_read`, `link`, `created_at`.
 
+The full, current DDL (including later sprints' tables such as `roadmap_items`) lives in `server/db/schema.sql`. It is not applied automatically: when `DATABASE_URL` is enabled, apply that file to the target database (for example `psql "$DATABASE_URL" -f server/db/schema.sql`) before starting the server, otherwise every repository falls back to the in-memory store with a warning. The file is idempotent and safe to re-run.
+
 ---
 
 ## 6. Microsoft 365 Readiness Abstraction
