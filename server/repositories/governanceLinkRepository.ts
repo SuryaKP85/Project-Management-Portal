@@ -1,4 +1,4 @@
-import { GovernanceLink, GovernanceLinkTargetType } from '../models/types';
+import { GovernanceLink, GovernanceLinkTargetType, GovernanceLinkSourceType } from '../models/types';
 import { isDbConnected, query } from '../config/database';
 
 const memoryLinks: Map<string, GovernanceLink> = new Map();
@@ -131,6 +131,35 @@ export const GovernanceLinkRepository = {
     );
   },
 
+  /**
+   * Every link owned by one source type, in createdAt order. A single bulk
+   * read for callers that need to index many entities' links at once, so they
+   * are not forced into one getLinksFor call per entity.
+   */
+  async findBySourceType(governanceType: GovernanceLinkSourceType): Promise<GovernanceLink[]> {
+    seedDefaultLinks();
+    if (isDbConnected()) {
+      try {
+        const res = await query(
+          `SELECT id, governance_type as "governanceType", governance_id as "governanceId",
+                  target_type as "targetType", target_id as "targetId", target_code as "targetCode",
+                  target_name as "targetName", created_at as "createdAt"
+           FROM governance_links
+           WHERE governance_type = $1
+           ORDER BY created_at ASC`,
+          [governanceType]
+        );
+        return res.rows;
+      } catch (err) {
+        console.warn('DB error fetching governance links by source type, using memory:', err);
+      }
+    }
+    // Stable sort: ties on createdAt keep insertion order, matching SQL.
+    return Array.from(memoryLinks.values())
+      .filter((l) => l.governanceType === governanceType)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  },
+
   async getBacklinks(targetType: GovernanceLinkTargetType, targetId: string): Promise<GovernanceLink[]> {
     seedDefaultLinks();
     if (isDbConnected()) {
@@ -155,7 +184,7 @@ export const GovernanceLinkRepository = {
   },
 
   async addLink(
-    governanceType: 'risk' | 'issue' | 'dependency' | 'milestone' | 'release',
+    governanceType: GovernanceLinkSourceType,
     governanceId: string,
     targetType: GovernanceLinkTargetType,
     targetId: string,
@@ -200,6 +229,35 @@ export const GovernanceLinkRepository = {
     return newLink;
   },
 
+  /**
+   * Removes every link owned by one entity. Used when the owning record is
+   * deleted, so edges are not orphaned in the junction.
+   */
+  async removeLinksFor(governanceType: GovernanceLinkSourceType, governanceId: string): Promise<number> {
+    seedDefaultLinks();
+    let removed = 0;
+
+    for (const [id, link] of memoryLinks.entries()) {
+      if (link.governanceType === governanceType && link.governanceId === governanceId) {
+        memoryLinks.delete(id);
+        removed += 1;
+      }
+    }
+
+    if (isDbConnected()) {
+      try {
+        await query('DELETE FROM governance_links WHERE governance_type = $1 AND governance_id = $2', [
+          governanceType,
+          governanceId,
+        ]);
+      } catch (err) {
+        console.warn('DB error removing governance links for entity:', err);
+      }
+    }
+
+    return removed;
+  },
+
   async removeLink(id: string): Promise<boolean> {
     seedDefaultLinks();
     const removed = memoryLinks.delete(id);
@@ -214,7 +272,7 @@ export const GovernanceLinkRepository = {
   },
 
   async replaceLinks(
-    governanceType: 'risk' | 'issue' | 'dependency' | 'milestone' | 'release',
+    governanceType: GovernanceLinkSourceType,
     governanceId: string,
     targets: Array<{ targetType: GovernanceLinkTargetType; targetId: string; targetCode?: string; targetName?: string }>
   ): Promise<GovernanceLink[]> {

@@ -14,6 +14,7 @@ import { DependencyRepository } from './dependencyRepository';
 import { MilestoneRepository } from './milestoneRepository';
 import { ReleaseRepository } from './releaseRepository';
 import { GovernanceLinkRepository } from './governanceLinkRepository';
+import { RoadmapRepository } from './roadmapRepository';
 
 export const TraceabilityRepository = {
   async getTraceabilityChain(
@@ -26,6 +27,7 @@ export const TraceabilityRepository = {
       | 'project'
       | 'product'
       | 'portfolio'
+      | 'roadmap'
       | 'risk'
       | 'issue'
       | 'dependency'
@@ -199,6 +201,37 @@ export const TraceabilityRepository = {
       });
 
       await this.populateProjectAncestors(project, ancestors);
+    } else if (entityType === 'roadmap') {
+      const item = await RoadmapRepository.findById(id);
+      if (!item) return null;
+      currentNode = {
+        type: 'roadmap',
+        id: item.id,
+        code: item.code,
+        name: item.name,
+        status: item.status,
+        priority: item.priority,
+      };
+
+      // Ancestors are the goals this initiative is aligned to.
+      for (const goal of await this.getGoalsForRoadmapItem(item.id)) {
+        this.pushGoalAncestor(goal, ancestors);
+      }
+
+      // The chartered project is the single child. An initiative that has not
+      // been chartered yet terminates cleanly here with no children.
+      if (item.projectId) {
+        const proj = await ProjectRepository.findById(item.projectId);
+        if (proj) {
+          children.push({
+            type: 'project',
+            id: proj.id,
+            code: proj.code,
+            name: proj.name,
+            status: proj.status,
+          });
+        }
+      }
     } else if (entityType === 'risk') {
       const risk = await RiskRepository.findById(id);
       if (!risk) return null;
@@ -604,7 +637,49 @@ export const TraceabilityRepository = {
     }
   },
 
+  /**
+   * Goals a roadmap item is aligned to, resolved through the generic
+   * governance junction (governanceType 'roadmap' -> targetType 'goal').
+   * Returns the live Goal records rather than the stored link labels.
+   */
+  async getGoalsForRoadmapItem(roadmapId: string) {
+    const links = await GovernanceLinkRepository.getLinksFor('roadmap', roadmapId);
+    const goals = [];
+    for (const link of links) {
+      if (link.targetType !== 'goal') continue;
+      const goal = await GoalRepository.findById(link.targetId);
+      if (goal) goals.push(goal);
+    }
+    return goals;
+  },
+
+  /** Adds a goal ancestor once; the same goal reached by another path is skipped. */
+  pushGoalAncestor(goal: any, ancestors: TraceabilityNode[]) {
+    if (ancestors.some((n) => n.type === 'goal' && n.id === goal.id)) return;
+    ancestors.unshift({
+      type: 'goal',
+      id: goal.id,
+      name: `${goal.objective} (${goal.progress}%)`,
+      status: goal.status,
+      progress: goal.progress,
+    });
+  },
+
   async populateProjectAncestors(project: any, ancestors: TraceabilityNode[]) {
+    // Roadmap hop. Callers unshift the project node immediately before calling
+    // here, so unshifting now places the initiative directly above its project.
+    const roadmapItems = await RoadmapRepository.findAll({ projectId: project.id });
+    for (const item of roadmapItems) {
+      ancestors.unshift({
+        type: 'roadmap',
+        id: item.id,
+        code: item.code,
+        name: item.name,
+        status: item.status,
+        priority: item.priority,
+      });
+    }
+
     let portfolioId = project.portfolioId;
     if (project.productId) {
       const product = await ProductRepository.findById(project.productId);
@@ -633,18 +708,20 @@ export const TraceabilityRepository = {
           status: portfolio.status,
         });
 
-        // Check if there are OKR/Goals linked
+        // Check if there are OKR/Goals linked. Every applicable goal is
+        // reported; previously only the first one survived.
         const allGoals = await GoalRepository.findAll();
-        const goals = allGoals.filter((g) => g.portfolioId === portfolio.id);
-        if (goals.length > 0) {
-          ancestors.unshift({
-            type: 'goal',
-            id: goals[0].id,
-            name: `${goals[0].objective} (${goals[0].progress}%)`,
-            status: goals[0].status,
-            progress: goals[0].progress,
-          });
+        for (const goal of allGoals.filter((g) => g.portfolioId === portfolio.id)) {
+          this.pushGoalAncestor(goal, ancestors);
         }
+      }
+    }
+
+    // Goals reached through the roadmap hop, added after the portfolio-derived
+    // ones so an initiative's own alignment sits at the top of the chain.
+    for (const item of roadmapItems) {
+      for (const goal of await this.getGoalsForRoadmapItem(item.id)) {
+        this.pushGoalAncestor(goal, ancestors);
       }
     }
   },

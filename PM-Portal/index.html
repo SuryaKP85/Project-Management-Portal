@@ -1198,10 +1198,31 @@
               <button type="button" class="btn btn-sm btn-light" id="tab-btn-goals">
                 <i class="fa-solid fa-bullseye me-1"></i> Strategic OKRs
               </button>
+              <button type="button" class="btn btn-sm btn-light" id="tab-btn-roadmap">
+                <i class="fa-solid fa-map-signs me-1"></i> Roadmap
+              </button>
             </div>
-            <div class="search-bar" style="max-width: 320px;">
-              <i class="fa-solid fa-magnifying-glass"></i>
-              <input type="text" id="portfolio-search-input" placeholder="Search portfolios or goals..." />
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <!-- Roadmap-only filters; hidden on the other tabs -->
+              <select id="roadmap-filter-product" class="form-select form-select-sm d-none" style="width: auto;">
+                <option value="all">All Products</option>
+              </select>
+              <select id="roadmap-filter-portfolio" class="form-select form-select-sm d-none" style="width: auto;">
+                <option value="all">All Portfolios</option>
+              </select>
+              <select id="roadmap-filter-status" class="form-select form-select-sm d-none" style="width: auto;">
+                <option value="all">All Statuses</option>
+                <option value="proposed">Proposed</option>
+                <option value="committed">Committed</option>
+                <option value="in-progress">In Progress</option>
+                <option value="shipped">Shipped</option>
+                <option value="deferred">Deferred</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+              <div class="search-bar" style="max-width: 320px;">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" id="portfolio-search-input" placeholder="Search portfolios or goals..." />
+              </div>
             </div>
           </div>
         </div>

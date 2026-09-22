@@ -108,6 +108,71 @@ export interface Goal {
   updatedAt: string;
 }
 
+// ====================================================================
+// Sprint 9: Roadmap
+// ====================================================================
+
+/**
+ * Commitment vocabulary for roadmap initiatives. Deliberately separate from
+ * DeliveryStatus, which is execution vocabulary: overloading that union would
+ * put roadmap rows into the delivery board, backlog and burndown queries.
+ */
+export type RoadmapStatus =
+  | 'proposed'
+  | 'committed'
+  | 'in-progress'
+  | 'shipped'
+  | 'deferred'
+  | 'cancelled';
+
+/**
+ * A strategic initiative: what we intend to do and roughly when. Sits beside
+ * Goal as a sibling of the Product, not as a new hierarchy level.
+ *
+ * Unlike Epic, every association is optional — an initiative exists before a
+ * project is chartered, which is precisely what distinguishes the two. Priority
+ * reuses DeliveryPriority rather than defining a parallel union.
+ *
+ * Progress is deliberately NOT stored here. It is derived at read time from the
+ * linked project's canonical progress, and is null when no project is linked;
+ * see RoadmapService.withDerivedProgress.
+ */
+export interface RoadmapItem {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  status: RoadmapStatus;
+  priority: DeliveryPriority;
+  startDate?: string;
+  targetDate?: string;
+  ownerId?: string;
+  ownerName?: string;
+  productId?: string;
+  productName?: string;
+  portfolioId?: string;
+  portfolioName?: string;
+  /** Set once the initiative is chartered as a project; null while proposed. */
+  projectId?: string;
+  projectName?: string;
+  /** Ascending display order, following the existing backlogOrder pattern. */
+  sequence: number;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string;
+  updatedBy?: string;
+}
+
+/**
+ * A roadmap item enriched with read-time derived values. `progress` is null
+ * when the item has no linked project, so "not yet measurable" is never
+ * conflated with "0% complete".
+ */
+export interface RoadmapItemWithProgress extends RoadmapItem {
+  progress: number | null;
+  progressSource: 'linked-project' | 'unavailable';
+}
+
 export type ProjectStatus = 'planning' | 'in-progress' | 'awaiting-sow-sign-off' | 'on-hold' | 'completed' | 'archived';
 export type ProjectRisk = 'Low' | 'Medium' | 'High' | 'Critical';
 
@@ -332,6 +397,7 @@ export interface TraceabilityNode {
     | 'task'
     | 'subtask'
     | 'goal'
+    | 'roadmap'
     | 'risk'
     | 'issue'
     | 'dependency'
@@ -382,6 +448,7 @@ export type ActivityEntityType =
   | 'milestone'
   | 'release'
   | 'governance'
+  | 'roadmap'
   | 'auth'
   | 'ai'
   | 'system';
@@ -601,6 +668,21 @@ export interface VelocityRecord {
 // Sprint 5: Governance & Delivery Control (Risks, Issues, Dependencies, Milestones, Releases)
 // ====================================================================
 
+/**
+ * Entities that may own links in the generic governance_links junction.
+ *
+ * 'roadmap' joins the original governance entities so Goal alignment reuses the
+ * existing junction rather than adding a near-duplicate table. The table keeps
+ * its historical name; treat it as a generic link store.
+ */
+export type GovernanceLinkSourceType =
+  | 'risk'
+  | 'issue'
+  | 'dependency'
+  | 'milestone'
+  | 'release'
+  | 'roadmap';
+
 export type GovernanceLinkTargetType =
   | 'portfolio'
   | 'product'
@@ -611,11 +693,13 @@ export type GovernanceLinkTargetType =
   | 'task'
   | 'sprint'
   | 'milestone'
-  | 'release';
+  | 'release'
+  | 'goal'
+  | 'roadmap';
 
 export interface GovernanceLink {
   id: string;
-  governanceType: 'risk' | 'issue' | 'dependency' | 'milestone' | 'release';
+  governanceType: GovernanceLinkSourceType;
   governanceId: string;
   targetType: GovernanceLinkTargetType;
   targetId: string;

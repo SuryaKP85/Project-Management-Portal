@@ -1,9 +1,12 @@
-import { UserRole, Project, Risk, Issue, Dependency } from '../models/types';
+import { UserRole, Project, Risk, Issue, Dependency, Goal, RoadmapItem, GovernanceLink } from '../models/types';
 import { ProjectRepository } from '../repositories/projectRepository';
 import { RiskRepository } from '../repositories/riskRepository';
 import { IssueRepository } from '../repositories/issueRepository';
 import { DependencyRepository } from '../repositories/dependencyRepository';
 import { NotificationRepository } from '../repositories/notificationRepository';
+import { RoadmapRepository } from '../repositories/roadmapRepository';
+import { GoalRepository } from '../repositories/goalRepository';
+import { GovernanceLinkRepository } from '../repositories/governanceLinkRepository';
 import { MyWorkService } from './myWorkService';
 import { ProjectHealthService, ProjectHealthResult, HEALTH_MODEL_VERSION } from './projectHealthService';
 
@@ -85,6 +88,43 @@ export interface AiContextProjectHealth {
   };
 }
 
+/**
+ * Sprint 9.5D — strategic alignment, as RETRIEVED FACTS.
+ *
+ * The chain is Goal <- GovernanceLink(roadmap -> goal) <- RoadmapItem.projectId
+ * <- Project, read straight from the repositories. Nothing here is inferred:
+ * portfolio-based goal guesses are deliberately excluded, and goals are only
+ * ever reached through a roadmap initiative, never attached to a project
+ * directly. `basis` states that so a model cannot present it as its own
+ * deduction. Roadmap status is carried exactly as stored; no delay or schedule
+ * state is derived in this layer.
+ */
+export interface AiContextGoal {
+  id: string;
+  objective: string;
+  status: string;
+  progress: number;
+  dueDate?: string;
+}
+
+export interface AiContextInitiative {
+  code: string;
+  name: string;
+  status: string;
+  priority: string;
+  targetDate?: string;
+  goals: AiContextGoal[];
+}
+
+export interface AiContextProjectStrategy {
+  basis: 'retrieved-relationship';
+  /** 'none' when no roadmap initiative is chartered as this project. */
+  alignment: 'aligned' | 'none';
+  initiatives: AiContextInitiative[];
+  /** True when this project's initiatives or their goals were capped. */
+  truncated: boolean;
+}
+
 export interface AiContextProject {
   code: string;
   name: string;
@@ -99,6 +139,8 @@ export interface AiContextProject {
   client?: string;
   /** Deterministic health for this project; see AiContextProjectHealth. */
   health?: AiContextProjectHealth;
+  /** Always present, so "no alignment" is stated rather than absent. */
+  strategy: AiContextProjectStrategy;
 }
 
 export interface AiContextWorkItem {
@@ -137,6 +179,20 @@ export interface AiAuthorizedContext {
     truncated: boolean;
     /** Version of the deterministic health model used for project.health. */
     healthModel: string;
+    /** Version of the strategic-context projection used for project.strategy. */
+    strategyModel: string;
+    strategy: {
+      initiativesIncluded: number;
+      goalsIncluded: number;
+      projectsWithoutAlignment: number;
+      truncated: boolean;
+      /**
+       * Initiatives not yet chartered as a project, so excluded from every
+       * project's strategy. A count only, and only for management scopes —
+       * the same rule the governance counters follow.
+       */
+      uncharteredInitiativesExcluded?: number;
+    };
   };
 }
 
@@ -146,6 +202,12 @@ const MAX_WORK_ITEMS = 10;
 
 /** Most impactful penalties carried per project; keeps the context small. */
 const MAX_HEALTH_FACTORS = 3;
+
+/** Strategic caps, per project and per initiative respectively. */
+const MAX_INITIATIVES_PER_PROJECT = 2;
+const MAX_GOALS_PER_INITIATIVE = 3;
+
+export const STRATEGY_MODEL_VERSION = 'v1-governance-links-2026-09';
 
 /**
  * Projects a full health result down to the compact context shape. Health is
@@ -203,7 +265,11 @@ function isAssociatedWithProject(project: Project, userId: string): boolean {
   return (project.members || []).some((m) => m.userId === userId);
 }
 
-function toContextProject(project: Project, includeCommercials: boolean): AiContextProject {
+function toContextProject(
+  project: Project,
+  includeCommercials: boolean,
+  strategy: AiContextProjectStrategy
+): AiContextProject {
   const base: AiContextProject = {
     code: project.code || project.id,
     name: project.name,
@@ -212,6 +278,7 @@ function toContextProject(project: Project, includeCommercials: boolean): AiCont
     progress: project.progress,
     endDate: project.endDate,
     sprint: project.sprint,
+    strategy,
   };
   // Commercial fields are withheld from read-only roles.
   if (includeCommercials) {
@@ -219,6 +286,119 @@ function toContextProject(project: Project, includeCommercials: boolean): AiCont
     base.client = project.client;
   }
   return base;
+}
+
+/** Explicit whitelist projections; records are never spread. */
+function toContextGoal(goal: Goal): AiContextGoal {
+  return {
+    id: goal.id,
+    objective: goal.objective,
+    status: goal.status,
+    progress: goal.progress,
+    dueDate: goal.dueDate,
+  };
+}
+
+function toContextInitiative(item: RoadmapItem, goals: AiContextGoal[]): AiContextInitiative {
+  return {
+    code: item.code,
+    name: item.name,
+    status: item.status,
+    priority: item.priority,
+    targetDate: item.targetDate,
+    goals,
+  };
+}
+
+const NO_ALIGNMENT: AiContextProjectStrategy = {
+  basis: 'retrieved-relationship',
+  alignment: 'none',
+  initiatives: [],
+  truncated: false,
+};
+
+interface StrategyBuild {
+  byProjectId: Map<string, AiContextProjectStrategy>;
+  initiativesIncluded: number;
+  goalsIncluded: number;
+  truncated: boolean;
+  /** Roadmap items with no projectId; counted, never carried. */
+  uncharteredCount: number;
+}
+
+/**
+ * Builds strategy for the already-scoped, already-capped project set from three
+ * bulk reads, indexed in memory. Taking includedProjects as input means this
+ * inherits the caller's scope and cap exactly as health does — it can never
+ * surface a project, initiative or goal the caller could not already see.
+ */
+async function buildStrategyByProject(includedProjects: Project[]): Promise<StrategyBuild> {
+  const [roadmapItems, goals, roadmapLinks] = await Promise.all([
+    RoadmapRepository.findAll(), // already ordered by sequence
+    GoalRepository.findAll(),
+    GovernanceLinkRepository.findBySourceType('roadmap'), // already ordered by createdAt
+  ]);
+
+  const goalById = new Map<string, Goal>(goals.map((g) => [g.id, g]));
+
+  // Initiatives grouped by the project they are chartered as. Order within a
+  // group follows the repository's sequence ordering.
+  const itemsByProjectId = new Map<string, RoadmapItem[]>();
+  let uncharteredCount = 0;
+  for (const item of roadmapItems) {
+    if (!item.projectId) {
+      uncharteredCount += 1;
+      continue;
+    }
+    const group = itemsByProjectId.get(item.projectId) || [];
+    group.push(item);
+    itemsByProjectId.set(item.projectId, group);
+  }
+
+  // Goal links grouped by initiative, preserving createdAt order.
+  const goalLinksByItemId = new Map<string, GovernanceLink[]>();
+  for (const link of roadmapLinks) {
+    if (link.targetType !== 'goal') continue;
+    const group = goalLinksByItemId.get(link.governanceId) || [];
+    group.push(link);
+    goalLinksByItemId.set(link.governanceId, group);
+  }
+
+  const byProjectId = new Map<string, AiContextProjectStrategy>();
+  let initiativesIncluded = 0;
+  let goalsIncluded = 0;
+  let truncated = false;
+
+  for (const project of includedProjects) {
+    const items = itemsByProjectId.get(project.id) || [];
+    if (items.length === 0) {
+      byProjectId.set(project.id, NO_ALIGNMENT);
+      continue;
+    }
+
+    let projectTruncated = items.length > MAX_INITIATIVES_PER_PROJECT;
+    const initiatives = items.slice(0, MAX_INITIATIVES_PER_PROJECT).map((item) => {
+      // A link whose goal no longer exists is dropped, not fabricated.
+      const linkedGoals = (goalLinksByItemId.get(item.id) || [])
+        .map((link) => goalById.get(link.targetId))
+        .filter((g): g is Goal => g !== undefined);
+      if (linkedGoals.length > MAX_GOALS_PER_INITIATIVE) projectTruncated = true;
+      const contextGoals = linkedGoals.slice(0, MAX_GOALS_PER_INITIATIVE).map(toContextGoal);
+      goalsIncluded += contextGoals.length;
+      return toContextInitiative(item, contextGoals);
+    });
+
+    initiativesIncluded += initiatives.length;
+    truncated = truncated || projectTruncated;
+    byProjectId.set(project.id, {
+      basis: 'retrieved-relationship',
+      alignment: 'aligned',
+      initiatives,
+      truncated: projectTruncated,
+    });
+  }
+
+  return { byProjectId, initiativesIncluded, goalsIncluded, truncated, uncharteredCount };
 }
 
 export const AiContextService = {
@@ -290,6 +470,12 @@ export const AiContextService = {
       healthResults.map((result) => [result.projectId, toContextHealth(result)])
     );
 
+    // 2c. Strategic alignment, likewise derived ONLY from includedProjects.
+    const strategy = await buildStrategyByProject(includedProjects);
+    const projectsWithoutAlignment = includedProjects.filter(
+      (p) => (strategy.byProjectId.get(p.id) || NO_ALIGNMENT).alignment === 'none'
+    ).length;
+
     const context: AiAuthorizedContext = {
       user: { name: displayName, role: actor.role },
       scope,
@@ -300,7 +486,11 @@ export const AiContextService = {
         items: includedWorkItems,
       },
       projects: includedProjects.map((p) => {
-        const contextProject = toContextProject(p, includeCommercials);
+        const contextProject = toContextProject(
+          p,
+          includeCommercials,
+          strategy.byProjectId.get(p.id) || NO_ALIGNMENT
+        );
         const health = healthByProjectId.get(p.id);
         if (health) contextProject.health = health;
         return contextProject;
@@ -311,8 +501,20 @@ export const AiContextService = {
         projectsInScope,
         projectsIncluded: includedProjects.length,
         workItemsIncluded: includedWorkItems.length,
-        truncated: projectsInScope > includedProjects.length || workItems.length > includedWorkItems.length,
+        truncated:
+          projectsInScope > includedProjects.length ||
+          workItems.length > includedWorkItems.length ||
+          strategy.truncated,
         healthModel: HEALTH_MODEL_VERSION,
+        strategyModel: STRATEGY_MODEL_VERSION,
+        strategy: {
+          initiativesIncluded: strategy.initiativesIncluded,
+          goalsIncluded: strategy.goalsIncluded,
+          projectsWithoutAlignment,
+          truncated: strategy.truncated,
+          // Withheld from personal scope, like every other organisation-wide count.
+          ...(scope !== 'personal' ? { uncharteredInitiativesExcluded: strategy.uncharteredCount } : {}),
+        },
       },
     };
 
