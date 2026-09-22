@@ -13,6 +13,7 @@ import fs from 'fs';
 import { initDatabase, isDbConnected, query, closeDatabase } from '../server/config/database';
 import { RoadmapRepository, ROADMAP_CODE_PATTERN, nextCodeNumber } from '../server/repositories/roadmapRepository';
 import { RoadmapService } from '../server/services/roadmapService';
+import { GoalService } from '../server/services/goalService';
 import { GovernanceLinkRepository } from '../server/repositories/governanceLinkRepository';
 
 let passed = 0;
@@ -36,6 +37,7 @@ const FX = {
   productId: `prod_${RUN}`,
   projectId: `PRJ-${RUN.toUpperCase()}`,
   goalId: `goal_${RUN}`,
+  goalId2: `goal_${RUN}_2`,
   itemA: `rm_${RUN}_a`,
   itemB: `rm_${RUN}_b`,
   codeA: `RM-${RUN.toUpperCase()}-A`,
@@ -70,6 +72,10 @@ async function createFixtures() {
     `INSERT INTO goals (id, objective, status, progress) VALUES ($1, 'S96A Goal', 'in-progress', 40) ON CONFLICT (id) DO NOTHING`,
     [FX.goalId]
   );
+  await query(
+    `INSERT INTO goals (id, objective, status, progress) VALUES ($1, 'S96C control goal', 'in-progress', 10) ON CONFLICT (id) DO NOTHING`,
+    [FX.goalId2]
+  );
 }
 
 /** Best-effort teardown; each statement is independent so one failure does not block the rest. */
@@ -79,7 +85,8 @@ async function cleanup() {
     [`DELETE FROM governance_links WHERE governance_type = 'roadmap' AND governance_id = ANY($1)`, [allItemIds]],
     [`DELETE FROM activity_logs WHERE actor_id = $1`, [FX.userId]],
     [`DELETE FROM roadmap_items WHERE id = ANY($1)`, [allItemIds]],
-    [`DELETE FROM goals WHERE id = $1`, [FX.goalId]],
+    [`DELETE FROM governance_links WHERE target_type = 'goal' AND target_id IN ($1, $2)`, [FX.goalId, FX.goalId2]],
+    [`DELETE FROM goals WHERE id IN ($1, $2)`, [FX.goalId, FX.goalId2]],
     [`DELETE FROM projects WHERE id = $1`, [FX.projectId]],
     [`DELETE FROM products WHERE id = $1`, [FX.productId]],
     [`DELETE FROM portfolios WHERE id = $1`, [FX.portfolioId]],
@@ -274,6 +281,26 @@ async function main() {
     assert(dupRejected, 'Duplicate explicit code is rejected');
     assert((await rowById(FX.dupId)) === null, 'Rejected duplicate wrote no PostgreSQL row');
     assert((await RoadmapRepository.findById(FX.dupId)) === null, 'Rejected duplicate left no phantom memory row');
+
+    // ---- Sprint 9.6C: goal deletion removes its backlinks in PostgreSQL ----
+    const holder = await RoadmapService.createItem({ name: 'S96C link holder' }, actor);
+    generatedIds.push(holder.id);
+    await RoadmapService.linkGoal(holder.id, FX.goalId, actor);
+    await RoadmapService.linkGoal(holder.id, FX.goalId2, actor); // unrelated control link
+    const goalLinks = async (goalId: string) =>
+      (await query(`SELECT COUNT(*)::int AS n FROM governance_links WHERE target_type = 'goal' AND target_id = $1`, [goalId])).rows[0].n;
+    assert((await goalLinks(FX.goalId)) === 1 && (await goalLinks(FX.goalId2)) === 1, 'Both goal links persisted (control)');
+    const unrelatedBefore = (await query(`SELECT COUNT(*)::int AS n FROM governance_links WHERE NOT (target_type = 'goal' AND target_id = $1)`, [FX.goalId])).rows[0].n;
+
+    // Cleanup is keyed on the goal found by findById, so it runs even though the
+    // repository's memory-map boolean is false for a PG-only row (out of scope here).
+    await GoalService.deleteGoal(FX.goalId, { id: FX.userId, firstName: 'S96A', lastName: 'Fixture', email: `${RUN}@example.test`, role: 'admin', isActive: true, createdAt: '', updatedAt: '' } as any);
+    assert((await query('SELECT 1 FROM goals WHERE id = $1', [FX.goalId])).rows.length === 0, 'Goal row deleted from PostgreSQL');
+    assert((await goalLinks(FX.goalId)) === 0, 'No governance_links rows remain for the deleted goal');
+    assert((await goalLinks(FX.goalId2)) === 1, "The other goal's link on the same item remains");
+    const unrelatedAfter = (await query(`SELECT COUNT(*)::int AS n FROM governance_links WHERE NOT (target_type = 'goal' AND target_id = $1)`, [FX.goalId])).rows[0].n;
+    assert(unrelatedAfter === unrelatedBefore, 'Unrelated governance links are untouched');
+    assert(!(await RoadmapService.getLinkedGoals(holder.id)).some((g) => g.goalId === FX.goalId), 'Holder item no longer reports the deleted goal');
   } catch (err: any) {
     console.error('  ❌ Unexpected error:', err?.message || err);
     failed++;

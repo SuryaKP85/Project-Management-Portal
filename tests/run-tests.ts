@@ -2904,6 +2904,110 @@ async function runTests() {
   await RoadmapService.deleteItem(s3.id, actor26);
   assert((await RoadmapRepository.findAll()).length === liveBefore32.length, 'Live store restored to its pre-§32 size');
 
+  // 33. Goal deletion backlink cleanup (Sprint 9.6C)
+  // Goals are link TARGETS; deleting one must remove every roadmap -> goal edge
+  // pointing at it and nothing else.
+  console.log('\n--- 33. Goal Deletion Backlink Cleanup ---');
+  const { GoalService: GoalSvc33 } = await import('../server/services/goalService');
+  const actor33: any = {
+    id: actor.id, email: 'admin@company.com', firstName: 'A', lastName: 'D', role: 'admin',
+    isActive: true, createdAt: '', updatedAt: '',
+  };
+  const allLinks33 = async () => Array.from(await (async () => {
+    // Union of every link the repository knows: roadmap-owned plus the seeded governance links.
+    const roadmap = await GLR28.findBySourceType('roadmap');
+    const others = (await Promise.all(
+      (['risk', 'issue', 'milestone', 'dependency', 'release'] as const).map((t) => GLR28.findBySourceType(t))
+    )).flat();
+    return [...roadmap, ...others];
+  })());
+  const nonRoadmapCount = async () => (await allLinks33()).filter((l: any) => l.governanceType !== 'roadmap').length;
+
+  assert((await GLR28.findBySourceType('roadmap')).length === 0, '§33 starts with no roadmap goal links');
+  const seededOthersBefore33 = await nonRoadmapCount();
+  assert(seededOthersBefore33 >= 9, `Seeded non-roadmap governance links present (${seededOthersBefore33})`);
+
+  // A. Shared probe goal on two items, plus a live control goal on rm_1
+  const probe33 = await GoalRepo29.create({ id: 'goal_s96c_probe', objective: 'S96C probe goal', progress: 30 });
+  await RoadmapService.linkGoal('rm_1', probe33.id, actor26);
+  await RoadmapService.linkGoal('rm_2', probe33.id, actor26);
+  const controlLink33 = await RoadmapService.linkGoal('rm_1', 'goal_2', actor26);
+  assert((await GLR28.getBacklinks('goal', probe33.id)).length === 2, 'Probe goal is linked from two roadmap items (control)');
+  assert((await GLR28.findBySourceType('roadmap')).length === 3, 'Three roadmap goal links exist before deletion (control)');
+
+  // H. Response shape with valid linked goals, captured before deletion
+  const shapeRes33 = res27();
+  await RoadmapController.getById(req27({ params: { id: 'rm_1' } }) as any, shapeRes33 as any, next27 as any);
+  const shapeKeys33 = Object.keys(shapeRes33.body.data.item.linkedGoals[0]).sort();
+  assert(
+    JSON.stringify(shapeKeys33) === JSON.stringify(['code', 'goalId', 'linkId', 'name', 'progress', 'status']),
+    `linkedGoals entry shape is unchanged (${shapeKeys33.join(',')})`
+  );
+  assert('progress' in shapeRes33.body.data.item && 'progressSource' in shapeRes33.body.data.item, 'Item keeps derived progress fields');
+
+  // B. Delete the probe goal
+  assert((await GoalSvc33.deleteGoal(probe33.id, actor33)) === true, 'Deleting a linked goal returns true');
+  assert((await GoalRepo29.findById(probe33.id)) === null, 'Probe goal is gone');
+  assert((await GLR28.getBacklinks('goal', probe33.id)).length === 0, 'Deleted goal has no remaining backlinks');
+  assert(
+    !(await GLR28.findBySourceType('roadmap')).some((l: any) => l.targetId === probe33.id),
+    'No roadmap source link still targets the deleted goal'
+  );
+
+  // C. Roadmap behaviour afterwards
+  const rm1Linked33 = await RoadmapService.getLinkedGoals('rm_1');
+  assert(!rm1Linked33.some((g) => g.goalId === probe33.id), 'rm_1 no longer reports the deleted goal');
+  assert(rm1Linked33.some((g) => g.goalId === 'goal_2' && g.linkId === controlLink33!.id), 'rm_1 still reports the live control goal with its original link id');
+  assert(rm1Linked33.every((g) => g.name !== undefined && g.status !== undefined), 'No stale, unresolvable goal entries remain on rm_1');
+  assert((await RoadmapService.getLinkedGoals('rm_2')).length === 0, 'rm_2 no longer reports the deleted goal');
+  assert((await RoadmapService.getItemsForGoal(probe33.id)).length === 0, 'getItemsForGoal for the deleted goal is empty');
+  assert((await RoadmapService.getAllItems({ goalId: probe33.id })).length === 0, 'getAllItems goalId filter for the deleted goal is empty');
+  const rm1Res33 = res27();
+  await RoadmapController.getById(req27({ params: { id: 'rm_1' } }) as any, rm1Res33 as any, next27 as any);
+  assert(!JSON.stringify(rm1Res33.body).includes(probe33.id), 'GET /roadmap/:id carries no trace of the deleted goal');
+
+  // D. Isolation
+  assert((await nonRoadmapCount()) === seededOthersBefore33, 'Seeded non-roadmap governance links are untouched');
+  assert((await GLR28.getBacklinks('goal', 'goal_2')).length === 1, "Another goal's link is untouched");
+  assert((await GLR28.getBacklinks('goal', 'goal_1')).length === 0, 'Goals that had no links still have none (control)');
+  assert((await GLR28.findBySourceType('roadmap')).length === 1, 'Exactly the two probe links were removed');
+
+  // E. Activity
+  const goalDeleteAct33 = (await ActivityRepository.findRecent(50)).find(
+    (a: any) => a.entityType === 'goal' && a.action === 'delete' && a.entityId === probe33.id
+  );
+  assert(!!goalDeleteAct33, 'Goal delete activity recorded');
+  assert(goalDeleteAct33!.details?.removedRoadmapLinks === 2, `Delete activity records two removed roadmap links (${goalDeleteAct33!.details?.removedRoadmapLinks})`);
+  assert(goalDeleteAct33!.details?.objective === 'S96C probe goal', 'Existing activity detail (objective) preserved');
+
+  // F. Goal with no links
+  const bare33 = await GoalRepo29.create({ id: 'goal_s96c_bare', objective: 'S96C bare goal' });
+  assert((await GoalSvc33.deleteGoal(bare33.id, actor33)) === true, 'Deleting an unlinked goal succeeds');
+  const bareAct33 = (await ActivityRepository.findRecent(50)).find(
+    (a: any) => a.entityType === 'goal' && a.action === 'delete' && a.entityId === bare33.id
+  );
+  assert(bareAct33?.details?.removedRoadmapLinks === 0, 'Unlinked goal deletion records zero removed links');
+
+  // G. Unknown goal
+  const linksBeforeUnknown33 = (await allLinks33()).length;
+  assert((await GoalSvc33.deleteGoal('goal_s96c_missing', actor33)) === false, 'Deleting an unknown goal returns false');
+  assert((await allLinks33()).length === linksBeforeUnknown33, 'Unknown-goal deletion leaves every link unchanged');
+
+  // Direct repository semantics: strictly target-scoped
+  const extraProbe33 = await GoalRepo29.create({ id: 'goal_s96c_extra', objective: 'S96C extra' });
+  await RoadmapService.linkGoal('rm_3', extraProbe33.id, actor26);
+  assert((await GLR28.removeBacklinks('goal', 'goal_s96c_nothing')) === 0, 'removeBacklinks on an unlinked id removes nothing');
+  assert((await GLR28.removeBacklinks('epic', extraProbe33.id)) === 0, 'removeBacklinks with a different targetType removes nothing');
+  assert((await GLR28.getBacklinks('goal', extraProbe33.id)).length === 1, 'Mismatched calls left the real link in place');
+  assert((await GLR28.removeBacklinks('goal', extraProbe33.id)) === 1, 'removeBacklinks returns the number removed');
+  await GoalRepo29.delete(extraProbe33.id);
+
+  // I. Cleanup: restore the fixture
+  for (const l of await GLR28.getLinksFor('roadmap', 'rm_1')) await GLR28.removeLink(l.id);
+  assert((await GLR28.findBySourceType('roadmap')).length === 0, '§33 links removed');
+  assert((await nonRoadmapCount()) === seededOthersBefore33, 'Seeded links unchanged after §33');
+  assert((await GoalRepo29.findAll()).every((g: any) => !g.id.startsWith('goal_s96c_')), '§33 probe goals removed');
+
   // Summary
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

@@ -258,6 +258,39 @@ export const GovernanceLinkRepository = {
     return removed;
   },
 
+  /**
+   * Target-side counterpart of removeLinksFor: removes every link pointing AT
+   * one entity. Needed when a link target with its own lifecycle (a Goal) is
+   * deleted, so no source keeps an edge to a record that no longer exists.
+   * Scoped strictly to the given targetType + targetId.
+   */
+  async removeBacklinks(targetType: GovernanceLinkTargetType, targetId: string): Promise<number> {
+    seedDefaultLinks();
+    let removed = 0;
+
+    for (const [id, link] of memoryLinks.entries()) {
+      if (link.targetType === targetType && link.targetId === targetId) {
+        memoryLinks.delete(id);
+        removed += 1;
+      }
+    }
+
+    if (isDbConnected()) {
+      try {
+        const res = await query('DELETE FROM governance_links WHERE target_type = $1 AND target_id = $2', [
+          targetType,
+          targetId,
+        ]);
+        // PostgreSQL is authoritative in PG mode: report what it deleted.
+        return res.rowCount ?? 0;
+      } catch (err) {
+        console.warn('DB error removing governance backlinks for entity:', err);
+      }
+    }
+
+    return removed;
+  },
+
   async removeLink(id: string): Promise<boolean> {
     seedDefaultLinks();
     const removed = memoryLinks.delete(id);

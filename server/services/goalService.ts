@@ -1,6 +1,7 @@
 import { GoalRepository } from '../repositories/goalRepository';
 import { ActivityRepository } from '../repositories/activityRepository';
 import { NotificationRepository } from '../repositories/notificationRepository';
+import { GovernanceLinkRepository } from '../repositories/governanceLinkRepository';
 import { Goal, SafeUser } from '../models/types';
 import crypto from 'crypto';
 
@@ -90,6 +91,14 @@ export const GoalService = {
     if (!existing) return false;
 
     const success = await GoalRepository.delete(id);
+
+    // Sprint 9.6C — a goal is a governance-link TARGET (roadmap -> goal), so
+    // its edges must go with it or roadmap items keep pointing at a record
+    // that no longer exists. Keyed on the goal confirmed above by findById,
+    // not on the repository's memory-map boolean, so it also runs for rows
+    // that live only in PostgreSQL.
+    const removedRoadmapLinks = await GovernanceLinkRepository.removeBacklinks('goal', id);
+
     if (success) {
       await ActivityRepository.create({
         id: `act_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
@@ -98,7 +107,7 @@ export const GoalService = {
         action: 'delete',
         actorId: actorUser.id,
         actorName: `${actorUser.firstName} ${actorUser.lastName}`,
-        details: { objective: existing.objective },
+        details: { objective: existing.objective, removedRoadmapLinks },
         createdAt: new Date().toISOString(),
       });
     }
