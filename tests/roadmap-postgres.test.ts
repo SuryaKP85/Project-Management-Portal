@@ -194,6 +194,30 @@ async function main() {
     const bySearch = await RoadmapRepository.findAll({ search: 'second initiative' });
     assert(has(bySearch, FX.itemB) && !has(bySearch, FX.itemA), 'search filter');
 
+    // ---- Sprint 9.6E: SQL-pushed filters must equal the JavaScript semantics ----
+    const jsFilter = (items: any[], f: any) => items.filter((i) =>
+      (!f.productId || i.productId === f.productId) &&
+      (!f.portfolioId || i.portfolioId === f.portfolioId) &&
+      (!f.projectId || i.projectId === f.projectId) &&
+      (!f.ownerId || i.ownerId === f.ownerId) &&
+      (!f.status || f.status === 'all' || i.status.toLowerCase() === f.status.toLowerCase()) &&
+      (!f.priority || f.priority === 'all' || i.priority.toLowerCase() === f.priority.toLowerCase()) &&
+      (!f.search || i.name.toLowerCase().includes(f.search.toLowerCase()) || i.code.toLowerCase().includes(f.search.toLowerCase()) || (i.description || '').toLowerCase().includes(f.search.toLowerCase()))
+    );
+    const fullSet = await RoadmapRepository.findAll();
+    const parityFilters: Array<[string, any]> = [
+      ['projectId', { projectId: FX.projectId }], ['ownerId', { ownerId: FX.userId }],
+      ['status', { status: 'in-progress' }], ['mixed-case status', { status: 'IN-Progress' }], ["status 'all'", { status: 'all' }],
+      ['priority', { priority: 'low' }], ['mixed-case priority', { priority: 'LOW' }], ["priority 'all'", { priority: 'all' }],
+      ['search', { search: 'second initiative' }], ['search literal %', { search: '%' }], ['search literal _', { search: '_' }],
+      ['combined', { portfolioId: FX.portfolioId, priority: 'LOW', search: 'S96A' }],
+    ];
+    for (const [label, f] of parityFilters) {
+      const actual = (await RoadmapRepository.findAll(f)).map((i) => i.id);
+      const expected = jsFilter(fullSet, f).map((i) => i.id);
+      assert(JSON.stringify(actual) === JSON.stringify(expected), `SQL filter parity: ${label} (${actual.length} rows)`);
+    }
+
     // 10. Reorder persisted rows.
     const reorder = await RoadmapService.reorderItems(
       [{ id: FX.itemA, sequence: 5000 }, { id: FX.itemB, sequence: 4000 }, { id: `rm_${RUN}_missing`, sequence: 1 }],

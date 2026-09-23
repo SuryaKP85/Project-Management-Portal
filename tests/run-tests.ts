@@ -3010,6 +3010,131 @@ async function runTests() {
   assert((await nonRoadmapCount()) === seededOthersBefore33, 'Seeded links unchanged after §33');
   assert((await GoalRepo29.findAll()).every((g: any) => !g.id.startsWith('goal_s96c_')), '§33 probe goals removed');
 
+  // 34. Traceability & roadmap query performance (Sprint 9.6E)
+  console.log('\n--- 34. Traceability & Roadmap Query Performance ---');
+  assert((await GLR28.findBySourceType('roadmap')).length === 0, '§34 starts with no roadmap goal links');
+
+  // Fixture: two goals on rm_1 so the old per-link lookups would be observable.
+  await RoadmapService.linkGoal('rm_1', 'goal_1', actor26);
+  await RoadmapService.linkGoal('rm_1', 'goal_2', actor26);
+
+  // --- A. Call-count regression ---
+  // The repositories export plain objects, so their methods can be wrapped and
+  // restored without touching module bindings.
+  const counts34 = { findAll: 0, goalFindById: 0, goalFindAll: 0 };
+  const origFindAll34 = RoadmapRepository.findAll;
+  const origGoalFindById34 = GoalRepo29.findById;
+  const origGoalFindAll34 = GoalRepo29.findAll;
+  const chains34: Record<string, any> = {};
+  try {
+    (RoadmapRepository as any).findAll = async function (...args: any[]) { counts34.findAll += 1; return origFindAll34.apply(this, args as any); };
+    (GoalRepo29 as any).findById = async function (...args: any[]) { counts34.goalFindById += 1; return origGoalFindById34.apply(this, args as any); };
+    (GoalRepo29 as any).findAll = async function (...args: any[]) { counts34.goalFindAll += 1; return origGoalFindAll34.apply(this, args as any); };
+
+    const requests34: Array<[string, string, number]> = [
+      ['task', 'task_1', 1], ['epic', 'epic_1', 1], ['project', 'PRJ-101', 1], ['risk', 'rsk_1', 1],
+      // A roadmap item is the entity itself: it is read by id, so no findAll.
+      ['roadmap', 'rm_1', 0],
+    ];
+    for (const [type, id, expectedFindAll] of requests34) {
+      counts34.findAll = 0; counts34.goalFindById = 0; counts34.goalFindAll = 0;
+      chains34[type] = await TR28.getTraceabilityChain(type as any, id);
+      assert(!!chains34[type], `${type} chain resolves (control)`);
+      assert(counts34.findAll === expectedFindAll, `${type}: RoadmapRepository.findAll called ${expectedFindAll}x per request (${counts34.findAll})`);
+      assert(counts34.goalFindById === 0, `${type}: no per-link GoalRepository.findById during goal resolution (${counts34.goalFindById})`);
+      assert(counts34.goalFindAll === 1, `${type}: goals read exactly once for the traversal (${counts34.goalFindAll})`);
+    }
+    // A project with no portfolio, no product and no roadmap item needs no goal read at all.
+    const bare34: any = await ProjRepo24.create({ id: 'PRJ-S96E-BARE', code: 'PRJ-S96E-BARE', name: 'Bare', client: 'Probe', status: 'planning', risk: 'Low', progress: 0, budget: 0 } as any);
+    counts34.findAll = 0; counts34.goalFindAll = 0;
+    await TR28.getTraceabilityChain('project', bare34.id);
+    assert(counts34.findAll === 1 && counts34.goalFindAll === 0, 'A project with no portfolio and no initiatives triggers no goal read');
+    await ProjRepo24.delete(bare34.id);
+  } finally {
+    (RoadmapRepository as any).findAll = origFindAll34;
+    (GoalRepo29 as any).findById = origGoalFindById34;
+    (GoalRepo29 as any).findAll = origGoalFindAll34;
+  }
+  assert(RoadmapRepository.findAll === origFindAll34 && GoalRepo29.findById === origGoalFindById34, 'Wrapped repository methods restored');
+
+  // --- B. Output equivalence ---
+  const projChain34 = chains34.project;
+  const types34 = projChain34.ancestors.map((n: any) => n.type);
+  assert(projChain34.ancestors.some((n: any) => n.type === 'roadmap' && n.id === 'rm_1'), 'Roadmap hop still present');
+  const goalNodes34 = projChain34.ancestors.filter((n: any) => n.type === 'goal');
+  assert(goalNodes34.some((n: any) => n.id === 'goal_1') && goalNodes34.some((n: any) => n.id === 'goal_2'), 'Both linked goals appear as nodes');
+  assert(new Set(goalNodes34.map((n: any) => n.id)).size === goalNodes34.length, 'Goals reachable via portfolio and roadmap are deduplicated');
+  assert(goalNodes34.length === 2, `Exactly two goal nodes (${goalNodes34.length})`);
+  const idx34 = (t: string) => types34.indexOf(t);
+  const lastIdx34 = (t: string) => types34.lastIndexOf(t);
+  // For a project request the project is the chain's entity, so the ancestor
+  // list ends at the roadmap hop that sits directly above it.
+  assert(projChain34.entity.type === 'project' && idx34('roadmap') === types34.length - 1, 'Roadmap hop sits directly above the project entity');
+  assert(lastIdx34('goal') < idx34('portfolio') && idx34('portfolio') < idx34('product') && idx34('product') < idx34('roadmap'),
+    `Ancestor order unchanged: goal(s) -> portfolio -> product -> roadmap (${types34.join(' > ')})`);
+  assert(goalNodes34.every((n: any) => /\(\d+%\)$/.test(n.name) && typeof n.progress === 'number' && typeof n.status === 'string'), 'Goal node fields unchanged');
+  const rmChain34 = chains34.roadmap;
+  assert(JSON.stringify(rmChain34.ancestors.map((n: any) => n.id)) === JSON.stringify(['goal_2', 'goal_1']) ||
+         JSON.stringify(rmChain34.ancestors.map((n: any) => n.id)) === JSON.stringify(['goal_1', 'goal_2']),
+    'Roadmap-entity ancestors are exactly its two linked goals');
+  assert(rmChain34.ancestors.map((n: any) => n.id).join(',') === ['goal_2', 'goal_1'].join(','),
+    'Roadmap-entity goals keep link order (unshift reverses createdAt order, as before)');
+  assert(chains34.task.ancestors.some((n: any) => n.type === 'roadmap') && chains34.epic.ancestors.some((n: any) => n.type === 'roadmap') && chains34.risk.ancestors.some((n: any) => n.type === 'roadmap'),
+    'Task, epic and risk chains still carry the roadmap hop');
+  // Missing goal: an orphaned link (goal deleted directly, bypassing service cleanup) is skipped, not fabricated.
+  const ghost34 = await GoalRepo29.create({ id: 'goal_s96e_ghost', objective: 'S96E ghost' });
+  await RoadmapService.linkGoal('rm_1', ghost34.id, actor26);
+  await GoalRepo29.delete(ghost34.id);
+  const ghostChain34 = await TR28.getTraceabilityChain('project', 'PRJ-101');
+  assert(!JSON.stringify(ghostChain34).includes(ghost34.id), 'Unresolvable goal link is omitted from the chain');
+  assert(ghostChain34!.ancestors.filter((n: any) => n.type === 'goal').length === 2, 'Other goals unaffected by the orphaned link');
+  await GLR28.removeBacklinks('goal', ghost34.id);
+
+  // --- C. Roadmap filter parity (memory) ---
+  // Mirror of applyFilter's semantics, kept in the test so SQL and JS are both
+  // measured against one explicit definition.
+  const jsFilter34 = (items: any[], f: any) => items.filter((i) =>
+    (!f.productId || i.productId === f.productId) &&
+    (!f.portfolioId || i.portfolioId === f.portfolioId) &&
+    (!f.projectId || i.projectId === f.projectId) &&
+    (!f.ownerId || i.ownerId === f.ownerId) &&
+    (!f.status || f.status === 'all' || i.status.toLowerCase() === f.status.toLowerCase()) &&
+    (!f.priority || f.priority === 'all' || i.priority.toLowerCase() === f.priority.toLowerCase()) &&
+    (!f.search || i.name.toLowerCase().includes(f.search.toLowerCase()) || i.code.toLowerCase().includes(f.search.toLowerCase()) || (i.description || '').toLowerCase().includes(f.search.toLowerCase()))
+  );
+  const all34 = await RoadmapRepository.findAll();
+  const filters34: Array<[string, any]> = [
+    ['projectId', { projectId: 'PRJ-101' }], ['productId', { productId: 'prod_1' }], ['portfolioId', { portfolioId: 'port_1' }],
+    ['ownerId', { ownerId: 'usr_pm_2' }], ['status', { status: 'committed' }], ['mixed-case status', { status: 'ComMITted' }],
+    ['priority', { priority: 'high' }], ['mixed-case priority', { priority: 'HIGH' }],
+    ["status='all'", { status: 'all' }], ["priority='all'", { priority: 'all' }],
+    ['search', { search: 'relay' }], ['search by code', { search: 'rm-103' }], ['search literal %', { search: '%' }],
+    ['combined', { productId: 'prod_1', status: 'PROPOSED', search: 'habitat' }],
+  ];
+  for (const [label, f] of filters34) {
+    const actual = (await RoadmapRepository.findAll(f)).map((i) => i.id);
+    const expected = jsFilter34(all34, f).map((i) => i.id);
+    assert(JSON.stringify(actual) === JSON.stringify(expected), `Filter parity: ${label} (${actual.join(',') || 'none'})`);
+  }
+  assert((await RoadmapRepository.findAll({ projectId: 'PRJ-101' })).map((i) => i.id).join(',') === 'rm_1', 'projectId filter still isolates RM-101');
+  assert((await RoadmapRepository.findAll({ status: 'all' })).length === all34.length, "status 'all' still returns everything");
+  assert((await RoadmapRepository.findAll({ search: '%' })).length === 0, 'search treats % literally (no wildcard semantics)');
+
+  // --- D. Source-level protection for the SQL pushdown ---
+  const repoSource34 = (await import('fs')).readFileSync('server/repositories/roadmapRepository.ts', 'utf8');
+  assert(/function buildWhereClause\(/.test(repoSource34), 'PG findAll has a WHERE-building path');
+  assert(/FROM roadmap_items\$\{where\.sql\} ORDER BY sequence ASC, created_at ASC/.test(repoSource34), 'PG findAll applies the WHERE clause and keeps the ordering');
+  assert(!/'SELECT \* FROM roadmap_items ORDER BY/.test(repoSource34), 'Unconditional full-table SELECT is gone from findAll');
+  assert(/return applyFilter\(res\.rows\.map\(mapRow\), filter\)/.test(repoSource34), 'JavaScript applyFilter pass retained after SQL narrowing');
+  assert(/LOWER\(status\) = LOWER\(\$/.test(repoSource34) && /COALESCE\(description, ''\) ILIKE/.test(repoSource34), 'SQL mirrors case-insensitive status and nullable description search');
+  assert(/replace\(\/\[\\\\%_\]\/g/.test(repoSource34), 'Search wildcards are escaped for literal ILIKE matching');
+  const traceSource34 = (await import('fs')).readFileSync('server/repositories/traceabilityRepository.ts', 'utf8');
+  assert(!/GoalRepository\.findById/.test(traceSource34), 'Traceability no longer resolves goals one findById at a time');
+
+  // Cleanup
+  for (const l of await GLR28.getLinksFor('roadmap', 'rm_1')) await GLR28.removeLink(l.id);
+  assert((await GLR28.findBySourceType('roadmap')).length === 0, '§34 links removed');
+
   // Summary
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

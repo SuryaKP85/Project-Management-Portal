@@ -247,6 +247,45 @@ function bySequence(a: RoadmapItem, b: RoadmapItem): number {
   return a.createdAt.localeCompare(b.createdAt);
 }
 
+/**
+ * Sprint 9.6E — pushes the supported filters into a PostgreSQL WHERE clause so
+ * the database narrows rows (using the 9.6A indexes) instead of the whole table
+ * being fetched and filtered in JavaScript. This is an optimisation only:
+ * applyFilter() still runs on the returned rows and remains the single source
+ * of filter semantics, so SQL may return a superset but never a subset.
+ *
+ * search terms are escaped so ILIKE matches them literally, exactly as the
+ * JavaScript includes() does — an unescaped '%' or '_' would widen the match,
+ * and a trailing '\' would make PostgreSQL reject the pattern.
+ */
+function buildWhereClause(filter?: RoadmapFilter): { sql: string; params: unknown[] } {
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  const add = (fragment: (n: number) => string, value: unknown) => {
+    params.push(value);
+    clauses.push(fragment(params.length));
+  };
+
+  if (filter) {
+    if (filter.productId) add((n) => `product_id = $${n}`, filter.productId);
+    if (filter.portfolioId) add((n) => `portfolio_id = $${n}`, filter.portfolioId);
+    if (filter.projectId) add((n) => `project_id = $${n}`, filter.projectId);
+    if (filter.ownerId) add((n) => `owner_id = $${n}`, filter.ownerId);
+    if (filter.status && filter.status !== 'all') add((n) => `LOWER(status) = LOWER($${n})`, filter.status);
+    if (filter.priority && filter.priority !== 'all') add((n) => `LOWER(priority) = LOWER($${n})`, filter.priority);
+    if (filter.search) {
+      const literal = filter.search.replace(/[\\%_]/g, (c) => `\\${c}`);
+      add(
+        (n) =>
+          `(name ILIKE '%' || $${n} || '%' OR code ILIKE '%' || $${n} || '%' OR COALESCE(description, '') ILIKE '%' || $${n} || '%')`,
+        literal
+      );
+    }
+  }
+
+  return { sql: clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '', params };
+}
+
 function applyFilter(items: RoadmapItem[], filter?: RoadmapFilter): RoadmapItem[] {
   if (!filter) return items;
   let result = items;
@@ -279,7 +318,12 @@ export const RoadmapRepository = {
 
     if (isDbConnected()) {
       try {
-        const res = await query('SELECT * FROM roadmap_items ORDER BY sequence ASC, created_at ASC');
+        const where = buildWhereClause(filter);
+        const res = await query(
+          `SELECT * FROM roadmap_items${where.sql} ORDER BY sequence ASC, created_at ASC`,
+          where.params
+        );
+        // The JavaScript pass stays: it is the semantic filter, SQL only narrows.
         return applyFilter(res.rows.map(mapRow), filter);
       } catch (err: any) {
         console.warn('DB error in RoadmapRepository.findAll, falling back to memory:', err.message);

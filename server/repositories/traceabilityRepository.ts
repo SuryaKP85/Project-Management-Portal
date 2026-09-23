@@ -1,4 +1,4 @@
-import { TraceabilityChain, TraceabilityNode } from '../models/types';
+import { Goal, TraceabilityChain, TraceabilityNode } from '../models/types';
 import { SubtaskRepository } from './subtaskRepository';
 import { TaskRepository } from './taskRepository';
 import { StoryRepository } from './storyRepository';
@@ -213,8 +213,10 @@ export const TraceabilityRepository = {
         priority: item.priority,
       };
 
-      // Ancestors are the goals this initiative is aligned to.
-      for (const goal of await this.getGoalsForRoadmapItem(item.id)) {
+      // Ancestors are the goals this initiative is aligned to. Goals are read
+      // once and resolved by id rather than fetched per link.
+      const goalsById = await this.loadGoalsById();
+      for (const goal of await this.getGoalsForRoadmapItem(item.id, goalsById)) {
         this.pushGoalAncestor(goal, ancestors);
       }
 
@@ -642,15 +644,23 @@ export const TraceabilityRepository = {
    * governance junction (governanceType 'roadmap' -> targetType 'goal').
    * Returns the live Goal records rather than the stored link labels.
    */
-  async getGoalsForRoadmapItem(roadmapId: string) {
+  async getGoalsForRoadmapItem(roadmapId: string, goalsById: Map<string, Goal>) {
     const links = await GovernanceLinkRepository.getLinksFor('roadmap', roadmapId);
-    const goals = [];
+    const goals: Goal[] = [];
     for (const link of links) {
       if (link.targetType !== 'goal') continue;
-      const goal = await GoalRepository.findById(link.targetId);
+      // One bulk read replaces a lookup per link; an unresolvable (deleted)
+      // goal is skipped exactly as before, never fabricated.
+      const goal = goalsById.get(link.targetId);
       if (goal) goals.push(goal);
     }
     return goals;
+  },
+
+  /** All goals indexed by id — a single read shared by every hop of one traversal. */
+  async loadGoalsById(): Promise<Map<string, Goal>> {
+    const goals = await GoalRepository.findAll();
+    return new Map(goals.map((g) => [g.id, g]));
   },
 
   /** Adds a goal ancestor once; the same goal reached by another path is skipped. */
@@ -679,6 +689,11 @@ export const TraceabilityRepository = {
         priority: item.priority,
       });
     }
+
+    // Goals are read at most once per traversal, and only when a hop below
+    // actually needs them (a portfolio, or roadmap items with links).
+    let goalsById: Map<string, Goal> | null = null;
+    const goals = async () => (goalsById ??= await this.loadGoalsById());
 
     let portfolioId = project.portfolioId;
     if (project.productId) {
@@ -710,9 +725,8 @@ export const TraceabilityRepository = {
 
         // Check if there are OKR/Goals linked. Every applicable goal is
         // reported; previously only the first one survived.
-        const allGoals = await GoalRepository.findAll();
-        for (const goal of allGoals.filter((g) => g.portfolioId === portfolio.id)) {
-          this.pushGoalAncestor(goal, ancestors);
+        for (const goal of (await goals()).values()) {
+          if (goal.portfolioId === portfolio.id) this.pushGoalAncestor(goal, ancestors);
         }
       }
     }
@@ -720,7 +734,7 @@ export const TraceabilityRepository = {
     // Goals reached through the roadmap hop, added after the portfolio-derived
     // ones so an initiative's own alignment sits at the top of the chain.
     for (const item of roadmapItems) {
-      for (const goal of await this.getGoalsForRoadmapItem(item.id)) {
+      for (const goal of await this.getGoalsForRoadmapItem(item.id, await goals())) {
         this.pushGoalAncestor(goal, ancestors);
       }
     }
