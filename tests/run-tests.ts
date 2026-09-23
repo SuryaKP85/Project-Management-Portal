@@ -3135,6 +3135,258 @@ async function runTests() {
   for (const l of await GLR28.getLinksFor('roadmap', 'rm_1')) await GLR28.removeLink(l.id);
   assert((await GLR28.findBySourceType('roadmap')).length === 0, '§34 links removed');
 
+  // 35. Executive Overview — server slice (Sprint 11.1A)
+  console.log('\n--- 35. Executive Overview (server slice) ---');
+  const {
+    ExecutiveDashboardService: Exec35, summariseProjects: summarise35, EXECUTIVE_COMMERCIAL_ROLES: COMMERCIAL35,
+    MAX_HEALTH_PROJECTS: MAX_HEALTH35, PROJECT_STATUSES: STATUSES35, PROJECT_RISKS: RISKS35,
+  } = await import('../server/services/executiveDashboardService');
+  const { ExecutiveController: ExecCtl35 } = await import('../server/controllers/executiveController');
+  const { executiveRoutes: execRoutes35 } = await import('../server/routes/executiveRoutes');
+  const { PortfolioRepository: PortRepo35 } = await import('../server/repositories/portfolioRepository');
+  const { ProductRepository: ProdRepo35 } = await import('../server/repositories/productRepository');
+  const { RiskRepository: RiskRepo35 } = await import('../server/repositories/riskRepository');
+  const { IssueRepository: IssueRepo35 } = await import('../server/repositories/issueRepository');
+  const { DependencyRepository: DepRepo35 } = await import('../server/repositories/dependencyRepository');
+  const { MilestoneRepository: MlsRepo35 } = await import('../server/repositories/milestoneRepository');
+  const { ReleaseRepository: RelRepo35 } = await import('../server/repositories/releaseRepository');
+  const now35 = new Date('2026-09-23T12:00:00.000Z');
+  const admin35 = { role: 'admin' as any };
+  const overview = (filter: any, role = 'admin', options: any = {}) =>
+    Exec35.getOverview(filter, { role: role as any }, { now: now35, ...options });
+  const r1 = (n: number) => Math.round(n * 10) / 10;
+
+  const allProjects35 = await ProjRepo24.findAll();
+  const allProducts35 = await ProdRepo35.findAll();
+  const productById35 = new Map(allProducts35.map((p: any) => [p.id, p]));
+  const portfolioOf35 = (p: any) => p.portfolioId || productById35.get(p.productId)?.portfolioId;
+
+  // --- a. overall aggregation ---
+  const all35 = await overview({});
+  assert(all35.projects.total === allProjects35.length, `Overall total equals every project (${all35.projects.total})`);
+  assert(all35.scope.projectsInScope === allProjects35.length && all35.scope.portfolioId === undefined && all35.scope.productId === undefined, 'Unfiltered scope reports all projects and no scope ids');
+  assert(Object.values(all35.projects.byStatus).reduce((a, b) => a + b, 0) === all35.projects.total, 'byStatus sums to total');
+  assert(Object.values(all35.projects.byRisk).reduce((a, b) => a + b, 0) === all35.projects.total, 'byRisk sums to total');
+  assert(JSON.stringify(Object.keys(all35.projects.byStatus).sort()) === JSON.stringify([...STATUSES35].sort()), 'byStatus carries every canonical ProjectStatus key');
+  assert(JSON.stringify(Object.keys(all35.projects.byRisk).sort()) === JSON.stringify([...RISKS35].sort()), 'byRisk carries every canonical ProjectRisk key');
+  assert(all35.portfolios.length === (await PortRepo35.findAll()).length, 'Unfiltered overview lists every portfolio');
+  assert(all35.meta.basis === 'deterministic-aggregation' && all35.meta.generatedAt === now35.toISOString(), 'Meta states the aggregation basis and the injected timestamp');
+
+  // --- d. project status aggregation ---
+  for (const s of STATUSES35) {
+    assert(all35.projects.byStatus[s] === allProjects35.filter((p: any) => p.status === s).length, `byStatus[${s}] matches the fixture`);
+  }
+  for (const r of RISKS35) {
+    assert(all35.projects.byRisk[r] === allProjects35.filter((p: any) => p.risk === r).length, `byRisk[${r}] matches the fixture`);
+  }
+
+  // --- e. canonical Project.progress aggregation ---
+  const expectedProgress35 = r1(allProjects35.reduce((s: number, p: any) => s + p.progress, 0) / allProjects35.length);
+  assert(all35.projects.progress.average === expectedProgress35, `progress.average is the mean of Project.progress (${all35.projects.progress.average})`);
+
+  // --- f. ProjectHealthService parity ---
+  const healthResults35 = await Promise.all(allProjects35.map((p: any) => ProjectHealthService.computeHealth(p, { now: now35 })));
+  const expectedAvg35 = r1(healthResults35.reduce((s, h) => s + h.score, 0) / healthResults35.length);
+  assert(all35.projects.health.averageScore === expectedAvg35, `Average health equals the mean of ProjectHealthService scores (${all35.projects.health.averageScore})`);
+  for (const band of ['Excellent', 'Healthy', 'Monitor', 'At Risk', 'Critical']) {
+    assert(all35.projects.health.byBand[band] === healthResults35.filter((h) => h.band === band).length, `byBand[${band}] equals ProjectHealthService bands`);
+  }
+  assert(all35.meta.healthModel === HEALTH_MODEL_VERSION, 'Overview reports the canonical health model version');
+  const execSource35 = (await import('fs')).readFileSync('server/services/executiveDashboardService.ts', 'utf8');
+  assert(!/score\s*[-+]=|BASE_SCORE|resolveBand\s*\(|delta/.test(execSource35), 'Executive service contains no health scoring arithmetic of its own');
+  // Code accesses only (comments may name the field): the single permitted use
+  // of a stored portfolio/product health value is echoing it as declaredHealth.
+  const storedHealthUses35 = execSource35.match(/\b(pf|pr|portfolio|product|portfolioNode|productNode)\.health\b/g) || [];
+  assert(
+    storedHealthUses35.length === 1 && /declaredHealth: pf\.health\b/.test(execSource35),
+    `Stored portfolio/product health is only echoed as declaredHealth, never used for derived health (${storedHealthUses35.length} access)`
+  );
+
+  // --- g. complete vs incomplete health ---
+  assert(all35.projects.health.complete === true && all35.projects.health.computedFor === all35.projects.total && all35.meta.healthComplete === true, 'Health is complete for the whole scope');
+  assert(MAX_HEALTH35 >= allProjects35.length, 'Default bound covers the fixture (control)');
+  const partial35 = await overview({}, 'admin', { maxHealthProjects: 2 });
+  assert(partial35.projects.health.complete === false && partial35.meta.healthComplete === false, 'Bounded computation is flagged incomplete');
+  assert(partial35.projects.health.computedFor === 2 && partial35.meta.healthComputedFor === 2, 'Incomplete rollup states how many projects were scored');
+  assert(partial35.projects.health.averageScore === null, 'No partial average is presented as the scope health');
+  assert(Object.values(partial35.projects.health.byBand).reduce((a, b) => a + b, 0) === 2, 'byBand describes only the scored projects');
+  assert(partial35.projects.total === allProjects35.length && partial35.projects.progress.average === expectedProgress35, 'Non-health aggregates are unaffected by the health bound');
+  const emptyRollup35 = summarise35([], new Map(), true);
+  assert(emptyRollup35.total === 0 && emptyRollup35.health.complete === true && emptyRollup35.health.averageScore === null && emptyRollup35.progress.average === null, 'Empty project set is complete with null averages');
+
+  // --- b. portfolio filtering ---
+  const port35 = await overview({ portfolioId: 'port_1' });
+  const port1Projects35 = allProjects35.filter((p: any) => portfolioOf35(p) === 'port_1');
+  assert(port35.projects.total === port1Projects35.length && port35.scope.projectsInScope === port1Projects35.length, `Portfolio filter scopes projects (${port35.projects.total})`);
+  assert(port35.scope.portfolioId === 'port_1' && port35.portfolios.length === 1 && port35.portfolios[0].id === 'port_1', 'Portfolio filter returns only that portfolio node');
+  assert(port35.portfolios[0].rollup.total === port35.projects.total, 'Portfolio node rollup equals the scoped total');
+  assert(port35.portfolios[0].declaredHealth === (await PortRepo35.findById('port_1'))!.health, 'declaredHealth echoes the stored value only');
+  const nodeProductTotal35 = port35.portfolios[0].products.reduce((s: number, pr: any) => s + pr.rollup.total, 0);
+  assert(nodeProductTotal35 + port1Projects35.filter((p: any) => !p.productId).length === port35.projects.total, 'Product nodes partition the portfolio projects');
+  const empty35 = await overview({ portfolioId: 'port_2' });
+  assert(empty35.projects.total === 0 && empty35.projects.health.complete === true && empty35.projects.health.averageScore === null, 'Empty portfolio is complete with null health, not zero');
+
+  // --- c. product filtering ---
+  const prod35 = await overview({ productId: 'prod_2' });
+  const prod2Projects35 = allProjects35.filter((p: any) => p.productId === 'prod_2');
+  assert(prod35.projects.total === prod2Projects35.length && prod35.scope.productId === 'prod_2', `Product filter scopes projects (${prod35.projects.total})`);
+  assert(prod35.portfolios.every((n: any) => n.products.every((pr: any) => pr.id === 'prod_2')), 'Product filter narrows product nodes to that product');
+  const both35 = await overview({ portfolioId: 'port_1', productId: 'prod_1' });
+  assert(both35.projects.total === allProjects35.filter((p: any) => p.productId === 'prod_1' && portfolioOf35(p) === 'port_1').length, 'Combined portfolio+product filter intersects');
+
+  // --- h. strategic aggregation ---
+  assert((await GLR28.findBySourceType('roadmap')).length === 0, '§35 starts with no roadmap goal links (control)');
+  const items35 = await RoadmapRepository.findAll();
+  const goals35 = await GoalRepo29.findAll();
+  assert(all35.strategy.goalsTotal === goals35.length && all35.strategy.initiativesTotal === items35.length, 'Strategy totals match goals and initiatives');
+  assert(Object.values(all35.strategy.goals).reduce((a, b) => a + b, 0) === goals35.length, 'Goal status counts sum to total');
+  assert(Object.values(all35.strategy.initiatives).reduce((a, b) => a + b, 0) === items35.length, 'Initiative status counts sum to total');
+  assert(all35.strategy.charteredInitiatives === items35.filter((i) => i.projectId).length && all35.strategy.uncharteredInitiatives === items35.filter((i) => !i.projectId).length, 'Chartered/unchartered split matches');
+  const charteredIds35 = new Set(items35.map((i) => i.projectId).filter(Boolean));
+  assert(all35.strategy.projectsWithoutInitiative === allProjects35.filter((p: any) => !charteredIds35.has(p.id)).length, 'projectsWithoutInitiative counts projects with no chartered initiative');
+  assert(all35.strategy.initiativesWithoutGoal === items35.length, 'With no links every initiative lacks a goal');
+  await RoadmapService.linkGoal('rm_1', 'goal_1', actor26);
+  const linked35 = await overview({});
+  assert(linked35.strategy.initiativesWithoutGoal === items35.length - 1, 'Linking a goal reduces initiativesWithoutGoal by one');
+  const prodStrategy35 = await overview({ productId: 'prod_2' });
+  assert(prodStrategy35.strategy.projectsWithoutInitiative === prod2Projects35.filter((p: any) => !charteredIds35.has(p.id)).length, 'Strategy respects the product scope');
+  for (const l of await GLR28.getLinksFor('roadmap', 'rm_1')) await GLR28.removeLink(l.id);
+
+  // --- i. governance aggregation (recomputed with the same canonical predicates) ---
+  const [risks35, issues35, deps35, mls35, rels35] = await Promise.all([RiskRepo35.findAll(), IssueRepo35.findAll(), DepRepo35.findAll(), MlsRepo35.findAll(), RelRepo35.findAll()]);
+  const OPEN_R = new Set(['Identified', 'Assessing', 'Mitigating', 'Monitoring', 'Escalated']);
+  const OPEN_I = new Set(['Open', 'Investigating', 'In Progress', 'Blocked']);
+  const today35 = now35.toISOString().split('T')[0];
+  const openR35 = risks35.filter((r: any) => OPEN_R.has(r.status));
+  assert(all35.governance.openRisks === openR35.length, `openRisks (${all35.governance.openRisks})`);
+  assert(all35.governance.criticalOrHighRisks === openR35.filter((r: any) => r.severity === 'Critical' || r.severity === 'High').length, 'criticalOrHighRisks');
+  assert(all35.governance.openIssues === issues35.filter((i: any) => OPEN_I.has(i.status)).length, 'openIssues');
+  assert(all35.governance.blockingDependencies === deps35.filter((d: any) => d.status === 'Blocked' || d.status === 'At Risk').length, 'blockingDependencies');
+  assert(all35.governance.atRiskMilestones === mls35.filter((m: any) => m.status !== 'Completed' && (m.health === 'At Risk' || m.health === 'Critical')).length, 'atRiskMilestones');
+  assert(all35.governance.upcomingMilestones === mls35.filter((m: any) => m.status !== 'Completed' && m.status !== 'Cancelled' && m.targetDate >= today35).length, 'upcomingMilestones');
+  assert(all35.governance.activeReleases === rels35.filter((r: any) => r.status !== 'Released' && r.status !== 'Cancelled').length, 'activeReleases');
+  assert(all35.governance.atRiskReleases === rels35.filter((r: any) => r.status !== 'Released' && (r.health === 'At Risk' || r.health === 'Off Track')).length, 'atRiskReleases');
+  const prod2Ids35 = new Set(prod2Projects35.flatMap((p: any) => [p.id, p.code]));
+  assert(prod35.governance.openRisks === risks35.filter((r: any) => prod2Ids35.has(r.projectId) && OPEN_R.has(r.status)).length, 'Governance respects the product scope');
+  assert(Array.isArray(all35.recentActivity) && all35.recentActivity.length <= 10 && all35.recentActivity.every((a: any) => ['portfolio', 'product', 'project', 'goal', 'roadmap'].includes(a.entityType) && typeof a.summary === 'string'), 'Recent activity is capped and strategic-only');
+
+  // --- j. budget / commercial gating by role ---
+  for (const role of ['viewer', 'team-member']) {
+    const ro = await overview({}, role);
+    assert(ro.meta.commercialsIncluded === false && !JSON.stringify(ro).includes('"budget"'), `${role} receives no budget figures anywhere in the payload`);
+  }
+  for (const role of COMMERCIAL35) {
+    const mg = await overview({}, role);
+    assert(mg.meta.commercialsIncluded === true && mg.projects.budget?.total === allProjects35.reduce((s: number, p: any) => s + (p.budget || 0), 0), `${role} receives the budget total`);
+  }
+  assert(all35.portfolios.every((n: any) => n.rollup.budget !== undefined && n.products.every((pr: any) => pr.rollup.budget !== undefined)), 'Budget gating applies at every hierarchy level');
+
+  // --- k/l/n. controller: 400, 404, 401 ---
+  const ctlReq35 = (query: any, role = 'admin') => req27({ query, user: { userId: actor.id, email: 'admin@company.com', role, firstName: 'A', lastName: 'D' } });
+  const ok35 = res27();
+  await ExecCtl35.getOverview(ctlReq35({ portfolioId: 'port_1' }) as any, ok35 as any, next27 as any);
+  assert(ok35.statusCode === 200 && ok35.body.success === true && ok35.body.data.scope.portfolioId === 'port_1', 'Controller returns the standard success envelope');
+  const bad35 = res27();
+  await ExecCtl35.getOverview(ctlReq35({ portfolioId: '../etc' }) as any, bad35 as any, next27 as any);
+  assert(bad35.statusCode === 400 && bad35.body.error.code === 'VALIDATION_ERROR', 'Malformed portfolioId returns 400 VALIDATION_ERROR');
+  const badArr35 = res27();
+  await ExecCtl35.getOverview(ctlReq35({ productId: ['a', 'b'] }) as any, badArr35 as any, next27 as any);
+  assert(badArr35.statusCode === 400, 'Repeated query parameter returns 400');
+  const missing35 = res27();
+  await ExecCtl35.getOverview(ctlReq35({ portfolioId: 'port_nope' }) as any, missing35 as any, next27 as any);
+  assert(missing35.statusCode === 404 && missing35.body.error.code === 'NOT_FOUND', 'Unknown portfolio returns 404 NOT_FOUND');
+  const missingProd35 = res27();
+  await ExecCtl35.getOverview(ctlReq35({ productId: 'prod_nope' }) as any, missingProd35 as any, next27 as any);
+  assert(missingProd35.statusCode === 404, 'Unknown product returns 404');
+  const mismatch35 = res27();
+  await ExecCtl35.getOverview(ctlReq35({ portfolioId: 'port_2', productId: 'prod_1' }) as any, mismatch35 as any, next27 as any);
+  assert(mismatch35.statusCode === 404, 'Product outside the requested portfolio returns 404');
+  const viewerCtl35 = res27();
+  await ExecCtl35.getOverview(ctlReq35({}, 'viewer') as any, viewerCtl35 as any, next27 as any);
+  assert(viewerCtl35.statusCode === 200 && !JSON.stringify(viewerCtl35.body).includes('"budget"'), 'Controller passes the role through so viewers get no budget');
+  const noUser35 = res27();
+  await ExecCtl35.getOverview({ query: {}, params: {}, body: {}, headers: {}, cookies: {} } as any, noUser35 as any, next27 as any);
+  assert(noUser35.statusCode === 401, 'Controller refuses without an authenticated user');
+  const anon35 = res27();
+  authMw({ headers: {}, cookies: {} } as any, anon35 as any, next27 as any);
+  assert(anon35.statusCode === 401, 'Route middleware rejects anonymous requests with 401');
+
+  // --- m. route registration ---
+  const execLayer35 = (execRoutes35 as any).stack.find((l: any) => l.route && l.route.path === '/executive/overview');
+  assert(!!execLayer35 && execLayer35.route.methods.get === true, 'GET /executive/overview registered');
+  const execHandlers35 = execLayer35.route.stack.map((s: any) => s.name);
+  assert(execHandlers35.includes('authenticateToken'), 'Executive route reuses authenticateToken');
+  assert(execLayer35.route.stack.length === 2, 'Executive route carries no extra role gate (read convention)');
+  assert((execRoutes35 as any).stack.filter((l: any) => l.route).length === 1, 'Executive router exposes exactly one route');
+  assert((v1ApiRouter as any).stack.some((l: any) => l.handle === execRoutes35), 'Executive router is mounted on the v1 API router');
+
+  // --- o. no client/UI changes in this slice ---
+  const fs35 = await import('fs');
+  // The server slice landed without UI; the V1.1 dashboard must stay untouched
+  // regardless of the V2 page added in 11.1B (checked in §36).
+  assert(!fs35.readFileSync('PM-Portal/js/dashboard.js', 'utf8').includes('executive/overview'), 'V1.1 dashboard is untouched');
+  assert((await GLR28.findBySourceType('roadmap')).length === 0, '§35 links cleaned up');
+
+  // 36. Executive Overview — frontend integration (Sprint 11.1B)
+  // Static, source-level checks: the browser code has no Node harness, so the
+  // contract is pinned by inspecting what the files do and do not contain.
+  console.log('\n--- 36. Executive Overview (frontend integration) ---');
+  const html36 = fs35.readFileSync('PM-Portal/index.html', 'utf8');
+  const app36 = fs35.readFileSync('PM-Portal/js/app.js', 'utf8');
+  const dash36 = fs35.readFileSync('PM-Portal/js/dashboard.js', 'utf8');
+  const mod36 = fs35.readFileSync('PM-Portal/js/executiveDashboard.js', 'utf8');
+  const svc36 = fs35.readFileSync('PM-Portal/js/services/executiveService.js', 'utf8');
+
+  // 1–3. navigation and the untouched V1.1 dashboard
+  assert(/data-page="executive"[\s\S]*?Executive Overview/.test(html36), 'Executive Overview navigation item exists');
+  assert(/<section id="page-executive" class="page-container">/.test(html36), 'Executive Overview page section exists');
+  assert(/data-page="dashboard"[\s\S]*?Executive Dashboard/.test(html36) && /<section id="page-dashboard" class="page-container active">/.test(html36), 'Existing Executive Dashboard navigation and page remain');
+  assert((html36.match(/id="page-dashboard"/g) || []).length === 1 && (html36.match(/id="page-executive"/g) || []).length === 1, 'Both pages exist exactly once');
+  assert(!/executive\/overview|ExecutiveOverview|executiveService|page-executive|Executive Overview/.test(dash36), 'dashboard.js has no executive-overview references');
+  assert(/import { Storage } from '\.\/storage\.js';/.test(dash36) && /renderAllCharts\(\)/.test(dash36), 'dashboard.js keeps its V1.1 entry points');
+  assert(/pageId === 'dashboard'\) \{\s*DashboardModule\.renderAllCharts\(\);/.test(app36), 'app.js still routes dashboard to the V1.1 module');
+  assert(/pageId === 'executive'\) \{\s*ExecutiveOverviewModule\.init\(this\);/.test(app36) && /'executive': 'Executive Overview'/.test(app36), 'app.js routes the new page and labels its breadcrumb');
+
+  // 4–5. service usage and request shape
+  assert(/import \{ ExecutiveService \} from '\.\/services\/executiveService\.js'/.test(mod36) && /ExecutiveService\.getOverview\(/.test(mod36), 'Module loads through executiveService');
+  assert(/apiClient\.get\(`\/executive\/overview\$\{qs\}`\)/.test(svc36), 'Service targets GET /executive/overview via apiClient');
+  const setCalls36 = [...svc36.matchAll(/query\.set\('([a-zA-Z]+)'/g)].map((m) => m[1]).sort();
+  assert(JSON.stringify(setCalls36) === JSON.stringify(['portfolioId', 'productId']), `Request carries only portfolioId/productId (${setCalls36.join(',')})`);
+  assert(!/localStorage|Storage\./.test(mod36) && !/localStorage/.test(svc36), 'Executive page never reads localStorage in place of the V2 API');
+
+  // 6–7. no client-side health / progress / alignment / governance calculation
+  assert(!/resolveBand|>= ?90|>= ?75|score\s*[-+*\/]=|\.score\s*[+\-*\/]|byBand\[[^\]]+\]\s*=\s*[^=]/.test(mod36), 'No client-side health scoring or band assignment');
+  assert(!/Math\.round|toFixed|reduce\(|\/\s*total|progress\s*[+\-*\/]/.test(mod36), 'No client-side progress or average arithmetic');
+  assert(!/targetType|governanceType|linkedGoals|status === 'Blocked'|severity/.test(mod36), 'No client-side alignment or governance predicates');
+  assert(/HEALTH_BANDS = \['Excellent', 'Healthy', 'Monitor', 'At Risk', 'Critical'\]/.test(mod36) && /health\.byBand\?\.\[band\]/.test(mod36), 'Health bands are rendered from server byBand values only');
+
+  // 8. incomplete health displayed safely
+  assert(/health\.complete && health\.averageScore !== null/.test(mod36), 'Average score is shown only when the server marks health complete');
+  assert(/Health data incomplete/.test(mod36) && /Scored \$\{escapeHtml\(health\.computedFor\)\} of/.test(mod36), 'Incomplete health shows computed-versus-total, not a partial average');
+
+  // 9. budget rendered only when present; no client-side role logic
+  assert(/if \(p\.budget && typeof p\.budget\.total === 'number'\)/.test(mod36) && /rollup\.budget && typeof rollup\.budget\.total === 'number'/.test(mod36), 'Budget rendered only when returned by the server');
+  // ARIA role="…" attributes are presentation; user-role checks would read v2User / .role.
+  assert(!/v2User|portalSettingsInstance|\.role\b|requireRoles|canWrite|canDelete|isAdmin/.test(mod36), 'Module contains no role or authorisation logic');
+
+  // 10–11. filters reload the API rather than filtering in the browser
+  assert(/executive-filter-portfolio[\s\S]*?addEventListener\('change'[\s\S]*?await this\.load\(\)/.test(mod36), 'Portfolio filter change reloads the API');
+  assert(/executive-filter-product[\s\S]*?addEventListener\('change'[\s\S]*?await this\.load\(\)/.test(mod36), 'Product filter change reloads the API');
+  assert(!/overview\.portfolios\.filter\(|projects\.filter\(/.test(mod36), 'No browser-side filtering of loaded data');
+  assert(/this\.filters\.productId = '';/.test(mod36), 'Portfolio change resets the product filter');
+
+  // 12. error states
+  for (const status of ['401', '403', '404']) {
+    assert(new RegExp(`status === ${status}`).test(mod36), `Error state handles ${status}`);
+  }
+  assert(/TIMEOUT/.test(mod36) && /role="alert"/.test(mod36), 'Timeout and generic errors render an alert');
+  assert(/No projects/.test(mod36) && /No strategic alignment/.test(mod36) && /No recent activity/.test(mod36), 'Empty states are explicit, not zeroes');
+  assert(/aria-busy="true"/.test(mod36), 'Loading state rendered');
+  assert(/details/.test(mod36) === false || !/a\.details/.test(mod36), 'Raw activity details are never rendered');
+
+  // The server slice remains intact and the route is still the only source of these figures.
+  assert(fs35.existsSync('server/services/executiveDashboardService.ts'), 'Server aggregate still present');
+
   // Summary
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

@@ -22,6 +22,7 @@ import { AppIntegrationModule } from './appIntegration.js';
 import { MigrationConfig } from './migrationConfig.js';
 import { SettingsModule } from './settings.js';
 import { PortfoliosModule } from './portfolios.js';
+import { ExecutiveOverviewModule } from './executiveDashboard.js';
 import { ProductsModule } from './products.js';
 import { DeliveryModule } from './delivery.js';
 import { AgileBoardModule } from './agileBoard.js';
@@ -316,6 +317,7 @@ class EnterprisePortalApp {
       // Capitalize page name cleanly
       const nameMap = {
         'dashboard': 'Executive Dashboard',
+        'executive': 'Executive Overview',
         'action-center': 'Executive Action Center',
         'projects': 'Projects Portfolio',
         'portfolios': 'Strategic Portfolios & OKRs',
@@ -348,6 +350,8 @@ class EnterprisePortalApp {
     // Load page modules
     if (pageId === 'dashboard') {
       DashboardModule.renderAllCharts();
+    } else if (pageId === 'executive') {
+      ExecutiveOverviewModule.init(this);
     } else if (pageId === 'action-center') {
       ActionCenterModule.init(this);
     } else if (pageId === 'projects') {

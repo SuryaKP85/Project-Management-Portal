@@ -665,6 +665,122 @@ export interface VelocityRecord {
 }
 
 // ====================================================================
+// Sprint 11.1A: Executive Overview (read-only aggregate)
+// ====================================================================
+
+/**
+ * Query scope for the executive overview. Both fields are optional and narrow
+ * the project set; a future Program level would add a third optional id here
+ * without changing anything below it.
+ */
+export interface ExecutiveOverviewFilter {
+  portfolioId?: string;
+  productId?: string;
+}
+
+/**
+ * Health rolled up from ProjectHealthService results — never re-scored here.
+ *
+ * `complete` is false when health could not be computed for every project in
+ * the rollup's scope. In that case `averageScore` is null (a partial average is
+ * never presented as the scope's health) and `byBand` describes only the
+ * `computedFor` projects that were scored.
+ */
+export interface ExecutiveHealthRollup {
+  averageScore: number | null;
+  /** Keyed by HealthBand ('Excellent' | 'Healthy' | 'Monitor' | 'At Risk' | 'Critical'). */
+  byBand: Record<string, number>;
+  computedFor: number;
+  complete: boolean;
+}
+
+/** Aggregates over one set of projects; applied identically at every hierarchy level. */
+export interface ExecutiveProjectRollup {
+  total: number;
+  byStatus: Record<ProjectStatus, number>;
+  byRisk: Record<ProjectRisk, number>;
+  health: ExecutiveHealthRollup;
+  /** Mean of the canonical Project.progress values, or null when there are no projects. */
+  progress: { average: number | null };
+  /** Present only when the caller's role may see commercial figures. */
+  budget?: { total: number };
+}
+
+export interface ExecutiveProductNode {
+  id: string;
+  code: string;
+  name: string;
+  status: ProductStatus;
+  rollup: ExecutiveProjectRollup;
+}
+
+export interface ExecutivePortfolioNode {
+  id: string;
+  code: string;
+  name: string;
+  status: PortfolioStatus;
+  /** The stored Portfolio.health value, reported as declared — not derived here. */
+  declaredHealth?: PortfolioHealth;
+  rollup: ExecutiveProjectRollup;
+  products: ExecutiveProductNode[];
+}
+
+export interface ExecutiveStrategySummary {
+  goals: Record<GoalStatus, number>;
+  goalsTotal: number;
+  initiatives: Record<RoadmapStatus, number>;
+  initiativesTotal: number;
+  charteredInitiatives: number;
+  uncharteredInitiatives: number;
+  projectsWithoutInitiative: number;
+  initiativesWithoutGoal: number;
+}
+
+export interface ExecutiveGovernanceSummary {
+  openRisks: number;
+  criticalOrHighRisks: number;
+  openIssues: number;
+  blockingDependencies: number;
+  atRiskMilestones: number;
+  upcomingMilestones: number;
+  activeReleases: number;
+  atRiskReleases: number;
+}
+
+export interface ExecutiveActivityEntry {
+  id: string;
+  entityType: ActivityEntityType;
+  entityId: string;
+  action: ActivityAction;
+  actorName: string;
+  createdAt: string;
+  summary: string;
+}
+
+export interface ExecutiveOverview {
+  scope: {
+    portfolioId?: string;
+    productId?: string;
+    projectsInScope: number;
+    /** Projects counted in `projects` that belong to no portfolio and so appear under none. */
+    projectsWithoutPortfolio: number;
+  };
+  projects: ExecutiveProjectRollup;
+  portfolios: ExecutivePortfolioNode[];
+  strategy: ExecutiveStrategySummary;
+  governance: ExecutiveGovernanceSummary;
+  recentActivity: ExecutiveActivityEntry[];
+  meta: {
+    generatedAt: string;
+    healthModel: string;
+    healthComputedFor: number;
+    healthComplete: boolean;
+    commercialsIncluded: boolean;
+    basis: 'deterministic-aggregation';
+  };
+}
+
+// ====================================================================
 // Sprint 5: Governance & Delivery Control (Risks, Issues, Dependencies, Milestones, Releases)
 // ====================================================================
 
