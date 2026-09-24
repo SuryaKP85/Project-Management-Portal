@@ -1,5 +1,20 @@
-import { Portfolio } from '../models/types';
+import { Portfolio, PortfolioHealth, normalizeDeclaredHealth } from '../models/types';
 import { isDbConnected, query } from '../config/database';
+
+/**
+ * Sprint 11.2B — read-side normalisation of declared health. Rows written
+ * before the shared vocabulary may still hold legacy aliases; they present
+ * canonically without the store being rewritten. An unrecognised value is
+ * passed through untouched so it can be surfaced, never disguised.
+ */
+function readDeclaredHealth(value: unknown): PortfolioHealth {
+  return (normalizeDeclaredHealth(value) ?? value) as PortfolioHealth;
+}
+
+function withDeclaredHealth(portfolio: Portfolio): Portfolio {
+  const health = readDeclaredHealth(portfolio.health);
+  return health === portfolio.health ? portfolio : { ...portfolio, health };
+}
 
 const memoryPortfolios: Map<string, Portfolio> = new Map();
 
@@ -28,7 +43,7 @@ function seedDefaultPortfolios() {
       ownerId: 'usr_pm_2',
       ownerName: 'Alex Morgan',
       status: 'active',
-      health: 'caution',
+      health: 'at-risk',
       productCount: 1,
       projectCount: 2,
       createdAt: new Date().toISOString(),
@@ -51,12 +66,12 @@ export const PortfolioRepository = {
         description: r.description,
         ownerId: r.owner_id,
         status: r.status,
-        health: r.health,
+        health: readDeclaredHealth(r.health),
         createdAt: r.created_at,
         updatedAt: r.updated_at,
       }));
     }
-    return Array.from(memoryPortfolios.values());
+    return Array.from(memoryPortfolios.values()).map(withDeclaredHealth);
   },
 
   async findById(id: string): Promise<Portfolio | null> {
@@ -71,12 +86,13 @@ export const PortfolioRepository = {
         description: r.description,
         ownerId: r.owner_id,
         status: r.status,
-        health: r.health,
+        health: readDeclaredHealth(r.health),
         createdAt: r.created_at,
         updatedAt: r.updated_at,
       };
     }
-    return memoryPortfolios.get(id) || null;
+    const found = memoryPortfolios.get(id);
+    return found ? withDeclaredHealth(found) : null;
   },
 
   async create(portfolioData: Partial<Portfolio>): Promise<Portfolio> {

@@ -1,8 +1,25 @@
 import { PortfolioRepository } from '../repositories/portfolioRepository';
 import { ActivityRepository } from '../repositories/activityRepository';
 import { NotificationRepository } from '../repositories/notificationRepository';
-import { Portfolio, SafeUser } from '../models/types';
+import {
+  Portfolio,
+  SafeUser,
+  DeclaredHealth,
+  normalizeDeclaredHealth,
+  invalidDeclaredHealthError,
+} from '../models/types';
 import crypto from 'crypto';
+
+/**
+ * Absent/blank health means "not supplied" (repository default applies);
+ * canonical or legacy values normalise; anything else is a 400.
+ */
+function resolveDeclaredHealth(entity: 'portfolio' | 'product', value: unknown): DeclaredHealth | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  const normalized = normalizeDeclaredHealth(value);
+  if (!normalized) throw invalidDeclaredHealthError(entity, value);
+  return normalized;
+}
 
 export const PortfolioService = {
   async getAllPortfolios(): Promise<Portfolio[]> {
@@ -14,7 +31,13 @@ export const PortfolioService = {
   },
 
   async createPortfolio(data: Partial<Portfolio>, actorUser: SafeUser): Promise<Portfolio> {
-    const created = await PortfolioRepository.create(data);
+    // Declared health is validated and canonicalised before anything is stored.
+    const payload: Partial<Portfolio> = { ...data };
+    const health = resolveDeclaredHealth('portfolio', data.health);
+    if (health) payload.health = health;
+    else delete payload.health;
+
+    const created = await PortfolioRepository.create(payload);
 
     await ActivityRepository.create({
       id: `act_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
@@ -48,9 +71,18 @@ export const PortfolioService = {
     return created;
   },
 
-  async updatePortfolio(id: string, updates: Partial<Portfolio>, actorUser: SafeUser): Promise<Portfolio | null> {
+  async updatePortfolio(id: string, rawUpdates: Partial<Portfolio>, actorUser: SafeUser): Promise<Portfolio | null> {
     const existing = await PortfolioRepository.findById(id);
     if (!existing) return null;
+
+    // Normalise once; every downstream step (store, audit, notification)
+    // sees the canonical value, never the alias the client sent.
+    const updates: Partial<Portfolio> = { ...rawUpdates };
+    if (rawUpdates.health !== undefined) {
+      const health = resolveDeclaredHealth('portfolio', rawUpdates.health);
+      if (health) updates.health = health;
+      else delete updates.health;
+    }
 
     const updated = await PortfolioRepository.update(id, updates);
     if (updated) {

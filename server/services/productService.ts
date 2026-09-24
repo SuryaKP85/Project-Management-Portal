@@ -1,8 +1,25 @@
 import { ProductRepository } from '../repositories/productRepository';
 import { ActivityRepository } from '../repositories/activityRepository';
 import { NotificationRepository } from '../repositories/notificationRepository';
-import { Product, SafeUser } from '../models/types';
+import {
+  Product,
+  SafeUser,
+  DeclaredHealth,
+  normalizeDeclaredHealth,
+  invalidDeclaredHealthError,
+} from '../models/types';
 import crypto from 'crypto';
+
+/**
+ * Absent/blank health means "not supplied" (repository default applies);
+ * canonical or legacy values normalise; anything else is a 400.
+ */
+function resolveDeclaredHealth(entity: 'portfolio' | 'product', value: unknown): DeclaredHealth | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  const normalized = normalizeDeclaredHealth(value);
+  if (!normalized) throw invalidDeclaredHealthError(entity, value);
+  return normalized;
+}
 
 export const ProductService = {
   async getAllProducts(): Promise<Product[]> {
@@ -19,6 +36,10 @@ export const ProductService = {
       id: data.id || `prod_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
       code: data.code || `PROD-${Date.now().toString().slice(-4)}`,
     };
+    // Declared health is validated and canonicalised before anything is stored.
+    const health = resolveDeclaredHealth('product', data.health);
+    if (health) newProduct.health = health;
+    else delete newProduct.health;
 
     const created = await ProductRepository.create(newProduct);
 
@@ -56,9 +77,17 @@ export const ProductService = {
     return created;
   },
 
-  async updateProduct(id: string, updates: Partial<Product>, actorUser: SafeUser): Promise<Product | null> {
+  async updateProduct(id: string, rawUpdates: Partial<Product>, actorUser: SafeUser): Promise<Product | null> {
     const existing = await ProductRepository.findById(id);
     if (!existing) return null;
+
+    // Normalise once; store, audit and notification all see the canonical value.
+    const updates: Partial<Product> = { ...rawUpdates };
+    if (rawUpdates.health !== undefined) {
+      const health = resolveDeclaredHealth('product', rawUpdates.health);
+      if (health) updates.health = health;
+      else delete updates.health;
+    }
 
     const updated = await ProductRepository.update(id, updates);
     if (updated) {

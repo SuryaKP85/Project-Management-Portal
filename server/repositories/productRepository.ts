@@ -1,5 +1,21 @@
-import { Product } from '../models/types';
+import { Product, ProductHealth, normalizeDeclaredHealth } from '../models/types';
 import { isDbConnected, query } from '../config/database';
+
+/**
+ * Sprint 11.2B — read-side normalisation of declared health. Rows written
+ * before the shared vocabulary may still hold legacy aliases; they present
+ * canonically without the store being rewritten. An unrecognised value is
+ * passed through untouched so it can be surfaced, never disguised.
+ */
+function readDeclaredHealth(value: unknown): ProductHealth | undefined {
+  if (value === undefined || value === null) return undefined;
+  return (normalizeDeclaredHealth(value) ?? value) as ProductHealth;
+}
+
+function withDeclaredHealth(product: Product): Product {
+  const health = readDeclaredHealth(product.health);
+  return health === product.health ? product : { ...product, health };
+}
 
 const memoryProducts: Map<string, Product> = new Map();
 
@@ -12,7 +28,7 @@ function seedDefaultProducts() {
       name: 'Ares Autonomous Flight Stack',
       description: 'Unified product management, strategy, and execution governance platform for launch vehicles.',
       status: 'in-development',
-      health: 'on-track',
+      health: 'healthy',
       ownerId: 'usr_admin_1',
       ownerName: 'Surya Prashanth',
       teamId: 'team_1',
@@ -68,7 +84,7 @@ export const ProductRepository = {
         name: r.name,
         description: r.description,
         status: r.status,
-        health: r.health,
+        health: readDeclaredHealth(r.health),
         ownerId: r.owner_id,
         teamId: r.team_id,
         portfolioId: r.portfolio_id,
@@ -83,7 +99,7 @@ export const ProductRepository = {
         updatedAt: r.updated_at,
       }));
     }
-    return Array.from(memoryProducts.values());
+    return Array.from(memoryProducts.values()).map(withDeclaredHealth);
   },
 
   async findById(id: string): Promise<Product | null> {
@@ -97,7 +113,7 @@ export const ProductRepository = {
         name: r.name,
         description: r.description,
         status: r.status,
-        health: r.health,
+        health: readDeclaredHealth(r.health),
         ownerId: r.owner_id,
         teamId: r.team_id,
         portfolioId: r.portfolio_id,
@@ -112,7 +128,8 @@ export const ProductRepository = {
         updatedAt: r.updated_at,
       };
     }
-    return memoryProducts.get(id) || null;
+    const found = memoryProducts.get(id);
+    return found ? withDeclaredHealth(found) : null;
   },
 
   async create(product: Partial<Product>): Promise<Product> {
@@ -126,7 +143,7 @@ export const ProductRepository = {
       name: product.name || 'Untitled Product',
       description: product.description || '',
       status: product.status || 'in-development',
-      health: product.health || 'on-track',
+      health: product.health || 'healthy',
       ownerId: product.ownerId || 'usr_admin_1',
       ownerName: product.ownerName || 'Surya Prashanth',
       teamId: product.teamId,

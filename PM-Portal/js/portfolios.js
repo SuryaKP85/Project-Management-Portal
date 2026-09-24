@@ -843,12 +843,16 @@ export const PortfoliosModule = {
         const linkedGoals = this.goals.filter((g) => g.portfolioId === p.id);
         const linkedProjects = this.projects.filter((prj) => prj.portfolioId === p.id);
 
+        // Declared health: the three canonical values are rendered explicitly;
+        // anything else is shown as unspecified rather than assumed critical.
         const healthBadge =
           p.health === 'healthy'
             ? '<span class="badge bg-success-subtle text-success border border-success-subtle">Healthy</span>'
             : p.health === 'at-risk'
             ? '<span class="badge bg-warning-subtle text-warning border border-warning-subtle">At Risk</span>'
-            : '<span class="badge bg-danger-subtle text-danger border border-danger-subtle">Critical</span>';
+            : p.health === 'critical'
+            ? '<span class="badge bg-danger-subtle text-danger border border-danger-subtle">Critical</span>'
+            : '<span class="badge bg-light text-secondary border" title="Health value not recognised">Unspecified</span>';
 
         const statusBadge =
           p.status === 'active'

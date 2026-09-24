@@ -3387,6 +3387,128 @@ async function runTests() {
   // The server slice remains intact and the route is still the only source of these figures.
   assert(fs35.existsSync('server/services/executiveDashboardService.ts'), 'Server aggregate still present');
 
+  // 37. Declared health vocabulary (Sprint 11.2B)
+  // Portfolio and Product share one hand-entered vocabulary: healthy | at-risk |
+  // critical. Legacy 'caution' / 'on-track' normalise on write and on read.
+  console.log('\n--- 37. Declared Health Vocabulary ---');
+  const { PortfolioService: PortSvc37 } = await import('../server/services/portfolioService');
+  const { ProductService: ProdSvc37 } = await import('../server/services/productService');
+  const { PortfolioController: PortCtl37 } = await import('../server/controllers/portfolioController');
+  const { errorHandler: errorHandler37 } = await import('../server/middleware/errorHandler');
+  const { NotificationRepository: NotifRepo37 } = await import('../server/repositories/notificationRepository');
+  const { DECLARED_HEALTH_VALUES: VALUES37, DECLARED_HEALTH_LEGACY_ALIASES: ALIASES37, normalizeDeclaredHealth: norm37 } =
+    await import('../server/models/types');
+  const actor37: any = { id: actor.id, email: 'admin@company.com', firstName: 'A', lastName: 'D', role: 'admin', isActive: true, createdAt: '', updatedAt: '' };
+  const OWNER37 = 'usr_pm_2';
+  const riskAlerts37 = async () => (await NotifRepo37.findByUserId(OWNER37)).filter((n: any) => n.type === 'risk_alert').length;
+  const latestActivity37 = async (entityType: string, entityId: string) =>
+    (await ActivityRepository.findRecent(60)).find((a: any) => a.entityType === entityType && a.entityId === entityId);
+
+  // --- vocabulary definition ---
+  assert(JSON.stringify([...VALUES37]) === JSON.stringify(['healthy', 'at-risk', 'critical']), 'Canonical vocabulary is exactly healthy | at-risk | critical');
+  assert(ALIASES37.caution === 'at-risk' && ALIASES37['on-track'] === 'healthy' && Object.keys(ALIASES37).length === 2, 'Exactly two deprecated aliases are recognised');
+  assert(norm37('caution') === 'at-risk' && norm37('on-track') === 'healthy' && norm37(' Critical ') === 'critical', 'Normaliser maps aliases and trims/lowercases canonical values');
+  assert(norm37('bogus') === undefined && norm37(42) === undefined && norm37(undefined) === undefined, 'Normaliser rejects unknown and non-string input');
+
+  // --- seeds ---
+  assert((await PortRepo35.findById('port_1'))!.health === 'healthy' && (await PortRepo35.findById('port_2'))!.health === 'at-risk', 'Portfolio seeds are canonical (port_1 healthy, port_2 at-risk)');
+  assert((await ProdRepo35.findById('prod_1'))!.health === 'healthy' && (await ProdRepo35.findById('prod_2'))!.health === 'at-risk', 'Product seeds are canonical (prod_1 healthy, prod_2 at-risk)');
+  assert((await PortRepo35.findAll()).every((p: any) => (VALUES37 as readonly string[]).includes(p.health)), 'Every seeded portfolio health is canonical');
+  assert((await ProdRepo35.findAll()).every((p: any) => (VALUES37 as readonly string[]).includes(p.health)), 'Every seeded product health is canonical');
+
+  // --- create: aliases normalise, defaults canonical ---
+  // Explicit ids: PortfolioRepository derives ids from Date.now() alone, so two
+  // creates in one millisecond would collide and overwrite each other.
+  const pfLegacy37 = await PortSvc37.createPortfolio({ id: 'port_s112b_legacy', code: 'PORT-S112B-L', name: 'S112B legacy portfolio', health: 'caution' as any, ownerId: OWNER37 } as any, actor37);
+  assert(pfLegacy37.health === 'at-risk', "Portfolio created with legacy 'caution' is stored as 'at-risk'");
+  assert((await latestActivity37('portfolio', pfLegacy37.id))?.details?.health === 'at-risk', 'Portfolio create activity records the canonical value');
+  const pfDefault37 = await PortSvc37.createPortfolio({ id: 'port_s112b_default', code: 'PORT-S112B-D', name: 'S112B default portfolio' } as any, actor37);
+  assert(pfDefault37.health === 'healthy', 'Portfolio default health is healthy');
+  const prLegacy37 = await ProdSvc37.createProduct({ id: 'prod_s112b_legacy', name: 'S112B legacy product', code: 'PROD-S112B-L', health: 'on-track' as any, ownerId: OWNER37 } as any, actor37);
+  assert(prLegacy37.health === 'healthy', "Product created with legacy 'on-track' is stored as 'healthy'");
+  assert((await latestActivity37('product', prLegacy37.id))?.details?.health === 'healthy', 'Product create activity records the canonical value');
+  const prDefault37 = await ProdSvc37.createProduct({ id: 'prod_s112b_default', name: 'S112B default product', code: 'PROD-S112B-D' } as any, actor37);
+  assert(prDefault37.health === 'healthy', 'Product default health is healthy');
+
+  // --- update: aliases normalise, case tolerated, audit canonical ---
+  assert((await PortSvc37.updatePortfolio(pfDefault37.id, { health: 'caution' as any }, actor37))!.health === 'at-risk', "Portfolio update with 'caution' stores 'at-risk'");
+  assert((await latestActivity37('portfolio', pfDefault37.id))?.details?.health === 'at-risk', 'Portfolio update activity carries the canonical value, not the alias');
+  assert((await ProdSvc37.updateProduct(prDefault37.id, { health: 'on-track' as any }, actor37))!.health === 'healthy', "Product update with 'on-track' stores 'healthy'");
+  assert((await latestActivity37('product', prDefault37.id))?.details?.health === 'healthy', 'Product update activity carries the canonical value');
+  assert((await PortSvc37.updatePortfolio(pfDefault37.id, { health: 'HEALTHY' as any }, actor37))!.health === 'healthy', 'Case variants of canonical values normalise');
+  assert((await PortSvc37.updatePortfolio(pfDefault37.id, { name: 'S112B renamed', health: '' as any }, actor37))!.health === 'healthy', 'Blank health on update leaves the stored value untouched');
+
+  // --- unknown values: rejected, nothing stored, no audit entry ---
+  const rejects37 = async (fn: () => Promise<any>) => { try { await fn(); return null; } catch (e: any) { return e; } };
+  const actsBefore37 = (await ActivityRepository.findRecent(200)).length;
+  const pfErr37 = await rejects37(() => PortSvc37.updatePortfolio(pfDefault37.id, { health: 'bogus' as any }, actor37));
+  assert(pfErr37 && pfErr37.status === 400 && pfErr37.code === 'VALIDATION_ERROR' && /bogus/.test(pfErr37.message), 'Unknown portfolio health is rejected with a 400 VALIDATION_ERROR');
+  assert((await PortRepo35.findById(pfDefault37.id))!.health === 'healthy', 'Rejected portfolio value was not stored');
+  const prErr37 = await rejects37(() => ProdSvc37.updateProduct(prDefault37.id, { health: 'bogus' as any }, actor37));
+  assert(prErr37 && prErr37.status === 400 && prErr37.code === 'VALIDATION_ERROR', 'Unknown product health is rejected with a 400 VALIDATION_ERROR');
+  assert((await ProdRepo35.findById(prDefault37.id))!.health === 'healthy', 'Rejected product value was not stored');
+  const pfCreateErr37 = await rejects37(() => PortSvc37.createPortfolio({ id: 'port_s112b_bad', name: 'S112B bad', health: 'bogus' as any } as any, actor37));
+  assert(pfCreateErr37?.status === 400 && !(await PortRepo35.findAll()).some((p: any) => p.name === 'S112B bad'), 'Unknown health on create is rejected and nothing is created');
+  assert((await ActivityRepository.findRecent(200)).length === actsBefore37, 'Rejected updates produce no activity entries');
+  // Through the real controller + global error handler: the existing 400 envelope.
+  const badRes37 = res27();
+  let forwarded37: any = null;
+  await PortCtl37.update(req27({ params: { id: pfDefault37.id }, body: { health: 'bogus' } }) as any, badRes37 as any, ((e: any) => { forwarded37 = e; }) as any);
+  assert(forwarded37 && forwarded37.status === 400, 'Controller forwards the validation error to the error handler');
+  errorHandler37(forwarded37, { method: 'PATCH', url: '/portfolios/x' } as any, badRes37 as any, next27 as any);
+  assert(badRes37.statusCode === 400 && badRes37.body.success === false && badRes37.body.error.code === 'VALIDATION_ERROR', 'API returns the existing 400 VALIDATION_ERROR envelope');
+
+  // --- read-side normalisation of legacy stored values, without rewriting the store ---
+  await PortRepo35.update(pfDefault37.id, { health: 'caution' as any }); // bypasses the service, as legacy rows would
+  assert((await PortRepo35.findById(pfDefault37.id))!.health === 'at-risk', "Legacy 'caution' held in the store reads back as 'at-risk'");
+  assert((await PortRepo35.findAll()).find((p: any) => p.id === pfDefault37.id)!.health === 'at-risk', 'findAll normalises legacy values too');
+  assert((await PortSvc37.getPortfolioById(pfDefault37.id))!.health === 'at-risk', 'API read path presents the canonical value');
+  await ProdRepo35.update(prDefault37.id, { health: 'on-track' as any });
+  assert((await ProdRepo35.findById(prDefault37.id))!.health === 'healthy', "Legacy 'on-track' held in the store reads back as 'healthy'");
+  await PortRepo35.update(pfDefault37.id, { health: 'bogus' as any });
+  assert(((await PortRepo35.findById(pfDefault37.id))!.health as string) === 'bogus', 'An unrecognised stored value is surfaced as-is, never disguised as a canonical state');
+  await PortRepo35.update(pfDefault37.id, { health: 'healthy' as any });
+
+  // --- notifications: exactly as before ---
+  const alertsStart37 = await riskAlerts37();
+  await PortSvc37.updatePortfolio(pfLegacy37.id, { health: 'critical' }, actor37);
+  assert((await riskAlerts37()) === alertsStart37 + 1, 'Portfolio transition to critical raises exactly one risk_alert for the owner');
+  await PortSvc37.updatePortfolio(pfLegacy37.id, { health: 'critical' }, actor37);
+  assert((await riskAlerts37()) === alertsStart37 + 1, 'Unchanged critical raises no duplicate notification');
+  await PortSvc37.updatePortfolio(pfLegacy37.id, { health: 'at-risk' }, actor37);
+  await PortSvc37.updatePortfolio(pfLegacy37.id, { health: 'caution' as any }, actor37);
+  assert((await riskAlerts37()) === alertsStart37 + 1, 'Non-critical and alias values raise no notification');
+  await ProdSvc37.updateProduct(prLegacy37.id, { health: 'critical' }, actor37);
+  assert((await riskAlerts37()) === alertsStart37 + 2, 'Product transition to critical raises exactly one risk_alert');
+  await ProdSvc37.updateProduct(prLegacy37.id, { health: 'critical' }, actor37);
+  assert((await riskAlerts37()) === alertsStart37 + 2, 'Unchanged critical product raises no duplicate');
+  const pfCritCreate37 = await PortSvc37.createPortfolio({ id: 'port_s112b_crit', code: 'PORT-S112B-C', name: 'S112B critical at birth', health: 'critical', ownerId: OWNER37 } as any, actor37);
+  assert((await riskAlerts37()) === alertsStart37 + 2, 'Creating with critical still sends no risk_alert (create path unchanged)');
+
+  // --- executive overview echoes the canonical declared value ---
+  const exec37 = await Exec35.getOverview({ portfolioId: pfLegacy37.id }, { role: 'admin' as any }, { now: now35 });
+  assert(exec37.portfolios[0].declaredHealth === 'at-risk', 'Executive declaredHealth carries the canonical value');
+
+  // --- UI: explicit branches, neutral fallback, canonical selects ---
+  const portfoliosJs37 = fs35.readFileSync('PM-Portal/js/portfolios.js', 'utf8');
+  const productsJs37 = fs35.readFileSync('PM-Portal/js/products.js', 'utf8');
+  for (const [name, src] of [['portfolios.js', portfoliosJs37], ['products.js', productsJs37]] as const) {
+    assert(/p\.health === 'healthy'[\s\S]*?p\.health === 'at-risk'[\s\S]*?p\.health === 'critical'[\s\S]*?Unspecified/.test(src), `${name} badge handles healthy, at-risk and critical explicitly with an Unspecified fallback`);
+    const badgeBlock = src.slice(src.indexOf('const healthBadge'), src.indexOf('Unspecified'));
+    assert((badgeBlock.match(/Critical<\/span>/g) || []).length === 1 && /p\.health === 'critical'\s*\?\s*'[^']*Critical/.test(badgeBlock), `${name} renders Critical only for the explicit 'critical' value`);
+    const selectId = name === 'portfolios.js' ? 'pf-health' : 'prod-health';
+    const selectBlock = src.slice(src.indexOf(`id="${selectId}"`), src.indexOf('</select>', src.indexOf(`id="${selectId}"`)));
+    const options = [...selectBlock.matchAll(/<option value="([^"]+)"/g)].map((m) => m[1]);
+    assert(JSON.stringify(options) === JSON.stringify(['healthy', 'at-risk', 'critical']), `${name} health select offers exactly Healthy / At Risk / Critical (${options.join(',')})`);
+    assert(!/'caution'|'on-track'/.test(src), `${name} contains no legacy health literals`);
+  }
+  assert(!/'caution'|'on-track'/.test(fs35.readFileSync('server/repositories/portfolioRepository.ts', 'utf8') + fs35.readFileSync('server/repositories/productRepository.ts', 'utf8')), 'Repositories contain no legacy health literals (aliases live only in the shared map)');
+
+  // --- cleanup ---
+  for (const id of [pfLegacy37.id, pfDefault37.id, pfCritCreate37.id]) await PortRepo35.delete(id);
+  for (const id of [prLegacy37.id, prDefault37.id]) await ProdRepo35.delete(id);
+  assert(!(await PortRepo35.findAll()).some((p: any) => String(p.name).startsWith('S112B')) && !(await ProdRepo35.findAll()).some((p: any) => String(p.name).startsWith('S112B')), '§37 probes removed');
+
   // Summary
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

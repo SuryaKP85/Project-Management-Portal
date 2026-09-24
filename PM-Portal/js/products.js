@@ -115,12 +115,16 @@ export const ProductsModule = {
           sunset: '<span class="badge bg-dark text-white">Sunset</span>',
         };
 
+        // Declared health: the three canonical values are rendered explicitly;
+        // anything else is shown as unspecified rather than assumed critical.
         const healthBadge =
           p.health === 'healthy'
             ? '<span class="badge bg-success-subtle text-success border border-success-subtle">Healthy</span>'
             : p.health === 'at-risk'
             ? '<span class="badge bg-warning-subtle text-warning border border-warning-subtle">At Risk</span>'
-            : '<span class="badge bg-danger-subtle text-danger border border-danger-subtle">Critical</span>';
+            : p.health === 'critical'
+            ? '<span class="badge bg-danger-subtle text-danger border border-danger-subtle">Critical</span>'
+            : '<span class="badge bg-light text-secondary border" title="Health value not recognised">Unspecified</span>';
 
         return `
         <div class="col-lg-6 col-xl-4 mb-4">

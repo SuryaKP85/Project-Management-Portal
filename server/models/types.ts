@@ -42,7 +42,46 @@ export interface Team {
 }
 
 export type PortfolioStatus = 'active' | 'planning' | 'archived';
-export type PortfolioHealth = 'healthy' | 'caution' | 'critical';
+/**
+ * Sprint 11.2B — declared health, shared by Portfolio and Product.
+ *
+ * A hand-entered status, distinct from the computed ProjectHealthService
+ * model. One vocabulary for both entities: it is what the UI has always
+ * written and rendered, and 'critical' — the only value with a side effect
+ * (owner notification) — is preserved verbatim.
+ */
+export type DeclaredHealth = 'healthy' | 'at-risk' | 'critical';
+export type PortfolioHealth = DeclaredHealth;
+
+export const DECLARED_HEALTH_VALUES: readonly DeclaredHealth[] = ['healthy', 'at-risk', 'critical'];
+
+/**
+ * Deprecated compatibility aliases from the pre-11.2B unions. Normalised on
+ * write (so they are never stored again) and on read (so rows that already
+ * hold them present canonically without a database rewrite).
+ */
+export const DECLARED_HEALTH_LEGACY_ALIASES: Readonly<Record<string, DeclaredHealth>> = {
+  caution: 'at-risk',
+  'on-track': 'healthy',
+};
+
+/** Canonical value for a canonical or legacy input; undefined for anything else. */
+export function normalizeDeclaredHealth(value: unknown): DeclaredHealth | undefined {
+  if (typeof value !== 'string') return undefined;
+  const candidate = value.trim().toLowerCase();
+  if ((DECLARED_HEALTH_VALUES as readonly string[]).includes(candidate)) return candidate as DeclaredHealth;
+  return DECLARED_HEALTH_LEGACY_ALIASES[candidate];
+}
+
+/** Error shaped for the global errorHandler: the existing 400 validation envelope. */
+export function invalidDeclaredHealthError(entity: 'portfolio' | 'product', value: unknown): Error {
+  const err = new Error(
+    `Invalid ${entity} health '${String(value)}'. Allowed values: ${DECLARED_HEALTH_VALUES.join(', ')}.`
+  ) as Error & { status: number; code: string };
+  err.status = 400;
+  err.code = 'VALIDATION_ERROR';
+  return err;
+}
 
 export interface Portfolio {
   id: string;
@@ -60,7 +99,8 @@ export interface Portfolio {
 }
 
 export type ProductStatus = 'discovery' | 'in-development' | 'ga' | 'maintenance' | 'deprecated';
-export type ProductHealth = 'on-track' | 'at-risk' | 'critical';
+/** Same declared-health vocabulary as Portfolio; see DeclaredHealth. */
+export type ProductHealth = DeclaredHealth;
 
 export interface Product {
   id: string;
