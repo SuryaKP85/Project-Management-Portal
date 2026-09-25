@@ -247,7 +247,7 @@ export const ExecutiveOverviewModule = {
     if (health.complete && health.averageScore !== null && health.averageScore !== undefined) {
       // Band is supplied by the server; shown only alongside a complete average.
       const bandHtml = health.band ? ` <span class="badge ${BAND_CLASS[health.band] || 'bg-light text-secondary border'} fs-6 align-middle">${escapeHtml(health.band)}</span>` : '';
-      return { value: `${escapeHtml(health.averageScore)}${bandHtml}`, subtitle: `Average of ${escapeHtml(health.computedFor)} scored project(s)` };
+      return { value: `${escapeHtml(health.averageScore)}${bandHtml}`, subtitle: `Based on ${escapeHtml(health.computedFor)} projects · calculated from project data` };
     }
     return {
       value: '<span class="text-warning fs-6"><i class="fa-solid fa-triangle-exclamation me-1"></i>Health data incomplete</span>',
@@ -269,7 +269,7 @@ export const ExecutiveOverviewModule = {
     const cards = [
       this.kpiCard('Total Projects', escapeHtml(p.total), `${escapeHtml(o.scope?.projectsInScope ?? p.total)} in scope`, 'primary', 'fa-diagram-project'),
       this.kpiCard('Average Progress', p.progress?.average === null || p.progress?.average === undefined ? '<span class="text-muted">—</span>' : `${escapeHtml(p.progress.average)}%`, 'Mean of canonical project progress', 'info', 'fa-bars-progress'),
-      this.kpiCard(p.health?.complete ? 'Health Average Score' : 'Project Health', health.value, health.subtitle, p.health?.complete ? 'success' : 'warning', 'fa-heart-pulse'),
+      this.kpiCard(p.health?.complete ? 'Derived Health' : 'Project Health', health.value, health.subtitle, p.health?.complete ? 'success' : 'warning', 'fa-heart-pulse'),
     ];
     // Budget appears only when the server included it for this caller.
     if (p.budget && typeof p.budget.total === 'number') {
@@ -363,52 +363,76 @@ export const ExecutiveOverviewModule = {
       </div>`;
   },
 
-  rollupCells(rollup) {
+  /**
+   * Declared health cell. The value is the hand-maintained 3-value vocabulary
+   * (healthy | at-risk | critical) echoed by the server; it is rendered verbatim
+   * in a neutral badge and never styled or read as a derived band.
+   */
+  declaredCell(declaredHealth) {
+    if (!declaredHealth) {
+      return '<span class="text-muted" aria-hidden="true">—</span><span class="visually-hidden">Declared health not reported</span>';
+    }
+    return `<span class="visually-hidden">Declared health: </span><span class="badge bg-light text-secondary border text-capitalize">${escapeHtml(declaredHealth)}</span>`;
+  },
+
+  rollupCells(rollup, declaredHtml) {
     const health = rollup.health || {};
     const healthCell = !rollup.total
-      ? '<span class="text-muted">—</span>'
+      ? '<span class="text-muted" aria-hidden="true">—</span><span class="visually-hidden">No projects to score</span>'
       : health.complete && health.averageScore !== null && health.averageScore !== undefined
-        ? `<span class="fw-semibold">${escapeHtml(health.averageScore)}</span>${health.band ? ` <span class="badge ${BAND_CLASS[health.band] || 'bg-light text-secondary border'}">${escapeHtml(health.band)}</span>` : ''}`
-        : `<span class="text-warning small" title="Scored ${escapeHtml(health.computedFor)} of ${escapeHtml(rollup.total)}">Incomplete (${escapeHtml(health.computedFor)}/${escapeHtml(rollup.total)})</span>`;
+        ? `<span class="fw-semibold">${escapeHtml(health.averageScore)}</span>${health.band ? ` <span class="badge ${BAND_CLASS[health.band] || 'bg-light text-secondary border'}">${escapeHtml(health.band)}</span>` : ''}<div class="text-muted small">Based on ${escapeHtml(health.computedFor)} projects</div>`
+        : `<span class="text-warning small">Incomplete (${escapeHtml(health.computedFor)}/${escapeHtml(rollup.total)})</span><div class="text-muted small">Scored ${escapeHtml(health.computedFor)} of ${escapeHtml(rollup.total)} — no score shown</div>`;
     const progress = rollup.progress?.average === null || rollup.progress?.average === undefined ? '—' : `${rollup.progress.average}%`;
     const budget = rollup.budget && typeof rollup.budget.total === 'number'
       ? `<td class="text-end">${escapeHtml(rollup.budget.total.toLocaleString())}</td>` : '';
-    return `<td class="text-end">${escapeHtml(rollup.total)}</td><td class="text-end">${escapeHtml(progress)}</td><td class="text-end">${healthCell}</td>${budget}`;
+    return `<td class="text-end">${escapeHtml(rollup.total)}</td><td class="text-end">${escapeHtml(progress)}</td><td class="text-end">${healthCell}</td><td class="text-end">${declaredHtml}</td>${budget}`;
   },
 
   renderHierarchy(o) {
     const portfolios = o.portfolios || [];
-    if (portfolios.length === 0) {
+    const unassignedProducts = o.productsWithoutPortfolio || [];
+    if (portfolios.length === 0 && unassignedProducts.length === 0) {
       return this.emptyCard('fa-briefcase', 'No portfolios', 'No portfolios are in this scope.');
     }
     const hasBudget = !!(o.projects?.budget);
-    // The stored Portfolio.health value (declaredHealth) is deliberately not
-    // shown here: only server-derived rollups are presented as health.
-    const rows = portfolios.map((pf) => {
-      const productRows = (pf.products || []).map((pr) => `
+    const columnCount = hasBudget ? 6 : 5;
+    // Derived health comes from each node's server rollup. Declared health is the
+    // portfolio's stored value echoed by the server; products carry none in the
+    // overview contract, so their cell says so rather than inferring one.
+    const productRow = (pr) => `
         <tr>
           <td class="ps-4"><i class="fa-solid fa-cube me-1 text-primary"></i>${escapeHtml(pr.name)} <span class="text-muted small">${escapeHtml(pr.code)}</span> <span class="badge bg-light text-secondary border ms-1">${escapeHtml(label(pr.status))}</span></td>
-          ${this.rollupCells(pr.rollup)}
-        </tr>`).join('');
+          ${this.rollupCells(pr.rollup, this.declaredCell(null))}
+        </tr>`;
+    const rows = portfolios.map((pf) => {
+      const productRows = (pf.products || []).map(productRow).join('');
       return `
         <tr class="table-light">
           <td><i class="fa-solid fa-briefcase me-1 text-info"></i><span class="fw-bold">${escapeHtml(pf.name)}</span> <span class="text-muted small">${escapeHtml(pf.code)}</span> <span class="badge bg-light text-secondary border ms-1">${escapeHtml(label(pf.status))}</span></td>
-          ${this.rollupCells(pf.rollup)}
+          ${this.rollupCells(pf.rollup, this.declaredCell(pf.declaredHealth))}
         </tr>
-        ${productRows || `<tr><td class="ps-4 text-muted small fst-italic" colspan="${hasBudget ? 5 : 4}">No products</td></tr>`}`;
+        ${productRows || `<tr><td class="ps-4 text-muted small fst-italic" colspan="${columnCount}">No products</td></tr>`}`;
     }).join('');
+    // Products the server could not place under a portfolio still roll up their
+    // own projects; they are grouped after the portfolios rather than dropped.
+    const unassignedRows = unassignedProducts.length === 0 ? '' : `
+        <tr class="table-light">
+          <td colspan="${columnCount}"><i class="fa-solid fa-cubes me-1 text-secondary"></i><span class="fw-bold">Products without portfolio</span> <span class="text-muted small">rolled up by product membership only</span></td>
+        </tr>
+        ${unassignedProducts.map(productRow).join('')}`;
     return `
       <div class="card shadow-sm border-0 mb-4">
         <div class="p-3 border-bottom small text-muted text-uppercase fw-semibold">Portfolio → Product rollup</div>
         <div class="table-responsive">
           <table class="table align-middle mb-0">
+            <caption class="visually-hidden">Portfolio and product rollup: project count, average progress, derived health and declared health per scope</caption>
             <thead class="table-light small text-muted text-uppercase">
-              <tr><th>Scope</th><th class="text-end">Projects</th><th class="text-end">Avg progress</th><th class="text-end">Health avg</th>${hasBudget ? '<th class="text-end">Budget</th>' : ''}</tr>
+              <tr><th scope="col">Scope</th><th scope="col" class="text-end">Projects</th><th scope="col" class="text-end">Avg progress</th><th scope="col" class="text-end">Derived health</th><th scope="col" class="text-end">Declared health</th>${hasBudget ? '<th scope="col" class="text-end">Budget</th>' : ''}</tr>
             </thead>
-            <tbody>${rows}</tbody>
+            <tbody>${rows}${unassignedRows}</tbody>
           </table>
         </div>
-        <div class="p-2 border-top text-xs text-muted">Rollups are computed server-side from canonical project data.</div>
+        <div class="p-2 border-top text-xs text-muted">Derived health is calculated from project data by the health model. Declared health is set by portfolio management. They are independent and use different scales. Product rows count every project assigned to the product, independent of the project's own portfolio.</div>
       </div>`;
   },
 

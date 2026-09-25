@@ -3387,6 +3387,35 @@ async function runTests() {
   // The server slice remains intact and the route is still the only source of these figures.
   assert(fs35.existsSync('server/services/executiveDashboardService.ts'), 'Server aggregate still present');
 
+  // 13. Sprint 11.2D — derived vs declared health presentation. Derived health is
+  // the server's 5-band rollup (score + band); declared health is the stored
+  // 3-value vocabulary. Both are echoed verbatim and never mapped to each other.
+  assert(/p\.health\?\.complete \? 'Derived Health' : 'Project Health'/.test(mod36), 'Headline card is titled "Derived Health" only when the server marks health complete');
+  assert(/\$\{escapeHtml\(health\.averageScore\)\}\$\{bandHtml\}/.test(mod36), 'Headline score is the server-provided averageScore, unmodified');
+  assert(/BAND_CLASS\[health\.band\]/.test(mod36) && /\$\{escapeHtml\(health\.band\)\}/.test(mod36), 'Derived band is rendered from the server response');
+  assert((mod36.match(/Based on \$\{escapeHtml\(health\.computedFor\)\} projects/g) || []).length === 2, 'Contributing project count is shown beside the headline and hierarchy derived scores');
+  assert(/this\.declaredCell\(pf\.declaredHealth\)/.test(mod36) && /Declared health<\/th>/.test(mod36), 'Portfolio declaredHealth is rendered in its own column');
+  assert(/\$\{escapeHtml\(declaredHealth\)\}/.test(mod36) && !/\$\{pf\.declaredHealth\}|\$\{declaredHealth\}/.test(mod36), 'Declared health is escaped before rendering');
+  assert(!/BAND_CLASS\[[^\]]*declared/i.test(mod36) && /declaredCell\(declaredHealth\) \{[\s\S]*?badge bg-light text-secondary border text-capitalize/.test(mod36), 'Declared health uses a neutral badge, never the derived band palette');
+  assert(
+    !/(healthy|at-risk|critical)['"]?\s*:\s*['"](Excellent|Healthy|Monitor|At Risk|Critical)/i.test(mod36)
+      && !/declaredHealth\s*[!=]==?\s*['"](Excellent|Healthy|Monitor|At Risk|Critical)/.test(mod36)
+      && !/DECLARED_TO|toBand|declaredBand/i.test(mod36),
+    'No declared-to-derived mapping exists in the UI'
+  );
+  assert(/this\.declaredCell\(null\)/.test(mod36) && /Declared health not reported/.test(mod36) && !/pr\.declaredHealth|pr\.health\b/.test(mod36), 'Product rows report no declared health rather than inferring one');
+  assert(/No projects to score/.test(mod36) && /health\.computedFor === 0 && health\.complete/.test(mod36), 'Empty health state is unchanged');
+  assert(/Health data incomplete/.test(mod36) && /Scored \$\{escapeHtml\(health\.computedFor\)\} of \$\{escapeHtml\(this\.overview\?\.projects\?\.total \?\? '\?'\)\} projects — no overall score shown/.test(mod36), 'Incomplete headline state is unchanged');
+  assert(/HEALTH_BANDS\.map\(\(band\) =>/.test(mod36) && /health\.byBand\?\.\[band\] \?\? 0/.test(mod36), 'Band distribution is unchanged and server-fed');
+  assert(!/averageScore\s*[-+*\/]|computedFor\s*[-+*\/]|projectCount\s*[-+*\/]|Number\(|parseFloat|parseInt/.test(mod36), 'No client-side health arithmetic');
+  assert(!/[<>]=? ?(90|75|60|45)\b/.test(mod36) && !/Excellent'?\s*:\s*\d|Healthy'?\s*:\s*\d|Monitor'?\s*:\s*\d/.test(mod36), 'No health thresholds are duplicated in the UI');
+  assert(/<caption class="visually-hidden">[^<]*derived health and declared health[^<]*<\/caption>/.test(mod36), 'Hierarchy table has a caption');
+  const ths36 = mod36.match(/<th\b[^>]*>/g) || [];
+  assert(ths36.length === 6 && ths36.every((t) => /scope="col"/.test(t)), `Every hierarchy header carries scope="col" (${ths36.length})`);
+  assert(/Incomplete \(\$\{escapeHtml\(health\.computedFor\)\}\/\$\{escapeHtml\(rollup\.total\)\}\)/.test(mod36) && !/title="Scored/.test(mod36), 'Hierarchy incomplete state is visible text, not a tooltip');
+  assert(/Derived health is calculated from project data by the health model\. Declared health is set by portfolio management\. They are independent and use different scales\./.test(mod36), 'Legend explains the two independent scales');
+  assert(!/declaredHealth|Derived Health|Declared health/.test(dash36) && !/ExecutiveOverview|declaredCell|rollupCells/.test(dash36), 'V1.1 dashboard is untouched by the 11.2D presentation');
+
   // 37. Declared health vocabulary (Sprint 11.2B)
   // Portfolio and Product share one hand-entered vocabulary: healthy | at-risk |
   // critical. Legacy 'caution' / 'on-track' normalise on write and on read.
@@ -3640,6 +3669,95 @@ async function runTests() {
   assert(/health\.band/.test(execUi38) && !/resolveBand|>= ?90/.test(execUi38), 'Executive UI renders the server band and never derives one');
 
   // Summary
+  // 39. Product membership consistency (Sprint 11.3.0)
+  // Product membership is the stored productId alone — the GET /products/:id/health
+  // rule — on every surface. Portfolio membership keeps the canonical rule
+  // (stored portfolioId, else the product's portfolio). The two are independent,
+  // so a product row may count a project its parent portfolio row does not.
+  console.log('\n--- 39. Product Membership Consistency ---');
+  const admin39 = { role: 'admin' as any };
+  const before39 = await Exec35.getOverview({}, admin39, { now: now35 });
+  const port1Before39 = JSON.stringify(before39.portfolios.find((n: any) => n.id === 'port_1'));
+  const pfBefore39 = JSON.stringify((await PortSvc37.getPortfolioHealth('port_1', { now: now35 }))!.derivedHealth);
+  const ROLLUP_KEYS39 = ['projectCount', 'averageScore', 'band', 'complete', 'excludedCount', 'healthModel'];
+  const sameRollup39 = (a: any, b: any) => ROLLUP_KEYS39.every((k) => a[k] === b[k]);
+
+  await PortRepo35.create({ id: 'port_s1130', code: 'PORT-S1130', name: 'Sprint 11.3.0 portfolio', health: 'healthy' } as any);
+  await ProdRepo35.create({ id: 'prod_s1130_a', code: 'PROD-S1130-A', name: 'Product A', portfolioId: 'port_s1130' } as any);
+  await ProdRepo35.create({ id: 'prod_s1130_empty', code: 'PROD-S1130-E', name: 'Product Empty', portfolioId: 'port_s1130' } as any);
+  await ProdRepo35.create({ id: 'prod_s1130_orphan', code: 'PROD-S1130-O', name: 'Product Orphan' } as any);
+  const proj39 = (id: string, extra: Record<string, unknown>) =>
+    ProjRepo24.create({ id, code: id, name: id, client: 'Probe', status: 'planning', risk: 'Low', progress: 20, budget: 0, ...extra } as any);
+  await proj39('PRJ-S1130-X', { productId: 'prod_s1130_a', portfolioId: 'port_2' }); // product A, stored portfolio elsewhere
+  await proj39('PRJ-S1130-Y', { productId: 'prod_s1130_a' }); // product A, portfolio via the product
+  await proj39('PRJ-S1130-Z', { productId: 'prod_s1130_orphan' }); // product with no portfolio at all
+  try {
+    const overview39 = await Exec35.getOverview({}, admin39, { now: now35 });
+    const pfNode39 = overview39.portfolios.find((n: any) => n.id === 'port_s1130')!;
+    const nodeA39 = pfNode39.products.find((p: any) => p.id === 'prod_s1130_a')!;
+    const nodeEmpty39 = pfNode39.products.find((p: any) => p.id === 'prod_s1130_empty')!;
+    const orphanNode39 = overview39.productsWithoutPortfolio.find((p: any) => p.id === 'prod_s1130_orphan');
+    const healthA39 = (await ProdSvc37.getProductHealth('prod_s1130_a', { now: now35 }))!;
+    const healthEmpty39 = (await ProdSvc37.getProductHealth('prod_s1130_empty', { now: now35 }))!;
+    const healthOrphan39 = (await ProdSvc37.getProductHealth('prod_s1130_orphan', { now: now35 }))!;
+    const healthProd2_39 = (await ProdSvc37.getProductHealth('prod_2', { now: now35 }))!;
+
+    // C. product membership ignores the project's stored portfolioId
+    assert(healthA39.projects.map((p: any) => p.id).sort().join(',') === 'PRJ-S1130-X,PRJ-S1130-Y', 'Product endpoint counts both projects assigned to Product A');
+    assert(nodeA39.rollup.total === 2, 'Executive Product A row counts the project whose stored portfolio is elsewhere');
+
+    // B. executive product rows equal the product endpoint
+    assert(healthA39.derivedHealth.complete === true && healthA39.derivedHealth.projectCount === 2 && healthA39.derivedHealth.band !== null, 'Product A rollup is complete over its two projects');
+    assert(sameRollup39(nodeA39.rollup.health, healthA39.derivedHealth), 'Executive Product A row equals the product endpoint on count, score, band, complete, excluded and model');
+    const nodeProd2_39 = overview39.portfolios.find((n: any) => n.id === 'port_1')!.products.find((p: any) => p.id === 'prod_2')!;
+    assert(sameRollup39(nodeProd2_39.rollup.health, healthProd2_39.derivedHealth), 'Seeded prod_2 executive row equals its endpoint');
+
+    // A. product with no portfolio but with projects
+    assert(healthOrphan39.portfolioId === undefined && healthOrphan39.derivedHealth.projectCount === 1 && healthOrphan39.derivedHealth.complete === true, 'Product without a portfolio has its own health from its one project');
+    assert(!!orphanNode39 && orphanNode39.rollup.total === 1 && sameRollup39(orphanNode39.rollup.health, healthOrphan39.derivedHealth), 'Executive lists the portfolio-less product under productsWithoutPortfolio with the endpoint rollup');
+    assert(!overview39.portfolios.some((n: any) => n.products.some((p: any) => p.id === 'prod_s1130_orphan')), 'Portfolio-less product is not placed under any portfolio');
+
+    // F. product with zero projects
+    assert(healthEmpty39.derivedHealth.empty === true && healthEmpty39.derivedHealth.projectCount === 0 && healthEmpty39.derivedHealth.averageScore === null && healthEmpty39.derivedHealth.band === null, 'Product with zero projects is empty via the endpoint');
+    assert(nodeEmpty39.rollup.total === 0 && nodeEmpty39.rollup.health.empty === true && nodeEmpty39.rollup.health.band === null, 'Product with zero projects is empty in the executive row');
+
+    // D. portfolio semantics unchanged: stored portfolioId, else the product's portfolio
+    const pfNew39 = (await PortSvc37.getPortfolioHealth('port_s1130', { now: now35 }))!;
+    assert(pfNew39.derivedHealth.projectCount === 1 && pfNew39.projects[0].id === 'PRJ-S1130-Y', 'Portfolio membership still resolves via stored portfolioId, else the product');
+    assert(pfNode39.rollup.total === 1 && sameRollup39(pfNode39.rollup.health, pfNew39.derivedHealth), 'Executive portfolio row equals the portfolio endpoint');
+    assert((await PortSvc37.getPortfolioHealth('port_2', { now: now35 }))!.projects.some((p: any) => p.id === 'PRJ-S1130-X'), 'Stored portfolioId wins for portfolio membership');
+    assert(overview39.scope.projectsWithoutPortfolio === before39.scope.projectsWithoutPortfolio + 1, 'Only the orphan-product project is counted as without portfolio');
+
+    // Filtered views keep both rules independent.
+    const scoped39 = await Exec35.getOverview({ portfolioId: 'port_s1130' }, admin39, { now: now35 });
+    assert(scoped39.projects.total === 1 && scoped39.meta.healthComputedFor === 1 && scoped39.meta.healthComplete === true, 'Portfolio-scoped headline counts only portfolio members');
+    const scopedA39 = scoped39.portfolios[0].products.find((p: any) => p.id === 'prod_s1130_a')!;
+    assert(scopedA39.rollup.total === 2 && sameRollup39(scopedA39.rollup.health, healthA39.derivedHealth), 'Product row inside a portfolio filter still uses product membership and is fully scored');
+    assert(scoped39.productsWithoutPortfolio.length === 0, 'Portfolio filter hides portfolio-less products');
+    const orphanScoped39 = await Exec35.getOverview({ productId: 'prod_s1130_orphan' }, admin39, { now: now35 });
+    assert(orphanScoped39.productsWithoutPortfolio.length === 1 && orphanScoped39.productsWithoutPortfolio[0].rollup.total === 1 && orphanScoped39.projects.total === 1, 'Filtering by a portfolio-less product returns it with its rollup');
+    assert(orphanScoped39.recentActivity.every((a: any) => a.entityType !== 'product' || a.entityId === 'prod_s1130_orphan'), 'Activity scope for a portfolio-less product is that product only');
+
+    // No data is rewritten by membership resolution.
+    assert((await ProjRepo24.findById('PRJ-S1130-X'))!.portfolioId === 'port_2' && (await ProdRepo35.findById('prod_s1130_orphan'))!.portfolioId === undefined, 'Membership resolution never writes back to project or product records');
+
+    // The executive service uses the shared product rule, not a portfolio-scoped filter.
+    const execSrc39 = fs35.readFileSync('server/services/executiveDashboardService.ts', 'utf8');
+    assert(/projectsInProduct\(/.test(execSrc39) && !/portfolioProjects\.filter\(\(p\) => p\.productId/.test(execSrc39), 'Executive product rows use the shared projectsInProduct rule');
+  } finally {
+    for (const id of ['PRJ-S1130-X', 'PRJ-S1130-Y', 'PRJ-S1130-Z']) await ProjRepo24.delete(id);
+    for (const id of ['prod_s1130_a', 'prod_s1130_empty', 'prod_s1130_orphan']) await ProdRepo35.delete(id);
+    await PortRepo35.delete('port_s1130');
+  }
+
+  // E. seeded data is unchanged once the fixtures are gone
+  const after39 = await Exec35.getOverview({}, admin39, { now: now35 });
+  assert(JSON.stringify(after39.portfolios.find((n: any) => n.id === 'port_1')) === port1Before39, 'Seeded port_1 executive node is unchanged');
+  assert(JSON.stringify((await PortSvc37.getPortfolioHealth('port_1', { now: now35 }))!.derivedHealth) === pfBefore39, 'Seeded port_1 derived health is unchanged');
+  assert(after39.productsWithoutPortfolio.length === before39.productsWithoutPortfolio.length && after39.projects.total === before39.projects.total, 'Seeded product placement and project count are unchanged');
+  const uiSrc39 = fs35.readFileSync('PM-Portal/js/executiveDashboard.js', 'utf8');
+  assert(/productsWithoutPortfolio/.test(uiSrc39) && /Products without portfolio/.test(uiSrc39), 'Executive UI renders portfolio-less products as their own group');
+
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('========================================\n');

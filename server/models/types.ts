@@ -858,6 +858,12 @@ export interface ExecutiveOverview {
   };
   projects: ExecutiveProjectRollup;
   portfolios: ExecutivePortfolioNode[];
+  /**
+   * Products with no resolvable portfolio (Sprint 11.3.0). Product membership is
+   * the stored productId alone, so these products still roll up their projects
+   * and are listed here rather than dropped from the hierarchy.
+   */
+  productsWithoutPortfolio: ExecutiveProductNode[];
   strategy: ExecutiveStrategySummary;
   governance: ExecutiveGovernanceSummary;
   recentActivity: ExecutiveActivityEntry[];

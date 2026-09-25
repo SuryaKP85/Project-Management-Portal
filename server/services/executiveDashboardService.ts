@@ -32,7 +32,7 @@ import { MilestoneRepository } from '../repositories/milestoneRepository';
 import { ReleaseRepository } from '../repositories/releaseRepository';
 import { ActivityRepository } from '../repositories/activityRepository';
 import { ProjectHealthResult, HEALTH_MODEL_VERSION } from './projectHealthService';
-import { aggregateHealth, computeHealthFor, resolvePortfolioIdOf } from './healthRollupService';
+import { aggregateHealth, computeHealthFor, projectsInProduct, resolvePortfolioIdOf } from './healthRollupService';
 import { VALID_ROADMAP_STATUSES } from './roadmapService';
 
 /**
@@ -199,19 +199,47 @@ export const ExecutiveDashboardService = {
     const scopedProjectIds = new Set(scopedProjects.map((p) => p.id));
     const scopedProjectCodes = new Set(scopedProjects.map((p) => p.code).filter(Boolean));
 
-    // Health: reuse ProjectHealthService exactly, for the whole scope up to the
-    // bound. A single failed computation is excluded, not fatal.
-    const toScore = scopedProjects.slice(0, maxHealthProjects);
+    // Membership rules are independent (Sprint 11.3.0). A portfolio's projects
+    // follow resolvePortfolioIdOf. A product's projects are those carrying its
+    // productId — the GET /products/:id/health rule — regardless of the
+    // project's own stored portfolioId, so a product row can count a project
+    // its parent portfolio row does not. Products with no resolvable portfolio
+    // are still reported, as productsWithoutPortfolio.
+    const displayedPortfolios = portfolio ? [portfolio] : portfolios;
+    const portfolioIds = new Set(portfolios.map((pf) => pf.id));
+    const hasResolvablePortfolio = (pr: Product): boolean => !!pr.portfolioId && portfolioIds.has(pr.portfolioId);
+    const displayedProducts = products.filter(
+      (pr) =>
+        (!filter.productId || pr.id === filter.productId) &&
+        (hasResolvablePortfolio(pr) ? displayedPortfolios.some((pf) => pf.id === pr.portfolioId) : !filter.portfolioId)
+    );
+    const productMembers = new Map<string, Project[]>(
+      displayedProducts.map((pr) => [pr.id, projectsInProduct(projects, pr.id)])
+    );
+
+    // Health: reuse ProjectHealthService exactly, once per project, for the
+    // scope plus every displayed product's members (a product member may sit
+    // outside the portfolio scope), up to the bound. A single failed
+    // computation is excluded, not fatal.
+    const toScoreById = new Map<string, Project>(scopedProjects.map((p) => [p.id, p]));
+    for (const members of productMembers.values()) {
+      for (const p of members) toScoreById.set(p.id, p);
+    }
+    const toScore = Array.from(toScoreById.values()).slice(0, maxHealthProjects);
     const { results: healthByProjectId } = await computeHealthFor(toScore, now);
 
     const overallRollup = summariseProjects(scopedProjects, healthByProjectId, includeCommercials);
 
     // Portfolio -> Product -> Project, the same helper at each level.
-    const portfolioNodes: ExecutivePortfolioNode[] = (portfolio ? [portfolio] : portfolios).map((pf) => {
+    const productNode = (pr: Product) => ({
+      id: pr.id,
+      code: pr.code,
+      name: pr.name,
+      status: pr.status,
+      rollup: summariseProjects(productMembers.get(pr.id) ?? [], healthByProjectId, includeCommercials),
+    });
+    const portfolioNodes: ExecutivePortfolioNode[] = displayedPortfolios.map((pf) => {
       const portfolioProjects = scopedProjects.filter((p) => portfolioOf(p) === pf.id);
-      const portfolioProducts = products.filter(
-        (pr) => pr.portfolioId === pf.id && (!filter.productId || pr.id === filter.productId)
-      );
       return {
         id: pf.id,
         code: pf.code,
@@ -219,19 +247,10 @@ export const ExecutiveDashboardService = {
         status: pf.status,
         declaredHealth: pf.health,
         rollup: summariseProjects(portfolioProjects, healthByProjectId, includeCommercials),
-        products: portfolioProducts.map((pr) => ({
-          id: pr.id,
-          code: pr.code,
-          name: pr.name,
-          status: pr.status,
-          rollup: summariseProjects(
-            portfolioProjects.filter((p) => p.productId === pr.id),
-            healthByProjectId,
-            includeCommercials
-          ),
-        })),
+        products: displayedProducts.filter((pr) => pr.portfolioId === pf.id).map(productNode),
       };
     });
+    const productsWithoutPortfolio = displayedProducts.filter((pr) => !hasResolvablePortfolio(pr)).map(productNode);
 
     return {
       scope: {
@@ -242,6 +261,7 @@ export const ExecutiveDashboardService = {
       },
       projects: overallRollup,
       portfolios: portfolioNodes,
+      productsWithoutPortfolio,
       strategy: summariseStrategy(filter, filtered, scopedProjects, scopedProjectIds, goals, roadmapItems, roadmapLinks),
       governance: summariseGovernance(
         filtered,
@@ -254,12 +274,13 @@ export const ExecutiveDashboardService = {
         projectIds: scopedProjectIds,
         projectCodes: scopedProjectCodes,
         portfolioIds: new Set(portfolioNodes.map((n) => n.id)),
-        productIds: new Set(portfolioNodes.flatMap((n) => n.products.map((pr) => pr.id))),
+        productIds: new Set(displayedProducts.map((pr) => pr.id)),
       }),
       meta: {
         generatedAt: now.toISOString(),
         healthModel: HEALTH_MODEL_VERSION,
-        healthComputedFor: healthByProjectId.size,
+        // Scoped projects that were scored; product-only members are not scope.
+        healthComputedFor: scopedProjects.filter((p) => healthByProjectId.has(p.id)).length,
         healthComplete: overallRollup.health.complete,
         commercialsIncluded: includeCommercials,
         basis: 'deterministic-aggregation',
