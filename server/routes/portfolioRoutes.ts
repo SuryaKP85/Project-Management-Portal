@@ -6,6 +6,9 @@ import { validateBody } from '../middleware/validation';
 export const portfolioRoutes = Router();
 
 portfolioRoutes.get('/portfolios', authenticateToken, PortfolioController.list);
+// Derived health (Sprint 11.2C): read-only, so authenticateToken alone like every
+// other read. Three segments, so it cannot be shadowed by '/portfolios/:id'.
+portfolioRoutes.get('/portfolios/:id/health', authenticateToken, PortfolioController.getHealth);
 portfolioRoutes.get('/portfolios/:id', authenticateToken, PortfolioController.getById);
 portfolioRoutes.post(
   '/portfolios',

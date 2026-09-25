@@ -727,11 +727,62 @@ export interface ExecutiveOverviewFilter {
  * `computedFor` projects that were scored.
  */
 export interface ExecutiveHealthRollup {
+  /** Unweighted mean of the canonical project scores, 1 dp; null unless complete and non-empty. */
   averageScore: number | null;
+  /** resolveBand(averageScore) from ProjectHealthService; null whenever averageScore is null. */
+  band: string | null;
   /** Keyed by HealthBand ('Excellent' | 'Healthy' | 'Monitor' | 'At Risk' | 'Critical'). */
   byBand: Record<string, number>;
+  /** Projects in this scope. */
+  projectCount: number;
+  /** Projects that were actually scored. */
   computedFor: number;
+  /** projectCount - computedFor: not scored because of a bound or a failed computation. */
+  excludedCount: number;
   complete: boolean;
+  /** projectCount === 0 — "no projects", never a band. */
+  empty: boolean;
+  /** ProjectHealthService model version the scores came from. */
+  healthModel: string;
+}
+
+/**
+ * Sprint 11.2C — the same rollup shape wherever derived health is reported
+ * for a container (portfolio, product, and any future Program level).
+ */
+export type DerivedHealthRollup = ExecutiveHealthRollup;
+
+/** One project's contribution to a container rollup. */
+export interface DerivedHealthProjectEntry {
+  id: string;
+  code: string;
+  name: string;
+  status: ProjectStatus;
+  /** null when the project was not scored (bound or failure). */
+  score: number | null;
+  band: string | null;
+  /** measuredFactors / applicableFactors for the project, so thin data is visible. */
+  coverageRatio: number | null;
+}
+
+export interface PortfolioHealthResponse {
+  portfolioId: string;
+  portfolioCode: string;
+  /** Hand-entered status, kept separate from the computed rollup. */
+  declaredHealth: PortfolioHealth;
+  derivedHealth: DerivedHealthRollup;
+  projects: DerivedHealthProjectEntry[];
+  computedAt: string;
+}
+
+export interface ProductHealthResponse {
+  productId: string;
+  productCode: string;
+  portfolioId?: string;
+  declaredHealth?: ProductHealth;
+  derivedHealth: DerivedHealthRollup;
+  projects: DerivedHealthProjectEntry[];
+  computedAt: string;
 }
 
 /** Aggregates over one set of projects; applied identically at every hierarchy level. */

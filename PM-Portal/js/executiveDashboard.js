@@ -245,7 +245,9 @@ export const ExecutiveOverviewModule = {
       return { value: '<span class="text-muted">—</span>', subtitle: 'No projects to score' };
     }
     if (health.complete && health.averageScore !== null && health.averageScore !== undefined) {
-      return { value: `${escapeHtml(health.averageScore)}`, subtitle: `Average of ${escapeHtml(health.computedFor)} scored project(s)` };
+      // Band is supplied by the server; shown only alongside a complete average.
+      const bandHtml = health.band ? ` <span class="badge ${BAND_CLASS[health.band] || 'bg-light text-secondary border'} fs-6 align-middle">${escapeHtml(health.band)}</span>` : '';
+      return { value: `${escapeHtml(health.averageScore)}${bandHtml}`, subtitle: `Average of ${escapeHtml(health.computedFor)} scored project(s)` };
     }
     return {
       value: '<span class="text-warning fs-6"><i class="fa-solid fa-triangle-exclamation me-1"></i>Health data incomplete</span>',
@@ -366,7 +368,7 @@ export const ExecutiveOverviewModule = {
     const healthCell = !rollup.total
       ? '<span class="text-muted">—</span>'
       : health.complete && health.averageScore !== null && health.averageScore !== undefined
-        ? `<span class="fw-semibold">${escapeHtml(health.averageScore)}</span>`
+        ? `<span class="fw-semibold">${escapeHtml(health.averageScore)}</span>${health.band ? ` <span class="badge ${BAND_CLASS[health.band] || 'bg-light text-secondary border'}">${escapeHtml(health.band)}</span>` : ''}`
         : `<span class="text-warning small" title="Scored ${escapeHtml(health.computedFor)} of ${escapeHtml(rollup.total)}">Incomplete (${escapeHtml(health.computedFor)}/${escapeHtml(rollup.total)})</span>`;
     const progress = rollup.progress?.average === null || rollup.progress?.average === undefined ? '—' : `${rollup.progress.average}%`;
     const budget = rollup.budget && typeof rollup.budget.total === 'number'

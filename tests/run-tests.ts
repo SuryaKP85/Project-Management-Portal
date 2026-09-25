@@ -3509,6 +3509,136 @@ async function runTests() {
   for (const id of [prLegacy37.id, prDefault37.id]) await ProdRepo35.delete(id);
   assert(!(await PortRepo35.findAll()).some((p: any) => String(p.name).startsWith('S112B')) && !(await ProdRepo35.findAll()).some((p: any) => String(p.name).startsWith('S112B')), '§37 probes removed');
 
+  // 38. Portfolio / Product derived health rollups (Sprint 11.2C)
+  console.log('\n--- 38. Derived Health Rollups ---');
+  const { aggregateHealth: agg38, projectsInPortfolio: inPortfolio38, projectsInProduct: inProduct38, computeHealthFor: compute38, HEALTH_BANDS: BANDS38 } =
+    await import('../server/services/healthRollupService');
+  const { resolveBand: resolveBand38 } = await import('../server/services/projectHealthService');
+  const { ProductController: ProdCtl38 } = await import('../server/controllers/productController');
+  const { portfolioRoutes: portRoutes38 } = await import('../server/routes/portfolioRoutes');
+  const { productRoutes: prodRoutes38 } = await import('../server/routes/productRoutes');
+  const fake38 = (id: string, score: number): any => ({ projectId: id, projectCode: id, projectName: id, score, band: resolveBand38(score), coverage: { measuredFactors: 9, applicableFactors: 11, unavailableFactors: 2, ratio: 0.82 }, factors: [], signals: {}, computedAt: '', meta: {} });
+
+  // --- pure aggregation ---
+  const empty38 = agg38([], 0);
+  assert(empty38.empty === true && empty38.complete === true && empty38.averageScore === null && empty38.band === null && empty38.projectCount === 0 && empty38.excludedCount === 0, 'Empty set: complete, no average, no band');
+  const three38 = agg38([fake38('a', 80), fake38('b', 60), fake38('c', 40)], 3);
+  assert(three38.averageScore === 60 && three38.band === 'Monitor' && three38.complete === true && three38.projectCount === 3 && three38.computedFor === 3, '80/60/40 -> unweighted mean 60, band Monitor via resolveBand');
+  assert(three38.byBand.Healthy === 1 && three38.byBand.Monitor === 1 && three38.byBand.Critical === 1 && Object.keys(three38.byBand).length === 5, 'Distribution counts each canonical band');
+  assert(three38.band === resolveBand38(three38.averageScore!), 'Rollup band equals the canonical resolver applied to the mean');
+  const partial38 = agg38([fake38('a', 80), fake38('b', 60)], 3);
+  assert(partial38.complete === false && partial38.averageScore === null && partial38.band === null && partial38.excludedCount === 1 && partial38.computedFor === 2, 'Incomplete set: no mean, no band, exclusion counted');
+  assert(Object.values(partial38.byBand).reduce((a, b) => a + b, 0) === 2, 'Incomplete distribution covers scored projects only');
+  assert(agg38([fake38('a', 89.94)], 1).averageScore === 89.9 && agg38([fake38('a', 89.94)], 1).band === 'Healthy', 'Mean rounds to one decimal before banding');
+  assert(three38.healthModel === HEALTH_MODEL_VERSION, 'Rollup carries the canonical health model version');
+  assert(JSON.stringify(BANDS38) === JSON.stringify(['Excellent', 'Healthy', 'Monitor', 'At Risk', 'Critical']), 'Band order is the canonical five');
+
+  // --- membership rules ---
+  const projects38 = await ProjRepo24.findAll();
+  const products38 = await ProdRepo35.findAll();
+  assert(inProduct38(projects38, 'prod_2').map((p: any) => p.id).join(',') === 'PRJ-104', 'Product membership uses the stored productId directly');
+  assert(inPortfolio38(projects38, products38, 'port_1').length === projects38.filter((p: any) => p.portfolioId === 'port_1').length, 'Portfolio membership matches stored portfolioId for the fixture');
+  const viaProduct38: any = await ProjRepo24.create({ id: 'PRJ-S112C-VP', code: 'PRJ-S112C-VP', name: 'via product only', client: 'Probe', productId: 'prod_2', status: 'planning', risk: 'Low', progress: 10, budget: 0 } as any);
+  assert(inPortfolio38(await ProjRepo24.findAll(), products38, 'port_1').some((p: any) => p.id === viaProduct38.id), 'A project with only a productId is reached through its product’s portfolio');
+  assert(inPortfolio38(await ProjRepo24.findAll(), products38, 'port_2').length === 0, 'port_2 has no member projects');
+  await ProjRepo24.delete(viaProduct38.id);
+
+  // --- portfolio health service: parity with ProjectHealthService ---
+  const pfHealth38 = await PortSvc37.getPortfolioHealth('port_1', { now: now35 });
+  assert(!!pfHealth38 && pfHealth38.portfolioId === 'port_1' && pfHealth38.portfolioCode === 'PORT-AERO', 'Portfolio health resolves for port_1');
+  const port1Projects38 = inPortfolio38(projects38, products38, 'port_1');
+  const port1Results38 = await Promise.all(port1Projects38.map((p: any) => ProjectHealthService.computeHealth(p, { now: now35 })));
+  const expectedMean38 = Math.round((port1Results38.reduce((s, r) => s + r.score, 0) / port1Results38.length) * 10) / 10;
+  assert(pfHealth38!.derivedHealth.averageScore === expectedMean38, `Portfolio mean equals the mean of ProjectHealthService scores (${pfHealth38!.derivedHealth.averageScore})`);
+  assert(pfHealth38!.derivedHealth.band === resolveBand38(expectedMean38), 'Portfolio band equals resolveBand(mean)');
+  assert(pfHealth38!.derivedHealth.complete === true && pfHealth38!.derivedHealth.projectCount === port1Projects38.length && pfHealth38!.derivedHealth.excludedCount === 0, 'Portfolio rollup is complete over all member projects');
+  assert(pfHealth38!.projects.length === port1Projects38.length && pfHealth38!.projects.every((e: any) => typeof e.score === 'number' && typeof e.band === 'string' && typeof e.coverageRatio === 'number'), 'Per-project entries carry score, band and coverage');
+  assert(pfHealth38!.projects.every((e: any) => e.score === port1Results38.find((r) => r.projectId === e.id)!.score), 'Per-project scores are the canonical ones');
+  assert(pfHealth38!.declaredHealth === 'healthy' && (await PortRepo35.findById('port_1'))!.health === 'healthy', 'Declared health is reported beside the rollup and left untouched');
+  assert(pfHealth38!.computedAt === now35.toISOString(), 'computedAt uses the injected reference time');
+  const emptyPf38 = await PortSvc37.getPortfolioHealth('port_2', { now: now35 });
+  assert(emptyPf38!.derivedHealth.empty === true && emptyPf38!.derivedHealth.band === null && emptyPf38!.derivedHealth.averageScore === null && emptyPf38!.projects.length === 0, 'Empty portfolio: no band, no average, no entries');
+  assert((await PortSvc37.getPortfolioHealth('port_nope')) === null, 'Unknown portfolio returns null');
+
+  // --- product health service ---
+  const prHealth38 = await ProdSvc37.getProductHealth('prod_2', { now: now35 });
+  const prj104Health38 = await ProjectHealthService.computeHealth(projects38.find((p: any) => p.id === 'PRJ-104')!, { now: now35 });
+  assert(prHealth38!.derivedHealth.averageScore === prj104Health38.score && prHealth38!.derivedHealth.band === prj104Health38.band, 'Single-project product rollup equals that project’s canonical score and band');
+  assert(prHealth38!.productId === 'prod_2' && prHealth38!.portfolioId === 'port_1' && prHealth38!.declaredHealth === 'at-risk', 'Product response carries ids and declared health');
+  assert((await ProdSvc37.getProductHealth('prod_nope')) === null, 'Unknown product returns null');
+
+  // --- no write-back, no side effects ---
+  const alertsBefore38 = (await NotifRepo37.findByUserId('usr_pm_2')).length;
+  const actsBefore38 = (await ActivityRepository.findRecent(200)).length;
+  await PortSvc37.getPortfolioHealth('port_2');
+  await ProdSvc37.getProductHealth('prod_2');
+  assert((await PortRepo35.findById('port_2'))!.health === 'at-risk' && (await ProdRepo35.findById('prod_2'))!.health === 'at-risk', 'Health reads never overwrite stored declared health');
+  assert((await NotifRepo37.findByUserId('usr_pm_2')).length === alertsBefore38 && (await ActivityRepository.findRecent(200)).length === actsBefore38, 'Health reads emit no notifications or activity');
+
+  // --- failure isolation: one rejected computation is excluded, not fatal ---
+  const origCompute38 = ProjectHealthService.computeHealth;
+  try {
+    (ProjectHealthService as any).computeHealth = async function (p: any, o: any) { if (p.id === 'PRJ-102') throw new Error('probe failure'); return origCompute38.call(this, p, o); };
+    const failed38 = await compute38(projects38, now35);
+    assert(failed38.failed.join(',') === 'PRJ-102' && failed38.results.size === projects38.length - 1, 'A rejected computation is isolated and recorded');
+    const pfFailed38 = await PortSvc37.getPortfolioHealth('port_1', { now: now35 });
+    assert(pfFailed38!.derivedHealth.complete === false && pfFailed38!.derivedHealth.averageScore === null && pfFailed38!.derivedHealth.band === null && pfFailed38!.derivedHealth.excludedCount === 1, 'Rollup with a failed project is incomplete with no mean or band');
+    assert(pfFailed38!.projects.find((e: any) => e.id === 'PRJ-102')!.score === null, 'The failed project appears with a null score, never zero');
+  } finally {
+    (ProjectHealthService as any).computeHealth = origCompute38;
+  }
+
+  // --- executive overview carries the same rollup ---
+  const exec38 = await Exec35.getOverview({}, { role: 'admin' as any }, { now: now35 });
+  assert(exec38.projects.health.band === resolveBand38(exec38.projects.health.averageScore!), 'Executive scope band equals resolveBand(averageScore)');
+  assert(exec38.projects.health.projectCount === exec38.projects.total && exec38.projects.health.excludedCount === 0 && exec38.projects.health.empty === false && exec38.projects.health.healthModel === HEALTH_MODEL_VERSION, 'Executive rollup carries the extended fields');
+  const execPort1_38 = exec38.portfolios.find((n: any) => n.id === 'port_1')!;
+  assert(execPort1_38.rollup.health.averageScore === pfHealth38!.derivedHealth.averageScore && execPort1_38.rollup.health.band === pfHealth38!.derivedHealth.band, 'Executive portfolio node agrees with GET /portfolios/:id/health');
+  const execPort2_38 = exec38.portfolios.find((n: any) => n.id === 'port_2')!;
+  assert(execPort2_38.rollup.health.empty === true && execPort2_38.rollup.health.band === null, 'Executive empty portfolio node has no band');
+  const execPartial38 = await Exec35.getOverview({}, { role: 'admin' as any }, { now: now35, maxHealthProjects: 2 });
+  assert(execPartial38.projects.health.band === null && execPartial38.projects.health.excludedCount === exec38.projects.total - 2, 'Executive bounded computation yields no band and counts exclusions');
+
+  // --- controllers + routes ---
+  const okPf38 = res27();
+  await PortCtl37.getHealth(req27({ params: { id: 'port_1' } }) as any, okPf38 as any, next27 as any);
+  assert(okPf38.statusCode === 200 && okPf38.body.success === true && okPf38.body.data.derivedHealth.band === pfHealth38!.derivedHealth.band && okPf38.body.data.declaredHealth === 'healthy', 'GET /portfolios/:id/health returns the envelope with derived and declared health');
+  const missPf38 = res27();
+  await PortCtl37.getHealth(req27({ params: { id: 'port_nope' } }) as any, missPf38 as any, next27 as any);
+  assert(missPf38.statusCode === 404 && missPf38.body.error.code === 'NOT_FOUND', 'Unknown portfolio health returns 404');
+  const badPf38 = res27();
+  await PortCtl37.getHealth(req27({ params: { id: '../etc' } }) as any, badPf38 as any, next27 as any);
+  assert(badPf38.statusCode === 400 && badPf38.body.error.code === 'VALIDATION_ERROR', 'Malformed portfolio id returns 400');
+  const okPr38 = res27();
+  await ProdCtl38.getHealth(req27({ params: { id: 'prod_2' } }) as any, okPr38 as any, next27 as any);
+  assert(okPr38.statusCode === 200 && okPr38.body.data.derivedHealth.averageScore === prj104Health38.score, 'GET /products/:id/health returns the product rollup');
+  const missPr38 = res27();
+  await ProdCtl38.getHealth(req27({ params: { id: 'prod_nope' } }) as any, missPr38 as any, next27 as any);
+  assert(missPr38.statusCode === 404, 'Unknown product health returns 404');
+  for (const [routes, path] of [[portRoutes38, '/portfolios/:id/health'], [prodRoutes38, '/products/:id/health']] as const) {
+    const layer = (routes as any).stack.find((l: any) => l.route && l.route.path === path);
+    assert(!!layer && layer.route.methods.get === true, `${path} registered`);
+    assert(layer.route.stack.map((s: any) => s.name).includes('authenticateToken') && layer.route.stack.length === 2, `${path} uses authenticateToken alone (read convention)`);
+    const idLayer = (routes as any).stack.find((l: any) => l.route && l.route.path === path.replace('/health', '') && l.route.methods.get);
+    assert((routes as any).stack.indexOf(layer) < (routes as any).stack.indexOf(idLayer), `${path} is registered before its '/:id' sibling`);
+  }
+
+  // --- one canonical computation per project per request; no second threshold table ---
+  let calls38 = 0;
+  const origCompute38b = ProjectHealthService.computeHealth;
+  try {
+    (ProjectHealthService as any).computeHealth = async function (p: any, o: any) { calls38 += 1; return origCompute38b.call(this, p, o); };
+    await PortSvc37.getPortfolioHealth('port_1', { now: now35 });
+    assert(calls38 === port1Projects38.length, `Portfolio health computes each member project exactly once (${calls38})`);
+  } finally {
+    (ProjectHealthService as any).computeHealth = origCompute38b;
+  }
+  const rollupSource38 = fs35.readFileSync('server/services/healthRollupService.ts', 'utf8');
+  assert(!/>= ?90|>= ?75|>= ?60|>= ?45/.test(rollupSource38) && /resolveBand\(/.test(rollupSource38), 'Rollup module has no threshold table of its own; it calls the canonical resolver');
+  assert(!/\.update\(|\.create\(|Notification|Activity/.test(rollupSource38), 'Rollup module performs no writes');
+  const execUi38 = fs35.readFileSync('PM-Portal/js/executiveDashboard.js', 'utf8');
+  assert(/health\.band/.test(execUi38) && !/resolveBand|>= ?90/.test(execUi38), 'Executive UI renders the server band and never derives one');
+
   // Summary
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

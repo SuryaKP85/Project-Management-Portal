@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { PortfolioService } from '../services/portfolioService';
 
+/** Accepted identifier shape, matching the other id-validating controllers. */
+const SCOPE_ID_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/;
+
 export const PortfolioController = {
   async list(req: Request, res: Response, next: NextFunction) {
     try {
@@ -18,6 +21,23 @@ export const PortfolioController = {
         return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Portfolio not found' } });
       }
       res.json({ success: true, data: { portfolio } });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  /** GET /portfolios/:id/health — derived rollup beside the declared value. */
+  async getHealth(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = String(req.params.id ?? '').trim();
+      if (!SCOPE_ID_PATTERN.test(id)) {
+        return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid portfolio identifier.' } });
+      }
+      const health = await PortfolioService.getPortfolioHealth(id);
+      if (!health) {
+        return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Portfolio not found' } });
+      }
+      res.json({ success: true, data: health });
     } catch (err) {
       next(err);
     }

@@ -31,12 +31,8 @@ import { DependencyRepository } from '../repositories/dependencyRepository';
 import { MilestoneRepository } from '../repositories/milestoneRepository';
 import { ReleaseRepository } from '../repositories/releaseRepository';
 import { ActivityRepository } from '../repositories/activityRepository';
-import {
-  ProjectHealthService,
-  ProjectHealthResult,
-  HealthBand,
-  HEALTH_MODEL_VERSION,
-} from './projectHealthService';
+import { ProjectHealthResult, HEALTH_MODEL_VERSION } from './projectHealthService';
+import { aggregateHealth, computeHealthFor, resolvePortfolioIdOf } from './healthRollupService';
 import { VALID_ROADMAP_STATUSES } from './roadmapService';
 
 /**
@@ -62,7 +58,6 @@ export const PROJECT_STATUSES: ProjectStatus[] = [
 ];
 export const PROJECT_RISKS: ProjectRisk[] = ['Low', 'Medium', 'High', 'Critical'];
 const GOAL_STATUSES: GoalStatus[] = ['not-started', 'in-progress', 'achieved', 'missed'];
-const HEALTH_BANDS: HealthBand[] = ['Excellent', 'Healthy', 'Monitor', 'At Risk', 'Critical'];
 
 /** Roles that may see budget figures; mirrors the AI context's commercial gating. */
 export const EXECUTIVE_COMMERCIAL_ROLES: UserRole[] = ['admin', 'project-manager', 'product-manager'];
@@ -128,21 +123,10 @@ export function summariseProjects(
     byRisk[p.risk] = (byRisk[p.risk] ?? 0) + 1;
   }
 
+  // Aggregation lives in healthRollupService so portfolios, products and any
+  // future Program level share exactly one rule; nothing is re-scored here.
   const scored = projects.map((p) => healthByProjectId.get(p.id)).filter((r): r is ProjectHealthResult => !!r);
-  const byBand = zeroRecord(HEALTH_BANDS) as Record<string, number>;
-  let scoreSum = 0;
-  for (const r of scored) {
-    byBand[r.band] = (byBand[r.band] ?? 0) + 1;
-    scoreSum += r.score;
-  }
-  const complete = scored.length === projects.length;
-  const health: ExecutiveHealthRollup = {
-    // A partial average is never reported as the scope's health.
-    averageScore: complete && scored.length > 0 ? round1(scoreSum / scored.length) : null,
-    byBand,
-    computedFor: scored.length,
-    complete,
-  };
+  const health: ExecutiveHealthRollup = aggregateHealth(scored, projects.length);
 
   const rollup: ExecutiveProjectRollup = {
     total: projects.length,
@@ -204,10 +188,8 @@ export const ExecutiveDashboardService = {
     }
 
     const productById = new Map<string, Product>(products.map((pr) => [pr.id, pr]));
-    // A project's portfolio is its own stored portfolioId, falling back to the
-    // stored portfolioId of its product — both canonical fields, no inference.
-    const portfolioOf = (p: Project): string | undefined =>
-      p.portfolioId || (p.productId ? productById.get(p.productId)?.portfolioId : undefined);
+    // Shared membership rule (stored portfolioId, else the product's portfolioId).
+    const portfolioOf = (p: Project): string | undefined => resolvePortfolioIdOf(p, productById);
 
     const scopedProjects = projects.filter(
       (p) =>
@@ -217,10 +199,10 @@ export const ExecutiveDashboardService = {
     const scopedProjectIds = new Set(scopedProjects.map((p) => p.id));
     const scopedProjectCodes = new Set(scopedProjects.map((p) => p.code).filter(Boolean));
 
-    // Health: reuse ProjectHealthService exactly, for the whole scope up to the bound.
+    // Health: reuse ProjectHealthService exactly, for the whole scope up to the
+    // bound. A single failed computation is excluded, not fatal.
     const toScore = scopedProjects.slice(0, maxHealthProjects);
-    const healthResults = await Promise.all(toScore.map((p) => ProjectHealthService.computeHealth(p, { now })));
-    const healthByProjectId = new Map<string, ProjectHealthResult>(healthResults.map((r) => [r.projectId, r]));
+    const { results: healthByProjectId } = await computeHealthFor(toScore, now);
 
     const overallRollup = summariseProjects(scopedProjects, healthByProjectId, includeCommercials);
 
@@ -277,7 +259,7 @@ export const ExecutiveDashboardService = {
       meta: {
         generatedAt: now.toISOString(),
         healthModel: HEALTH_MODEL_VERSION,
-        healthComputedFor: healthResults.length,
+        healthComputedFor: healthByProjectId.size,
         healthComplete: overallRollup.health.complete,
         commercialsIncluded: includeCommercials,
         basis: 'deterministic-aggregation',

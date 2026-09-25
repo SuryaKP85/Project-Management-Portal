@@ -1,8 +1,11 @@
 import { ProductRepository } from '../repositories/productRepository';
+import { ProjectRepository } from '../repositories/projectRepository';
 import { ActivityRepository } from '../repositories/activityRepository';
 import { NotificationRepository } from '../repositories/notificationRepository';
+import { buildContainerHealth, projectsInProduct } from './healthRollupService';
 import {
   Product,
+  ProductHealthResponse,
   SafeUser,
   DeclaredHealth,
   normalizeDeclaredHealth,
@@ -28,6 +31,29 @@ export const ProductService = {
 
   async getProductById(id: string): Promise<Product | null> {
     return ProductRepository.findById(id);
+  },
+
+  /**
+   * Sprint 11.2C — derived health for a product from its projects' canonical
+   * ProjectHealthService results (Product -> Project is the stored productId).
+   * Read-only; the declared health is reported alongside, never overwritten.
+   */
+  async getProductHealth(id: string, options: { now?: Date } = {}): Promise<ProductHealthResponse | null> {
+    const product = await ProductRepository.findById(id);
+    if (!product) return null;
+
+    const projects = await ProjectRepository.findAll();
+    const built = await buildContainerHealth(projectsInProduct(projects, product.id), options.now);
+
+    return {
+      productId: product.id,
+      productCode: product.code,
+      portfolioId: product.portfolioId,
+      declaredHealth: product.health,
+      derivedHealth: built.derivedHealth,
+      projects: built.projects,
+      computedAt: (options.now ?? new Date()).toISOString(),
+    };
   },
 
   async createProduct(data: Partial<Product>, actorUser: SafeUser): Promise<Product> {

@@ -6,6 +6,8 @@ import { validateBody } from '../middleware/validation';
 export const productRoutes = Router();
 
 productRoutes.get('/products', authenticateToken, ProductController.list);
+// Derived health (Sprint 11.2C): read-only, authenticateToken alone.
+productRoutes.get('/products/:id/health', authenticateToken, ProductController.getHealth);
 productRoutes.get('/products/:id', authenticateToken, ProductController.getById);
 productRoutes.post(
   '/products',

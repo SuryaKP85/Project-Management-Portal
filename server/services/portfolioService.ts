@@ -1,8 +1,12 @@
 import { PortfolioRepository } from '../repositories/portfolioRepository';
+import { ProjectRepository } from '../repositories/projectRepository';
+import { ProductRepository } from '../repositories/productRepository';
 import { ActivityRepository } from '../repositories/activityRepository';
 import { NotificationRepository } from '../repositories/notificationRepository';
+import { buildContainerHealth, projectsInPortfolio } from './healthRollupService';
 import {
   Portfolio,
+  PortfolioHealthResponse,
   SafeUser,
   DeclaredHealth,
   normalizeDeclaredHealth,
@@ -28,6 +32,29 @@ export const PortfolioService = {
 
   async getPortfolioById(id: string): Promise<Portfolio | null> {
     return PortfolioRepository.findById(id);
+  },
+
+  /**
+   * Sprint 11.2C — derived health for a portfolio, computed from its projects'
+   * canonical ProjectHealthService results. Read-only: the stored declared
+   * health is reported alongside and is never overwritten by the rollup.
+   */
+  async getPortfolioHealth(id: string, options: { now?: Date } = {}): Promise<PortfolioHealthResponse | null> {
+    const portfolio = await PortfolioRepository.findById(id);
+    if (!portfolio) return null;
+
+    const [projects, products] = await Promise.all([ProjectRepository.findAll(), ProductRepository.findAll()]);
+    const members = projectsInPortfolio(projects, products, portfolio.id);
+    const built = await buildContainerHealth(members, options.now);
+
+    return {
+      portfolioId: portfolio.id,
+      portfolioCode: portfolio.code,
+      declaredHealth: portfolio.health,
+      derivedHealth: built.derivedHealth,
+      projects: built.projects,
+      computedAt: (options.now ?? new Date()).toISOString(),
+    };
   },
 
   async createPortfolio(data: Partial<Portfolio>, actorUser: SafeUser): Promise<Portfolio> {
