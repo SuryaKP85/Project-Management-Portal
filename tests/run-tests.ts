@@ -3250,6 +3250,67 @@ async function runTests() {
   assert(linked35.strategy.initiativesWithoutGoal === items35.length - 1, 'Linking a goal reduces initiativesWithoutGoal by one');
   const prodStrategy35 = await overview({ productId: 'prod_2' });
   assert(prodStrategy35.strategy.projectsWithoutInitiative === prod2Projects35.filter((p: any) => !charteredIds35.has(p.id)).length, 'Strategy respects the product scope');
+  // --- h2. Sprint 11.3 strategic view: alignment complements, roadmap progress, goal rollups ---
+  const st35 = linked35.strategy;
+  assert(st35.alignedProjects.aligned + st35.alignedProjects.unaligned === linked35.projects.total && st35.alignedProjects.unaligned === st35.projectsWithoutInitiative, 'Aligned + unaligned projects equal the scoped project total');
+  assert(st35.initiativesWithGoal.withGoal + st35.initiativesWithGoal.withoutGoal === st35.initiativesTotal && st35.initiativesWithGoal.withoutGoal === st35.initiativesWithoutGoal, 'Initiatives with + without goal equal the initiative total');
+  const projectProgress35 = new Map<string, number>(allProjects35.map((p: any) => [p.id, p.progress]));
+  const charteredItems35 = items35.filter((i) => i.projectId);
+  const available35 = charteredItems35.map((i) => projectProgress35.get(i.projectId!)).filter((v): v is number => typeof v === 'number');
+  const sum35 = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+  const expectedRoadmap35 = available35.length ? r1(sum35(available35) / available35.length) : null;
+  assert(st35.roadmapProgress.average === expectedRoadmap35, `Roadmap progress is the unweighted mean of chartered initiatives' project progress (${st35.roadmapProgress.average})`);
+  assert(st35.roadmapProgress.basedOn === available35.length && st35.roadmapProgress.unavailable === charteredItems35.length - available35.length, 'Roadmap progress states its basis and unavailable counts');
+  const goal1_35 = goals35.find((g: any) => g.id === 'goal_1')!;
+  const goal1Rollup35 = st35.goalRollups.find((g: any) => g.goalId === 'goal_1')!;
+  assert(st35.goalRollups.length === st35.goalsTotal && !!goal1Rollup35 && goal1Rollup35.goalName === goal1_35.objective && goal1Rollup35.status === goal1_35.status, 'Every scoped goal has a rollup carrying its objective and status');
+  assert(goal1Rollup35.initiativeCount === 1 && goal1Rollup35.charteredInitiativeCount === 1 && goal1Rollup35.progress === projectProgress35.get('PRJ-101') && goal1Rollup35.progressBasedOn === 1 && goal1Rollup35.progressUnavailable === 0, 'goal_1 rolls up rm_1 and the PRJ-101 canonical progress');
+  assert(goal1Rollup35.progress !== goal1_35.progress, `Goal rollup progress (${goal1Rollup35.progress}) is not the hand-entered Goal.progress (${goal1_35.progress})`);
+  assert(st35.goalRollups.filter((g: any) => g.goalId !== 'goal_1').every((g: any) => g.initiativeCount === 0 && g.charteredInitiativeCount === 0 && g.progress === null && g.progressBasedOn === 0), 'Unlinked goals report no initiatives and null progress');
+  assert(!/\bg\.progress\b|goal\.progress|currentValue|targetValue/.test(execSource35), 'Executive strategy never reads Goal.progress or goal target values');
+
+  // Temporary fixtures: two initiatives on one project (counted once per
+  // initiative) and one on a missing project (progress unavailable, not zero).
+  await ProjRepo24.create({ id: 'PRJ-S113-SHARED', code: 'PRJ-S113-SHARED', name: 'shared project', client: 'Probe', status: 'planning', risk: 'Low', progress: 30, budget: 0, portfolioId: 'port_1' } as any);
+  const fxItems35 = ['rm_s113_a', 'rm_s113_b', 'rm_s113_ghost'];
+  await RoadmapRepository.create({ id: 'rm_s113_a', code: 'RM-S113-A', name: 'shared a', projectId: 'PRJ-S113-SHARED', portfolioId: 'port_1' } as any);
+  await RoadmapRepository.create({ id: 'rm_s113_b', code: 'RM-S113-B', name: 'shared b', projectId: 'PRJ-S113-SHARED', portfolioId: 'port_1' } as any);
+  await RoadmapRepository.create({ id: 'rm_s113_ghost', code: 'RM-S113-G', name: 'ghost project', projectId: 'PRJ-S113-GHOST', portfolioId: 'port_1' } as any);
+  await GoalRepo29.create({ id: 'goal_s113', objective: 'S113 goal', progress: 99, portfolioId: 'port_1' } as any);
+  try {
+    for (const id of fxItems35) await RoadmapService.linkGoal(id, 'goal_s113', actor26);
+    const fx35 = (await overview({})).strategy;
+    assert(fx35.roadmapProgress.basedOn === st35.roadmapProgress.basedOn + 2 && fx35.roadmapProgress.unavailable === st35.roadmapProgress.unavailable + 1, 'A shared project counts once per initiative; a missing project is unavailable, never zero');
+    assert(fx35.roadmapProgress.average === r1((sum35(available35) + 30 + 30) / (available35.length + 2)), 'Roadmap progress mean includes the shared project twice and skips the unavailable initiative');
+    const goalFx35 = fx35.goalRollups.find((g: any) => g.goalId === 'goal_s113')!;
+    assert(goalFx35.initiativeCount === 3 && goalFx35.charteredInitiativeCount === 3 && goalFx35.progress === 30 && goalFx35.progressBasedOn === 2 && goalFx35.progressUnavailable === 1, 'Goal rollup: 3 initiatives, 2 with progress (30), 1 unavailable');
+    assert(goalFx35.progress !== 99, 'Goal rollup ignores the hand-entered Goal.progress of 99');
+
+    // Portfolio filter: the same strategy population as the existing counts.
+    const pfOverview35 = await overview({ portfolioId: 'port_1' });
+    const pfStrategy35 = pfOverview35.strategy;
+    assert(pfStrategy35.alignedProjects.aligned + pfStrategy35.alignedProjects.unaligned === pfOverview35.projects.total, 'Portfolio filter: aligned + unaligned equal the scoped projects');
+    assert(pfStrategy35.roadmapProgress.basedOn + pfStrategy35.roadmapProgress.unavailable === pfStrategy35.charteredInitiatives, 'Portfolio filter: progress basis covers exactly the scoped chartered initiatives');
+    assert(pfStrategy35.goalRollups.length === pfStrategy35.goalsTotal && pfStrategy35.goalRollups.every((g: any) => g.goalId === 'goal_s113' || goals35.some((x: any) => x.id === g.goalId && x.portfolioId === 'port_1')), 'Portfolio filter: goal rollups cover exactly the scoped goals');
+    const goalPf35 = pfStrategy35.goalRollups.find((g: any) => g.goalId === 'goal_s113')!;
+    assert(goalPf35.initiativeCount === 2 && goalPf35.progressUnavailable === 0, 'Portfolio filter: a chartered initiative whose project is out of scope is not in the population (existing rule)');
+
+    // Product filter: same invariants.
+    const prOverview35 = await overview({ productId: 'prod_2' });
+    const prStrategy35 = prOverview35.strategy;
+    assert(prStrategy35.alignedProjects.aligned + prStrategy35.alignedProjects.unaligned === prOverview35.projects.total && prStrategy35.roadmapProgress.basedOn + prStrategy35.roadmapProgress.unavailable === prStrategy35.charteredInitiatives && prStrategy35.goalRollups.length === prStrategy35.goalsTotal, 'Product filter: alignment, progress basis and goal rollups follow the scoped population');
+
+    // Empty strategic scope.
+    const emptyStrategy35 = (await overview({ portfolioId: 'port_2' })).strategy;
+    assert(emptyStrategy35.alignedProjects.aligned === 0 && emptyStrategy35.alignedProjects.unaligned === 0 && emptyStrategy35.roadmapProgress.average === null && emptyStrategy35.roadmapProgress.basedOn === 0 && emptyStrategy35.roadmapProgress.unavailable === 0 && Array.isArray(emptyStrategy35.goalRollups) && emptyStrategy35.goalRollups.length === emptyStrategy35.goalsTotal, 'Empty scope reports zero alignment, null roadmap progress and no fabricated rollups');
+  } finally {
+    for (const id of fxItems35) {
+      for (const l of await GLR28.getLinksFor('roadmap', id)) await GLR28.removeLink(l.id);
+      await RoadmapRepository.delete(id);
+    }
+    await GoalRepo29.delete('goal_s113');
+    await ProjRepo24.delete('PRJ-S113-SHARED');
+  }
   for (const l of await GLR28.getLinksFor('roadmap', 'rm_1')) await GLR28.removeLink(l.id);
 
   // --- i. governance aggregation (recomputed with the same canonical predicates) ---
@@ -3411,10 +3472,22 @@ async function runTests() {
   assert(!/[<>]=? ?(90|75|60|45)\b/.test(mod36) && !/Excellent'?\s*:\s*\d|Healthy'?\s*:\s*\d|Monitor'?\s*:\s*\d/.test(mod36), 'No health thresholds are duplicated in the UI');
   assert(/<caption class="visually-hidden">[^<]*derived health and declared health[^<]*<\/caption>/.test(mod36), 'Hierarchy table has a caption');
   const ths36 = mod36.match(/<th\b[^>]*>/g) || [];
-  assert(ths36.length === 6 && ths36.every((t) => /scope="col"/.test(t)), `Every hierarchy header carries scope="col" (${ths36.length})`);
+  assert(ths36.length === 11 && ths36.every((t) => /scope="col"/.test(t)), `Every table header (hierarchy 6 + goals 5) carries scope="col" (${ths36.length})`);
   assert(/Incomplete \(\$\{escapeHtml\(health\.computedFor\)\}\/\$\{escapeHtml\(rollup\.total\)\}\)/.test(mod36) && !/title="Scored/.test(mod36), 'Hierarchy incomplete state is visible text, not a tooltip');
   assert(/Derived health is calculated from project data by the health model\. Declared health is set by portfolio management\. They are independent and use different scales\./.test(mod36), 'Legend explains the two independent scales');
   assert(!/declaredHealth|Derived Health|Declared health/.test(dash36) && !/ExecutiveOverview|declaredCell|rollupCells/.test(dash36), 'V1.1 dashboard is untouched by the 11.2D presentation');
+
+  // 14. Sprint 11.3 — strategic view renders server-provided alignment, roadmap
+  // progress and goal rollups; nothing is computed or scored in the browser.
+  assert(/Projects aligned/.test(mod36) && /Projects without alignment/.test(mod36) && /Initiatives with goal/.test(mod36) && /Initiatives without goal/.test(mod36), 'Alignment metrics are rendered');
+  assert(/s\.alignedProjects/.test(mod36) && /s\.initiativesWithGoal/.test(mod36) && /s\.roadmapProgress/.test(mod36) && /s\.goalRollups/.test(mod36), 'Strategic metrics come from the server strategy block');
+  assert(/Based on \$\{escapeHtml\(rp\.basedOn\)\} chartered initiatives · \$\{escapeHtml\(rp\.unavailable\)\} without progress data/.test(mod36), 'Roadmap progress states its chartered-initiative basis');
+  assert(/No chartered initiatives/.test(mod36) && /Progress data unavailable for all/.test(mod36), 'Roadmap progress empty and unavailable states are explicit');
+  assert(/<caption class="visually-hidden">Goals in scope/.test(mod36) && /Progress unavailable<\/span>/.test(mod36) && /No goals in this scope/.test(mod36), 'Goals table has a caption, an accessible unavailable state and an empty row');
+  assert(!/\.projectId\b|governanceId|roadmapLinks|charteredProjectIds|initiativeCount\s*[<>=]|charteredInitiativeCount\s*[<>=]/.test(mod36), 'No client-side alignment predicates or calculation');
+  const strategySrc36 = (mod36.match(/renderStrategy\(o\) \{[\s\S]*?\n  \},/) || [''])[0];
+  assert(strategySrc36.length > 0 && !/'(success|warning|danger)'/.test(strategySrc36) && !/score/i.test(strategySrc36.replace(/Alignment counts are descriptive, not a score/, '')), 'Strategic cards use neutral tones and never present a strategy score');
+  assert(/counts once per initiative/.test(mod36), 'UI explains the per-initiative progress basis');
 
   // 37. Declared health vocabulary (Sprint 11.2B)
   // Portfolio and Product share one hand-entered vocabulary: healthy | at-risk |

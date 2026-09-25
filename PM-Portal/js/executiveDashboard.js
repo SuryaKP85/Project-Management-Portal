@@ -319,6 +319,40 @@ export const ExecutiveOverviewModule = {
       .filter(([, n]) => n > 0)
       .map(([k, n]) => `<span class="badge bg-light text-dark border me-1 mb-1">${escapeHtml(label(k))}: ${escapeHtml(n)}</span>`)
       .join('') || '<span class="text-muted small">None</span>';
+    // Sprint 11.3: alignment, roadmap progress and goal rollups are all
+    // server-supplied. Alignment is descriptive, so every card keeps a neutral
+    // tone; nothing here is rated, ranked or banded.
+    const aligned = s.alignedProjects || {};
+    const withGoal = s.initiativesWithGoal || {};
+    const rp = s.roadmapProgress || {};
+    const dash = '<span class="text-muted">—</span>';
+    const progressCard = !s.charteredInitiatives
+      ? this.kpiCard('Roadmap progress', dash, 'No chartered initiatives', 'info', 'fa-road')
+      : rp.average === null || rp.average === undefined
+        ? this.kpiCard('Roadmap progress', dash, `Progress data unavailable for all ${escapeHtml(rp.unavailable)} chartered initiatives`, 'info', 'fa-road')
+        : this.kpiCard('Roadmap progress', `${escapeHtml(rp.average)}%`, `Based on ${escapeHtml(rp.basedOn)} chartered initiatives · ${escapeHtml(rp.unavailable)} without progress data`, 'info', 'fa-road');
+    const goalRows = (s.goalRollups || []).map((g) => `
+          <tr>
+            <td>${escapeHtml(g.goalName)}</td>
+            <td><span class="badge bg-light text-dark border">${escapeHtml(label(g.status))}</span></td>
+            <td class="text-end">${escapeHtml(g.initiativeCount)}</td>
+            <td class="text-end">${escapeHtml(g.charteredInitiativeCount)}</td>
+            <td class="text-end">${g.progress === null || g.progress === undefined
+              ? '<span class="text-muted" aria-hidden="true">—</span><span class="visually-hidden">Progress unavailable</span>'
+              : `${escapeHtml(g.progress)}%<div class="text-muted small">Based on ${escapeHtml(g.progressBasedOn)} chartered</div>`}</td>
+          </tr>`).join('');
+    const goalsTable = s.goalsTotal === 0
+      ? '<div class="text-muted small mt-3">No goals in this scope.</div>'
+      : `
+        <div class="table-responsive mt-3">
+          <table class="table table-sm align-middle mb-0">
+            <caption class="visually-hidden">Goals in scope: status, linked initiatives, chartered initiatives and roadmap progress per goal</caption>
+            <thead class="table-light small text-muted text-uppercase">
+              <tr><th scope="col">Goal</th><th scope="col">Status</th><th scope="col" class="text-end">Initiatives</th><th scope="col" class="text-end">Chartered</th><th scope="col" class="text-end">Progress</th></tr>
+            </thead>
+            <tbody>${goalRows}</tbody>
+          </table>
+        </div>`;
     return `
       <div class="card p-3 mb-4 shadow-sm border-0">
         <div class="small text-muted text-uppercase fw-semibold mb-3">Strategic snapshot</div>
@@ -333,11 +367,16 @@ export const ExecutiveOverviewModule = {
           </div>
         </div>
         <div class="stats-grid mt-3">
-          ${this.kpiCard('Chartered initiatives', escapeHtml(s.charteredInitiatives), 'Initiatives linked to a project', 'success', 'fa-link')}
+          ${this.kpiCard('Projects aligned', escapeHtml(aligned.aligned ?? '—'), 'Linked to at least one roadmap initiative', 'primary', 'fa-diagram-project')}
+          ${this.kpiCard('Projects without alignment', escapeHtml(aligned.unaligned ?? '—'), 'No roadmap initiative points at them', 'primary', 'fa-diagram-project')}
+          ${this.kpiCard('Chartered initiatives', escapeHtml(s.charteredInitiatives), 'Initiatives linked to a project', 'info', 'fa-link')}
           ${this.kpiCard('Unchartered initiatives', escapeHtml(s.uncharteredInitiatives), 'Initiatives not yet linked to a project', 'info', 'fa-link-slash')}
-          ${this.kpiCard('Projects without initiative', escapeHtml(s.projectsWithoutInitiative), 'Projects with no roadmap initiative', s.projectsWithoutInitiative > 0 ? 'warning' : 'success', 'fa-diagram-project')}
-          ${this.kpiCard('Initiatives without goal', escapeHtml(s.initiativesWithoutGoal), 'Initiatives with no aligned goal', s.initiativesWithoutGoal > 0 ? 'warning' : 'success', 'fa-bullseye')}
+          ${this.kpiCard('Initiatives with goal', escapeHtml(withGoal.withGoal ?? '—'), 'Linked to at least one goal', 'info', 'fa-bullseye')}
+          ${this.kpiCard('Initiatives without goal', escapeHtml(withGoal.withoutGoal ?? '—'), 'No aligned goal', 'info', 'fa-bullseye')}
+          ${progressCard}
         </div>
+        <div class="text-xs text-muted mt-2">Roadmap progress is per chartered initiative and comes from each initiative's linked project. A project shared by several initiatives counts once per initiative. Alignment counts are descriptive, not a score.</div>
+        ${goalsTable}
       </div>`;
   },
 

@@ -816,6 +816,21 @@ export interface ExecutivePortfolioNode {
   products: ExecutiveProductNode[];
 }
 
+/**
+ * Sprint 11.3 — per-goal execution rollup. Progress is the mean canonical
+ * project progress across the goal's chartered initiatives, one contribution
+ * per initiative; null when none is available. Never Goal.progress.
+ */
+export interface ExecutiveGoalRollup {
+  goalId: string;
+  goalName: string;
+  status: GoalStatus;
+  initiativeCount: number;
+  charteredInitiativeCount: number;
+  progress: number | null;
+  progressBasedOn: number;
+  progressUnavailable: number;
+}
 export interface ExecutiveStrategySummary {
   goals: Record<GoalStatus, number>;
   goalsTotal: number;
@@ -825,6 +840,15 @@ export interface ExecutiveStrategySummary {
   uncharteredInitiatives: number;
   projectsWithoutInitiative: number;
   initiativesWithoutGoal: number;
+  /** Sprint 11.3 — complements of the counts above, for direct display. */
+  alignedProjects: { aligned: number; unaligned: number };
+  initiativesWithGoal: { withGoal: number; withoutGoal: number };
+  /**
+   * Initiative-based: one contribution per chartered initiative from its linked
+   * project's canonical progress. `average` is null when nothing is available.
+   */
+  roadmapProgress: { average: number | null; basedOn: number; unavailable: number };
+  goalRollups: ExecutiveGoalRollup[];
 }
 
 export interface ExecutiveGovernanceSummary {

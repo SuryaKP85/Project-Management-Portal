@@ -317,10 +317,58 @@ function summariseStrategy(
 
   const charteredProjectIds = new Set(scopedItems.map((i) => i.projectId).filter((id): id is string => !!id));
   const goalLinkCountByItem = new Map<string, number>();
+  // Sprint 11.3: the same roadmap -> goal links, also keyed by goal for the
+  // per-goal rollups. Only initiatives in the strategy population count.
+  const scopedItemById = new Map<string, RoadmapItem>(scopedItems.map((i) => [i.id, i]));
+  const itemIdsByGoal = new Map<string, Set<string>>();
   for (const link of roadmapLinks) {
     if (link.targetType !== 'goal') continue;
     goalLinkCountByItem.set(link.governanceId, (goalLinkCountByItem.get(link.governanceId) ?? 0) + 1);
+    if (!scopedItemById.has(link.governanceId)) continue;
+    if (!itemIdsByGoal.has(link.targetId)) itemIdsByGoal.set(link.targetId, new Set());
+    itemIdsByGoal.get(link.targetId)!.add(link.governanceId);
   }
+
+  // Roadmap progress is initiative-based: each chartered initiative contributes
+  // its linked project's canonical progress once (RoadmapService's
+  // withDerivedProgress rule), so a project shared by several initiatives
+  // counts once per initiative. A missing project or non-numeric progress is
+  // "unavailable", never zero. Goal.progress is hand-entered and never used.
+  const projectById = new Map<string, Project>(scopedProjects.map((p) => [p.id, p]));
+  const progressRollup = (items: RoadmapItem[]): { average: number | null; basedOn: number; unavailable: number } => {
+    let sum = 0;
+    let basedOn = 0;
+    let unavailable = 0;
+    for (const item of items) {
+      if (!item.projectId) continue;
+      const project = projectById.get(item.projectId);
+      if (project && typeof project.progress === 'number') {
+        sum += project.progress;
+        basedOn += 1;
+      } else {
+        unavailable += 1;
+      }
+    }
+    return { average: basedOn > 0 ? round1(sum / basedOn) : null, basedOn, unavailable };
+  };
+
+  const goalRollups: ExecutiveStrategySummary['goalRollups'] = scopedGoals.map((g) => {
+    const items = Array.from(itemIdsByGoal.get(g.id) ?? []).map((id) => scopedItemById.get(id)!);
+    const rolled = progressRollup(items);
+    return {
+      goalId: g.id,
+      goalName: g.objective,
+      status: g.status,
+      initiativeCount: items.length,
+      charteredInitiativeCount: items.filter((i) => !!i.projectId).length,
+      progress: rolled.average,
+      progressBasedOn: rolled.basedOn,
+      progressUnavailable: rolled.unavailable,
+    };
+  });
+
+  const projectsWithoutInitiative = scopedProjects.filter((p) => !charteredProjectIds.has(p.id)).length;
+  const initiativesWithoutGoal = scopedItems.filter((i) => (goalLinkCountByItem.get(i.id) ?? 0) === 0).length;
 
   return {
     goals: goalCounts as Record<GoalStatus, number>,
@@ -329,8 +377,12 @@ function summariseStrategy(
     initiativesTotal: scopedItems.length,
     charteredInitiatives: scopedItems.filter((i) => !!i.projectId).length,
     uncharteredInitiatives: scopedItems.filter((i) => !i.projectId).length,
-    projectsWithoutInitiative: scopedProjects.filter((p) => !charteredProjectIds.has(p.id)).length,
-    initiativesWithoutGoal: scopedItems.filter((i) => (goalLinkCountByItem.get(i.id) ?? 0) === 0).length,
+    projectsWithoutInitiative,
+    initiativesWithoutGoal,
+    alignedProjects: { aligned: scopedProjects.length - projectsWithoutInitiative, unaligned: projectsWithoutInitiative },
+    initiativesWithGoal: { withGoal: scopedItems.length - initiativesWithoutGoal, withoutGoal: initiativesWithoutGoal },
+    roadmapProgress: progressRollup(scopedItems),
+    goalRollups,
   };
 }
 
