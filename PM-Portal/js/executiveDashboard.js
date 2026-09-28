@@ -40,7 +40,15 @@ const STATUS_LABEL = {
   achieved: 'Achieved',
   missed: 'Missed',
 };
-const label = (key) => STATUS_LABEL[key] || String(key);
+/** Fallback for statuses without an explicit label: "in-development" -> "In development", "ga" -> "GA". */
+const humanize = (key) => (key === 'ga' ? 'GA' : String(key ?? '').replace(/-/g, ' ').replace(/^./, (c) => c.toUpperCase()));
+const label = (key) => STATUS_LABEL[key] || humanize(key);
+/** Server timestamps are ISO strings; shown in the viewer's locale, never computed with. */
+const formatDateTime = (iso) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+};
 
 export const ExecutiveOverviewModule = {
   app: null,
@@ -84,14 +92,17 @@ export const ExecutiveOverviewModule = {
       });
     }
     if (refreshBtn) {
-      refreshBtn.addEventListener('click', () => this.load());
+      // A refresh never overlaps an in-flight request; filter changes still reload.
+      refreshBtn.addEventListener('click', () => { if (!this.loading) this.load(); });
     }
   },
 
   /** Reloads from the server. Never throws; failures are kept for render(). */
   async load() {
+    const refreshBtn = document.getElementById('executive-refresh-btn');
     this.loading = true;
     this.error = null;
+    if (refreshBtn) refreshBtn.disabled = true;
     this.render();
     try {
       this.overview = await ExecutiveService.getOverview({
@@ -105,6 +116,7 @@ export const ExecutiveOverviewModule = {
       console.error('[ExecutiveOverview] Failed loading overview:', err);
     } finally {
       this.loading = false;
+      if (refreshBtn) refreshBtn.disabled = false;
       this.render();
     }
   },
@@ -174,15 +186,18 @@ export const ExecutiveOverviewModule = {
     }
 
     const o = this.overview;
+    // Executive reading order: what is in scope, what needs attention, where,
+    // then the supporting breakdowns.
     container.innerHTML = [
+      this.renderScope(o),
       this.renderHeadline(o),
-      this.renderHealthDistribution(o),
       this.renderInsights(o),
+      this.renderHierarchy(o),
+      this.renderHealthDistribution(o),
       this.renderStrategy(o),
       this.renderGovernance(o),
-      this.renderHierarchy(o),
       this.renderActivity(o),
-      `<div class="text-xs text-muted mt-2">Generated ${escapeHtml(o.meta?.generatedAt || '')} · Health model: ${escapeHtml(o.meta?.healthModel || '—')} · All figures aggregated server-side (${escapeHtml(o.meta?.basis || '')}).</div>`,
+      `<div class="small text-muted mt-2">All figures are aggregated server-side. Health model ${escapeHtml(o.meta?.healthModel || '—')}.</div>`,
     ].join('');
   },
 
@@ -217,6 +232,33 @@ export const ExecutiveOverviewModule = {
       </div>`;
   },
 
+  /**
+   * One line stating what the page shows: the scope names come from the
+   * response nodes and the project count is the server's total.
+   */
+  renderScope(o) {
+    const scope = o.scope || {};
+    const portfolios = o.portfolios || [];
+    const productIn = (nodes) => (nodes || []).find((pr) => pr.id === scope.productId);
+    let product = null;
+    let portfolio = scope.portfolioId ? portfolios.find((pf) => pf.id === scope.portfolioId) : null;
+    if (scope.productId) {
+      const parent = portfolios.find((pf) => productIn(pf.products));
+      product = parent ? productIn(parent.products) : productIn(o.productsWithoutPortfolio);
+      portfolio = portfolio || parent || null;
+    }
+    const parts = [];
+    if (portfolio) parts.push(`Portfolio ${escapeHtml(portfolio.name)}`);
+    if (product) parts.push(`Product ${escapeHtml(product.name)}`);
+    const scopeText = parts.join(' › ') || (scope.productId ? 'Selected product' : 'All portfolios');
+    const total = o.projects?.total ?? scope.projectsInScope ?? 0;
+    return `
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 small text-muted" role="status">
+        <span><i class="fa-solid fa-filter me-1"></i><span class="fw-semibold text-body">${scopeText}</span> · ${escapeHtml(total)} ${total === 1 ? 'project' : 'projects'}</span>
+        <span>Updated ${escapeHtml(formatDateTime(o.meta?.generatedAt))}</span>
+      </div>`;
+  },
+
   emptyCard(icon, title, text) {
     return `
       <div class="card p-5 text-center shadow-sm border-0">
@@ -234,8 +276,8 @@ export const ExecutiveOverviewModule = {
           <div class="kpi-icon-wrapper kpi-icon-${tone}"><i class="fa-solid ${icon}"></i></div>
         </div>
         <div>
-          <h3 class="kpi-value mb-0">${valueHtml}</h3>
-          <div class="text-xs text-secondary mt-1">${escapeHtml(subtitle)}</div>
+          <div class="kpi-value mb-0">${valueHtml}</div>
+          <div class="small text-secondary mt-1">${escapeHtml(subtitle)}</div>
         </div>
       </div>`;
   },
@@ -270,7 +312,7 @@ export const ExecutiveOverviewModule = {
     const cards = [
       this.kpiCard('Total Projects', escapeHtml(p.total), `${escapeHtml(o.scope?.projectsInScope ?? p.total)} in scope`, 'primary', 'fa-diagram-project'),
       this.kpiCard('Average Progress', p.progress?.average === null || p.progress?.average === undefined ? '<span class="text-muted">—</span>' : `${escapeHtml(p.progress.average)}%`, 'Mean of canonical project progress', 'info', 'fa-bars-progress'),
-      this.kpiCard(p.health?.complete ? 'Derived Health' : 'Project Health', health.value, health.subtitle, p.health?.complete ? 'success' : 'warning', 'fa-heart-pulse'),
+      this.kpiCard('Derived Health', health.value, health.subtitle, p.health?.complete ? 'success' : 'warning', 'fa-heart-pulse'),
     ];
     // Budget appears only when the server included it for this caller.
     if (p.budget && typeof p.budget.total === 'number') {
@@ -279,9 +321,9 @@ export const ExecutiveOverviewModule = {
     return `
       <div class="stats-grid mb-3">${cards.join('')}</div>
       <div class="card p-3 mb-4 shadow-sm border-0">
-        <div class="small text-muted text-uppercase fw-semibold mb-2">Projects by status</div>
+        <h2 class="fs-6 small text-muted text-uppercase fw-semibold mb-2">Projects by status</h2>
         <div>${statuses || '<span class="text-muted small">No status data</span>'}</div>
-        ${o.scope?.projectsWithoutPortfolio ? `<div class="text-xs text-muted mt-2">${escapeHtml(o.scope.projectsWithoutPortfolio)} project(s) in scope belong to no portfolio and are counted here only.</div>` : ''}
+        ${o.scope?.projectsWithoutPortfolio ? `<div class="small text-muted mt-2">${escapeHtml(o.scope.projectsWithoutPortfolio)} project(s) in scope belong to no portfolio and are counted here only.</div>` : ''}
       </div>`;
   },
 
@@ -301,11 +343,8 @@ export const ExecutiveOverviewModule = {
       : `<span class="text-warning"><i class="fa-solid fa-triangle-exclamation me-1"></i>Health data incomplete: ${escapeHtml(health.computedFor)} of ${escapeHtml(o.projects.total)} projects scored. Bands below describe scored projects only.</span>`;
     return `
       <div class="card p-3 mb-4 shadow-sm border-0">
-        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
-          <div class="small text-muted text-uppercase fw-semibold">Health distribution</div>
-          <span class="badge bg-light text-secondary border">Health model: ${escapeHtml(o.meta?.healthModel || '—')}</span>
-        </div>
-        <div class="text-xs text-muted mb-2">${note}</div>
+        <h2 class="fs-6 small text-muted text-uppercase fw-semibold mb-2">Health distribution</h2>
+        <div class="small text-muted mb-2">${note}</div>
         ${rows}
       </div>`;
   },
@@ -350,7 +389,7 @@ export const ExecutiveOverviewModule = {
     const bottleneck = (labelText, n) => `<span class="badge bg-light text-dark border me-1 mb-1">${labelText}: ${escapeHtml(n ?? '—')}</span>`;
     return `
       <div class="card p-3 mb-4 shadow-sm border-0">
-        <div class="small text-muted text-uppercase fw-semibold mb-3">Cross-project insights</div>
+        <h2 class="fs-6 small text-muted text-uppercase fw-semibold mb-3">Cross-project insights</h2>
         ${incompleteNote}
         <div class="fw-bold mb-2"><i class="fa-solid fa-triangle-exclamation me-1 text-primary"></i>Attention required</div>
         ${attentionTable}
@@ -361,7 +400,7 @@ export const ExecutiveOverviewModule = {
           ${this.kpiCard('Projects with blocking dependencies', escapeHtml(ps.blockingDependencyProjects ?? '—'), signalSubtitle(ps.blockingDependencyProjects), 'primary', 'fa-link')}
           ${this.kpiCard('Projects with blocked work', escapeHtml(ps.blockedWorkProjects ?? '—'), signalSubtitle(ps.blockedWorkProjects), 'primary', 'fa-hand')}
         </div>
-        <div class="text-xs text-muted mt-2">Project counts, one per project per category. The governance snapshot below counts records.</div>
+        <div class="small text-muted mt-2">Project counts, one per project per category. The governance snapshot below counts records.</div>
         <div class="fw-bold mt-4 mb-2"><i class="fa-solid fa-road-barrier me-1 text-primary"></i>Delivery bottlenecks</div>
         <div>
           ${bottleneck('Blocked stories', db.blockedStories)}
@@ -370,7 +409,7 @@ export const ExecutiveOverviewModule = {
           ${bottleneck('Slipped milestones', db.slippedMilestones)}
           ${bottleneck('Overdue projects', db.overdueProjects)}
         </div>
-        <div class="text-xs text-muted mt-2">Totals across scored projects. Blocked tasks are a delivery fact, not a health factor.</div>
+        <div class="small text-muted mt-2">Totals across scored projects. Blocked tasks are a delivery fact, not a health factor.</div>
       </div>`;
   },
 
@@ -420,7 +459,7 @@ export const ExecutiveOverviewModule = {
         </div>`;
     return `
       <div class="card p-3 mb-4 shadow-sm border-0">
-        <div class="small text-muted text-uppercase fw-semibold mb-3">Strategic snapshot</div>
+        <h2 class="fs-6 small text-muted text-uppercase fw-semibold mb-3">Strategic snapshot</h2>
         <div class="row g-3">
           <div class="col-md-6">
             <div class="fw-bold mb-1"><i class="fa-solid fa-bullseye me-1 text-primary"></i>Goals / OKRs: ${escapeHtml(s.goalsTotal)}</div>
@@ -440,7 +479,7 @@ export const ExecutiveOverviewModule = {
           ${this.kpiCard('Initiatives without goal', escapeHtml(withGoal.withoutGoal ?? '—'), 'No aligned goal', 'info', 'fa-bullseye')}
           ${progressCard}
         </div>
-        <div class="text-xs text-muted mt-2">Roadmap progress is per chartered initiative and comes from each initiative's linked project. A project shared by several initiatives counts once per initiative. Alignment counts are descriptive, not a score.</div>
+        <div class="small text-muted mt-2">Roadmap progress is per chartered initiative and comes from each initiative's linked project. A project shared by several initiatives counts once per initiative. Alignment counts are descriptive, not a score.</div>
         ${goalsTable}
       </div>`;
   },
@@ -448,22 +487,34 @@ export const ExecutiveOverviewModule = {
   renderGovernance(o) {
     const g = o.governance;
     if (!g) return '';
+    // Record counts (risks, issues, dependencies, milestones, releases), as
+    // distinct from the project counts in Cross-project insights.
     const items = [
-      ['Open Risks', g.openRisks, 'fa-shield-halved', 'danger'],
-      ['Critical / High Risks', g.criticalOrHighRisks, 'fa-fire', 'danger'],
-      ['Open Issues', g.openIssues, 'fa-bug', 'warning'],
-      ['Blocking Dependencies', g.blockingDependencies, 'fa-link', 'warning'],
-      ['At-Risk Milestones', g.atRiskMilestones, 'fa-flag', 'warning'],
-      ['Upcoming Milestones', g.upcomingMilestones, 'fa-flag-checkered', 'info'],
-      ['Active Releases', g.activeReleases, 'fa-rocket', 'primary'],
-      ['At-Risk Releases', g.atRiskReleases, 'fa-triangle-exclamation', 'danger'],
+      ['Open risks', g.openRisks, 'Open risk records in scope', 'fa-shield-halved', 'text-danger'],
+      ['High / critical risks', g.criticalOrHighRisks, 'High / critical risk records', 'fa-fire', 'text-danger'],
+      ['Open issues', g.openIssues, 'Open issue records in scope', 'fa-bug', 'text-warning'],
+      ['Blocking dependencies', g.blockingDependencies, 'Blocked or at-risk dependency records', 'fa-link', 'text-warning'],
+      ['At-risk milestones', g.atRiskMilestones, 'Open milestone records flagged at risk or critical', 'fa-flag', 'text-warning'],
+      ['Upcoming milestones', g.upcomingMilestones, 'Open milestone records due today or later', 'fa-flag-checkered', 'text-info'],
+      ['Active releases', g.activeReleases, 'Release records not yet released', 'fa-rocket', 'text-primary'],
+      ['At-risk releases', g.atRiskReleases, 'Release records flagged at risk or off track', 'fa-triangle-exclamation', 'text-danger'],
     ];
     return `
       <div class="card p-3 mb-4 shadow-sm border-0">
-        <div class="small text-muted text-uppercase fw-semibold mb-3">Governance snapshot</div>
-        <div class="stats-grid">
-          ${items.map(([t, v, icon, tone]) => this.kpiCard(t, escapeHtml(v ?? '—'), 'Server-side governance count', tone, icon)).join('')}
+        <h2 class="fs-6 small text-muted text-uppercase fw-semibold mb-3">Governance snapshot · record counts</h2>
+        <div class="row g-2">
+          ${items.map(([t, v, sub, icon, tone]) => `
+          <div class="col-12 col-md-6">
+            <div class="d-flex justify-content-between align-items-center border rounded px-3 py-2 h-100">
+              <div>
+                <div class="fw-semibold small"><i class="fa-solid ${icon} me-1 ${tone}"></i>${escapeHtml(t)}</div>
+                <div class="small text-muted">${escapeHtml(sub)}</div>
+              </div>
+              <span class="fs-5 fw-bold ms-3">${escapeHtml(v ?? '—')}</span>
+            </div>
+          </div>`).join('')}
         </div>
+        <div class="small text-muted mt-2">Record counts across the scope. Project counts are in Cross-project insights above.</div>
       </div>`;
   },
 
@@ -526,7 +577,7 @@ export const ExecutiveOverviewModule = {
         ${unassignedProducts.map(productRow).join('')}`;
     return `
       <div class="card shadow-sm border-0 mb-4">
-        <div class="p-3 border-bottom small text-muted text-uppercase fw-semibold">Portfolio → Product rollup</div>
+        <h2 class="fs-6 p-3 border-bottom small text-muted text-uppercase fw-semibold">Portfolio → Product rollup</h2>
         <div class="table-responsive">
           <table class="table align-middle mb-0">
             <caption class="visually-hidden">Portfolio and product rollup: project count, average progress, derived health and declared health per scope</caption>
@@ -536,7 +587,7 @@ export const ExecutiveOverviewModule = {
             <tbody>${rows}${unassignedRows}</tbody>
           </table>
         </div>
-        <div class="p-2 border-top text-xs text-muted">Derived health is calculated from project data by the health model. Declared health is set by portfolio management. They are independent and use different scales. Product rows count every project assigned to the product, independent of the project's own portfolio.</div>
+        <div class="p-2 border-top small text-muted">Derived health is calculated from project data by the health model. Declared health is set by portfolio management. They are independent and use different scales. Product rows count every project assigned to the product, independent of the project's own portfolio.</div>
       </div>`;
   },
 
@@ -547,15 +598,15 @@ export const ExecutiveOverviewModule = {
     }
     return `
       <div class="card shadow-sm border-0 mb-4">
-        <div class="p-3 border-bottom small text-muted text-uppercase fw-semibold">Recent strategic activity</div>
+        <h2 class="fs-6 p-3 border-bottom small text-muted text-uppercase fw-semibold">Recent strategic activity</h2>
         <ul class="list-group list-group-flush">
           ${items.map((a) => `
             <li class="list-group-item d-flex justify-content-between align-items-start gap-3">
               <div>
                 <div class="fw-semibold small">${escapeHtml(a.summary)}</div>
-                <div class="text-xs text-muted">${escapeHtml(a.actorName)} · ${escapeHtml(a.action)} · ${escapeHtml(a.entityType)}</div>
+                <div class="small text-muted">${escapeHtml(a.actorName)} · ${escapeHtml(a.action)} · ${escapeHtml(a.entityType)}</div>
               </div>
-              <span class="text-xs text-muted text-nowrap">${escapeHtml(a.createdAt)}</span>
+              <span class="small text-muted text-nowrap">${escapeHtml(formatDateTime(a.createdAt))}</span>
             </li>`).join('')}
         </ul>
       </div>`;

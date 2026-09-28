@@ -3532,7 +3532,7 @@ async function runTests() {
   // 13. Sprint 11.2D — derived vs declared health presentation. Derived health is
   // the server's 5-band rollup (score + band); declared health is the stored
   // 3-value vocabulary. Both are echoed verbatim and never mapped to each other.
-  assert(/p\.health\?\.complete \? 'Derived Health' : 'Project Health'/.test(mod36), 'Headline card is titled "Derived Health" only when the server marks health complete');
+  assert(/this\.kpiCard\('Derived Health', health\.value, health\.subtitle/.test(mod36), 'Headline card is titled "Derived Health" with the value and subtitle carrying the state');
   assert(/\$\{escapeHtml\(health\.averageScore\)\}\$\{bandHtml\}/.test(mod36), 'Headline score is the server-provided averageScore, unmodified');
   assert(/BAND_CLASS\[health\.band\]/.test(mod36) && /\$\{escapeHtml\(health\.band\)\}/.test(mod36), 'Derived band is rendered from the server response');
   assert((mod36.match(/Based on \$\{escapeHtml\(health\.computedFor\)\} projects/g) || []).length === 2, 'Contributing project count is shown beside the headline and hierarchy derived scores');
@@ -3582,6 +3582,26 @@ async function runTests() {
   assert(insightsSrc36.length > 0 && !/\.factors\b|\.signals\b|danger|isPastEndDate|openHighOrCritical|\.score\s*[<>+\-]|\.sort\(|\.filter\(|\.length\s*[-+*\/]/.test(insightsSrc36), 'No client-side factor, signal, selection or scoring logic in the insights renderer');
   assert(!/'(success|warning|danger)'/.test(insightsSrc36) && !/(priority|risk|execution|portfolio|strategy|attention|insight) score/i.test(insightsSrc36) && !/scoreFor|computeScore|rank\(/.test(insightsSrc36), 'Insight cards use neutral tones and present no new score');
   assert(/not a health factor/.test(mod36), 'UI states that blocked tasks are not a health factor');
+
+  // 16. Sprint 11.5 — polish: reading order, scope line, formatting, labels,
+  // semantic headings, governance record list, refresh guard, aria-live.
+  assert(/this\.renderScope\(o\),\s*this\.renderHeadline\(o\),\s*this\.renderInsights\(o\),\s*this\.renderHierarchy\(o\),\s*this\.renderHealthDistribution\(o\),\s*this\.renderStrategy\(o\),\s*this\.renderGovernance\(o\),\s*this\.renderActivity\(o\)/.test(mod36), 'Sections render in the executive reading order');
+  assert(/renderScope\(o\) \{/.test(mod36) && /All portfolios/.test(mod36) && /Portfolio \$\{escapeHtml\(portfolio\.name\)\}/.test(mod36) && /Product \$\{escapeHtml\(product\.name\)\}/.test(mod36) && /o\.projects\?\.total \?\? scope\.projectsInScope/.test(mod36), 'Scope line names the portfolio/product from the response and uses the server project count');
+  assert(/Updated \$\{escapeHtml\(formatDateTime\(o\.meta\?\.generatedAt\)\)\}/.test(mod36) && !/escapeHtml\(o\.meta\?\.generatedAt \|\| ''\)/.test(mod36) && !/deterministic|o\.meta\?\.basis/.test(mod36), 'Generated timestamp is formatted; the raw ISO footer and basis string are gone');
+  assert(/toLocaleString\(/.test(mod36) && /formatDateTime\(a\.createdAt\)/.test(mod36) && !/escapeHtml\(a\.createdAt\)/.test(mod36), 'Activity timestamps are formatted with toLocaleString');
+  assert((mod36.match(/Health model/g) || []).length === 1, 'Health model version appears exactly once as metadata');
+  assert(!/text-xs/.test(mod36), 'No undefined text-xs class remains');
+  assert(/key === 'ga' \? 'GA'/.test(mod36) && /replace\(\/-\/g, ' '\)/.test(mod36) && /STATUS_LABEL\[key\] \|\| humanize\(key\)/.test(mod36), 'Unmapped statuses are humanised (hyphens to spaces, capitalised) and ga -> GA');
+  assert(/this\.kpiCard\('Derived Health',/.test(mod36) && !/'Project Health'/.test(mod36), 'Headline health card is always titled Derived Health');
+  assert(/Governance snapshot · record counts/.test(mod36) && /Open risk records in scope/.test(mod36) && /High \/ critical risk records/.test(mod36) && /Open issue records in scope/.test(mod36) && !/Server-side governance count|Critical \/ High Risks/.test(mod36), 'Governance section and subtitles describe record counts with consistent wording');
+  const govSrc36 = (mod36.match(/renderGovernance\(o\) \{[\s\S]*?\n  \},/) || [''])[0];
+  assert(/col-12 col-md-6/.test(govSrc36) && ['openRisks', 'criticalOrHighRisks', 'openIssues', 'blockingDependencies', 'atRiskMilestones', 'upcomingMilestones', 'activeReleases', 'atRiskReleases'].every((k) => govSrc36.includes(`g.${k}`)) && !/kpiCard\(/.test(govSrc36), 'Governance renders as a two-column list keeping all eight values');
+  const h2s36 = mod36.match(/<h2 class="fs-6 [^"]*small text-muted text-uppercase fw-semibold[^"]*">/g) || [];
+  assert(h2s36.length >= 7 && !/<div class="[^"]*small text-muted text-uppercase fw-semibold[^"]*">/.test(mod36), `Section titles are semantic h2 headings (${h2s36.length})`);
+  assert(!/<h3 class="kpi-value/.test(mod36) && /<div class="kpi-value mb-0">/.test(mod36), 'KPI values are not headings');
+  assert(/refreshBtn\.disabled = true/.test(mod36) && /refreshBtn\.disabled = false/.test(mod36) && /if \(!this\.loading\) this\.load\(\)/.test(mod36), 'Refresh is disabled while loading and never overlaps');
+  assert(/id="executive-content-area" aria-live="polite"/.test(html36), 'Executive content area is an aria-live region');
+  assert((mod36.match(/<caption class="visually-hidden">/g) || []).length === 3 && (mod36.match(/<th scope="col"/g) || []).length === 15, 'Tables keep their captions and scoped headers after the polish');
 
   // 37. Declared health vocabulary (Sprint 11.2B)
   // Portfolio and Product share one hand-entered vocabulary: healthy | at-risk |
