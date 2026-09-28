@@ -159,7 +159,25 @@
       const user = Authentication.requireAuth();
       if (!user) return;
 
-      ProfileModule.init(window.portalAppInstance || { showToast: alert });
+      // This page runs without the portal app shell, so feedback is a small
+      // non-blocking status message instead of the shell's toast.
+      const fallbackApp = {
+        showToast(message, type = 'info') {
+          let box = document.getElementById('profile-status-message');
+          if (!box) {
+            box = document.createElement('div');
+            box.id = 'profile-status-message';
+            box.setAttribute('role', 'status');
+            document.body.appendChild(box);
+          }
+          const tone = type === 'success' ? 'alert-success' : type === 'warning' ? 'alert-warning' : 'alert-info';
+          box.className = `alert ${tone} position-fixed bottom-0 end-0 m-3 shadow-sm py-2 px-3 font-semibold`;
+          box.textContent = message;
+          clearTimeout(box.hideTimer);
+          box.hideTimer = setTimeout(() => box.remove(), 3500);
+        },
+      };
+      ProfileModule.init(window.portalAppInstance || fallbackApp);
 
       const logoutBtn = document.getElementById('profile-logout-btn');
       if (logoutBtn) {

@@ -3825,30 +3825,6 @@
           </div>
         </div>
 
-        <!-- ACTIVE SESSION SWITCHER CARD -->
-        <div class="enterprise-card mb-4" style="background-color: var(--bg-card); border-color: var(--border-color);">
-          <div class="card-header-clean d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <h3 class="card-title-clean"><i class="fa-solid fa-user-check text-success"></i> Active Session User</h3>
-            <span class="text-xs text-muted">Switch active profile to test role permissions (Admin vs Member entry-only)</span>
-          </div>
-          <div class="p-3">
-            <div class="row align-items-center g-3">
-              <div class="col-md-8">
-                <label class="form-label font-semibold text-xs text-secondary mb-1">Currently Logged-In Profile</label>
-                <select id="settings-active-user-select" class="form-select select-enterprise w-100 font-bold">
-                  <!-- Populated dynamically in settings.js -->
-                </select>
-              </div>
-              <div class="col-md-4">
-                <div class="p-2.5 rounded bg-body-tertiary border text-xs" style="border-color: var(--border-color) !important;">
-                  <i class="fa-solid fa-lock text-warning me-1"></i>
-                  <strong>Role Rule:</strong> Members have <em>Entry-Only</em> access (cannot delete logs or resources).
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <div class="row g-4 mb-4">
           <!-- PERSONAL EDITABLE PROFILE -->
           <div class="col-md-6">
@@ -3900,6 +3876,9 @@
                   <button type="submit" class="btn-enterprise btn-enterprise-primary w-100">
                     <i class="fa-solid fa-floppy-disk me-1"></i> Save Profile Details
                   </button>
+                  <a href="change-password.html" class="btn-enterprise btn-enterprise-secondary w-100 mt-2 d-flex align-items-center justify-content-center gap-1">
+                    <i class="fa-solid fa-key"></i> Change password
+                  </a>
                 </div>
               </form>
             </div>
@@ -3962,7 +3941,7 @@
                     <th>Department</th>
                     <th>System Role</th>
                     <th>Status</th>
-                    <th class="text-center" style="width: 100px;">Actions</th>
+                    <th class="text-center" style="width: 170px;">Actions</th>
                   </tr>
                 </thead>
                 <tbody id="settings-users-table-body">

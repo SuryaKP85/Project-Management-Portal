@@ -7,6 +7,7 @@ import { Excel } from './excel.js';
 import { dataService } from './services/dataAdapter.js';
 import { ProductService } from './services/productService.js';
 import { ProjectService } from './services/projectService.js';
+import { UserService } from './services/userService.js';
 import { EpicService } from './services/epicService.js';
 import { FeatureService } from './services/featureService.js';
 import { StoryService } from './services/storyService.js';
@@ -72,6 +73,19 @@ export const ProjectsModule = {
 
     // V2 Background Sync and Migration
     this.syncV2Projects();
+
+    // Sprint 12: the manager/staffing picker lists the V2 user directory.
+    this.loadV2Users();
+  },
+
+  /** Loads the V2 user directory for the team-member picker. Never throws. */
+  async loadV2Users() {
+    try {
+      this.v2Users = await UserService.getUsers();
+    } catch (err) {
+      this.v2Users = [];
+      console.warn('[ProjectsModule] Could not load V2 users for the picker:', err && err.message);
+    }
   },
 
   /**
@@ -2209,28 +2223,16 @@ export const ProjectsModule = {
   getTeamMembersList() {
     const map = new Map();
 
-    // 1. System Users registered in User Management (Settings)
-    const settingsUsers = Storage.get('portal_users') || [];
-    settingsUsers.forEach(u => {
-      const fullName = (u.name || '').trim();
-      if (fullName) {
-        map.set(fullName, {
-          name: fullName,
-          role: u.role || 'Team Member',
-          dept: u.dept || u.department || 'Dev'
-        });
-      }
-    });
-
-    // 2. Fallback to Authentication users
-    const users = Authentication.getUsers() || this.app?.usersList || [];
-    users.forEach(u => {
-      const fullName = (u.name || `${u.firstName || ''} ${u.lastName || ''}`).trim();
+    // 1. System users: the V2 user directory (Sprint 12). Roles are the five
+    //    server values, spelled with spaces so the existing role filters match.
+    const V2_ROLE_DEPT = { admin: 'Project Manager', 'project-manager': 'Project Manager', 'product-manager': 'Product Manager' };
+    (this.v2Users || []).forEach((u) => {
+      const fullName = `${u.firstName || ''} ${u.lastName || ''}`.trim();
       if (fullName && !map.has(fullName)) {
         map.set(fullName, {
           name: fullName,
-          role: u.role || 'Team Member',
-          dept: u.department || 'Dev'
+          role: u.role === 'admin' ? 'admin' : String(u.role || 'team-member').replace(/-/g, ' '),
+          dept: u.department || V2_ROLE_DEPT[u.role] || 'Dev'
         });
       }
     });

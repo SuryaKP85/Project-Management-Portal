@@ -1,7 +1,15 @@
-/* settings.js - Portal Settings, User Management, RBAC & Sharing */
+/* settings.js - Portal Settings, User Administration (V2 user directory) & Sharing */
 
 import { Storage } from './storage.js';
+import { Authentication } from './authentication.js';
 import { AuthService } from './services/authService.js';
+import { UserService } from './services/userService.js';
+
+/**
+ * Sprint 12: the V2 server is the only user directory. This module lists,
+ * creates, edits, activates/deactivates users and sets passwords through the
+ * user API. Nothing about users is written to browser storage.
+ */
 
 /** V2 UserRole -> compact label used in the sidebar/header chrome. */
 const V2_ROLE_LABELS = {
@@ -21,9 +29,18 @@ const V2_ROLE_FORM_LABELS = {
   'viewer': 'Viewer (Read Only)',
 };
 
+const V2_ROLES = ['admin', 'project-manager', 'product-manager', 'team-member', 'viewer'];
+const DEPARTMENTS = ['Project Manager', 'Product Manager', 'Dev', 'QA', 'BA'];
+
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+));
+
 export const SettingsModule = {
   app: null,
+  /** V2 SafeUser records as returned by GET /users. */
   users: [],
+  /** Session-derived summary kept for V1.1 permission checks (role: admin | member). */
   currentUser: null,
   /** Authenticated V2 user from GET /api/v1/auth/me; authoritative when present. */
   v2User: null,
@@ -34,75 +51,56 @@ export const SettingsModule = {
   init(appInstance) {
     this.app = appInstance;
     window.portalSettingsInstance = this;
-    this.loadUsers();
     this.loadCurrentUser();
     this.setupEventListeners();
     this.render();
-    // Refresh the chrome from the authenticated V2 session. Deliberately not
-    // awaited: the local profile renders immediately and is replaced when the
-    // server responds.
+    // Refresh from the authenticated V2 session. Deliberately not awaited: the
+    // session record renders immediately and is replaced when the server responds.
     this.hydrateFromServer();
   },
 
-  /**
-   * Loads users list from storage or initializes default list
-   */
-  loadUsers() {
-    let stored = Storage.get('portal_users');
-    const ALLOWED_DEPTS = ['Project Manager', 'Product Manager', 'Dev', 'QA', 'BA'];
-    const mapDept = (d) => {
-      if (d === 'PM' || d === 'Project Manager') return 'Project Manager';
-      if (d === 'Engineering') return 'Dev';
-      if (d === 'Design') return 'BA';
-      if (d === 'QA / Test') return 'QA';
-      if (d === 'Product') return 'Product Manager';
-      if (ALLOWED_DEPTS.includes(d)) return d;
-      return 'Project Manager';
-    };
-
-    if (stored && Array.isArray(stored) && stored.length > 0) {
-      this.users = stored.map(u => ({
-        ...u,
-        dept: mapDept(u.dept)
-      }));
-      Storage.set('portal_users', this.users);
-    } else {
-      // Default users mapped with departments and roles
-      this.users = [
-        { id: 'USR001', name: 'Surya Prashanth', email: 'surya.prashanth.kp@gmail.com', dept: 'Project Manager', role: 'admin', status: 'active' },
-        { id: 'USR002', name: 'Alice Smith', email: 'alice.smith@enterprise.com', dept: 'Dev', role: 'member', status: 'active' },
-        { id: 'USR003', name: 'Bob Johnson', email: 'bob.johnson@enterprise.com', dept: 'Dev', role: 'member', status: 'active' },
-        { id: 'USR004', name: 'Clara Oswald', email: 'clara.oswald@enterprise.com', dept: 'QA', role: 'member', status: 'active' },
-        { id: 'USR005', name: 'David Miller', email: 'david.miller@enterprise.com', dept: 'BA', role: 'member', status: 'active' },
-        { id: 'USR006', name: 'Elena Rostova', email: 'elena.rostova@enterprise.com', dept: 'Product Manager', role: 'admin', status: 'active' }
-      ];
-      Storage.set('portal_users', this.users);
-    }
+  isAdmin() {
+    return (this.v2User?.role || this.currentUser?.v2Role) === 'admin';
   },
 
   /**
-   * Loads or sets active user session
+   * Checks if the signed-in user has delete/administration permissions (Admin only)
+   */
+  canDelete() {
+    return this.isAdmin();
+  },
+
+  /**
+   * Derives the module's current-user summary from the authenticated session
+   * record. Never persisted: the session record itself is the only copy.
    */
   loadCurrentUser() {
-    let active = Storage.get('current_user');
-    if (!active || !active.id) {
-      // Display-only fallback held in memory. It is deliberately NOT persisted:
-      // writing it to storage recreated the V1 session marker after logout,
-      // which is the flag requireAuth() checks.
-      active = this.users[0] || { id: 'USR001', name: 'Surya Prashanth', email: 'surya.prashanth.kp@gmail.com', dept: 'Project Manager', role: 'admin' };
-    }
-    this.currentUser = active;
+    const session = Authentication.getCurrentUser();
+    this.currentUser = session
+      ? {
+        id: session.id,
+        name: session.name,
+        email: session.email,
+        dept: session.department || '',
+        role: session.v2Role === 'admin' ? 'admin' : 'member',
+        v2Role: session.v2Role,
+        avatar: session.avatar || '',
+      }
+      : null;
     if (this.app) {
-      this.app.currentUser = active;
+      this.app.currentUser = this.currentUser;
     }
     this.syncAvatarAcrossUI();
   },
 
-  /**
-   * Checks if active user has delete permissions (Admin only)
-   */
-  canDelete() {
-    return this.currentUser && this.currentUser.role === 'admin';
+  /** Loads the user directory from the server. Admins also see inactive accounts. */
+  async loadUsers() {
+    try {
+      this.users = await UserService.getUsers({ includeInactive: this.isAdmin() });
+    } catch (err) {
+      this.users = [];
+      if (this.app) this.app.showToast(`Could not load users: ${(err && err.message) || 'server unavailable'}`, 'warning');
+    }
   },
 
   /**
@@ -147,17 +145,7 @@ export const SettingsModule = {
     }
 
     if (btnRemoveAvatar) {
-      btnRemoveAvatar.addEventListener('click', () => {
-        if (this.currentUser) {
-          this.currentUser.avatar = '';
-          const idx = this.users.findIndex(u => u.id === this.currentUser.id);
-          if (idx !== -1) this.users[idx].avatar = '';
-          Storage.set('current_user', this.currentUser);
-          Storage.set('portal_users', this.users);
-          this.syncAvatarAcrossUI();
-          if (this.app) this.app.showToast('Profile photo removed.', 'info');
-        }
-      });
+      btnRemoveAvatar.addEventListener('click', () => this.updateAvatar(''));
     }
 
     // Add user button
@@ -175,24 +163,6 @@ export const SettingsModule = {
       btnShareApp.parentNode.replaceChild(newShareBtn, btnShareApp);
       newShareBtn.addEventListener('click', () => this.openShareModal());
     }
-
-    // Switch active user selector
-    const userSwitcher = document.getElementById('settings-active-user-select');
-    if (userSwitcher) {
-      userSwitcher.addEventListener('change', (e) => {
-        const selectedId = e.target.value;
-        const targetUser = this.users.find(u => u.id === selectedId);
-        if (targetUser) {
-          this.currentUser = targetUser;
-          Storage.set('current_user', targetUser);
-          if (this.app) this.app.currentUser = targetUser;
-          this.app.showToast(`Switched active session to ${targetUser.name} (${targetUser.role.toUpperCase()})`, 'success');
-          this.render();
-          // Notify app to refresh UI delete button states
-          window.dispatchEvent(new CustomEvent('portal-user-switched', { detail: targetUser }));
-        }
-      });
-    }
   },
 
   /**
@@ -201,7 +171,6 @@ export const SettingsModule = {
   render() {
     this.renderProfileForm();
     this.renderUsersTable();
-    this.renderUserSwitcher();
     this.syncAvatarAcrossUI();
   },
 
@@ -220,44 +189,60 @@ export const SettingsModule = {
     }
 
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const base64Data = e.target.result;
-      if (this.currentUser) {
-        this.currentUser.avatar = base64Data;
-        const idx = this.users.findIndex(u => u.id === this.currentUser.id);
-        if (idx !== -1) {
-          this.users[idx] = { ...this.currentUser };
-        }
-        Storage.set('current_user', this.currentUser);
-        Storage.set('portal_users', this.users);
-        this.syncAvatarAcrossUI();
-        this.renderUsersTable();
-        if (this.app) this.app.showToast('Profile photo updated successfully!', 'success');
-      }
-    };
+    reader.onload = (e) => this.updateAvatar(e.target.result);
     reader.readAsDataURL(file);
   },
 
+  /** Saves the avatar on the server profile ('' removes it). */
+  async updateAvatar(dataUrl) {
+    if (!this.v2User) {
+      if (this.app) this.app.showToast('Sign in again to update your profile photo.', 'warning');
+      return;
+    }
+    try {
+      const updated = await UserService.updateProfile(this.v2User.id, { avatarUrl: dataUrl || '' });
+      this.applyProfile(updated);
+      if (this.app) this.app.showToast(dataUrl ? 'Profile photo updated successfully!' : 'Profile photo removed.', dataUrl ? 'success' : 'info');
+    } catch (err) {
+      if (this.app) this.app.showToast(`Could not save the photo: ${(err && err.message) || 'server error'}`, 'warning');
+    }
+  },
+
+  /** Applies an updated server profile to the session record and the chrome. */
+  applyProfile(updated) {
+    if (!updated) return;
+    this.v2User = updated;
+    Authentication.setCurrentUser(Authentication.toSessionUser(updated));
+    this.loadCurrentUser();
+    const idx = this.users.findIndex((u) => u.id === updated.id);
+    if (idx !== -1) this.users[idx] = updated;
+    this.renderProfileForm();
+    this.renderUsersTable();
+  },
+
   /**
-   * Loads the authenticated V2 user and refreshes the profile chrome.
-   * Best-effort: if the session is missing or the request fails, the existing
-   * V1.1 local profile continues to drive the UI unchanged.
+   * Loads the authenticated V2 user and the user directory, then refreshes
+   * the profile chrome and the accounts table.
    */
   async hydrateFromServer() {
     try {
       const user = await AuthService.getCurrentUser();
-      if (!user) return;
-      this.v2User = user;
-      this.syncAvatarAcrossUI();
-      this.renderProfileForm();
+      if (user) {
+        this.v2User = user;
+        Authentication.setCurrentUser(Authentication.toSessionUser(user));
+        this.loadCurrentUser();
+        this.renderProfileForm();
+      }
     } catch (err) {
-      console.warn('Could not load authenticated profile; using local profile:', err && err.message);
+      console.warn('Could not load authenticated profile:', err && err.message);
     }
+    await this.loadUsers();
+    this.renderUsersTable();
   },
 
   /**
-   * Resolves the display profile, preferring the authenticated V2 user over the
-   * local V1.1 record. Returns display-ready values only.
+   * Resolves the display profile from the authenticated V2 user, falling back
+   * to the session record until the server responds. Display-ready values only.
    */
   resolveProfile() {
     const v2 = this.v2User;
@@ -265,25 +250,19 @@ export const SettingsModule = {
 
     const fullName = v2
       ? `${v2.firstName || ''} ${v2.lastName || ''}`.trim() || v2.email || 'User'
-      : (v1.name || 'Surya Prashanth').trim();
+      : (v1.name || 'User').trim();
 
-    // A locally uploaded V1 avatar (data URI) still wins, since it is an
-    // explicit user choice made in this portal.
-    const avatarSrc =
-      v1.avatar || (v2 && v2.avatarUrl) || this.buildInitialsAvatar(fullName);
-
-    const role = v2 ? v2.role : v1.role;
+    const avatarSrc = (v2 && v2.avatarUrl) || v1.avatar || this.buildInitialsAvatar(fullName);
+    const role = v2 ? v2.role : v1.v2Role;
 
     return {
       fullName,
       firstName: fullName.split(' ')[0] || fullName,
       avatarSrc,
-      roleLabel: V2_ROLE_LABELS[role] || (role === 'admin' ? 'Admin Lead' : 'Team Member'),
-      roleFormLabel:
-        V2_ROLE_FORM_LABELS[role] ||
-        (role === 'admin' ? 'Administrator (Full Access)' : 'Standard Member (Entry Only)'),
+      roleLabel: V2_ROLE_LABELS[role] || 'Team Member',
+      roleFormLabel: V2_ROLE_FORM_LABELS[role] || 'Team Member (Execution)',
       email: (v2 && v2.email) || v1.email || '',
-      dept: (v2 && (v2.department || v2.title)) || v1.dept || 'Engineering',
+      dept: (v2 && (v2.department || v2.title)) || v1.dept || '',
     };
   },
 
@@ -352,7 +331,11 @@ export const SettingsModule = {
 
     if (nameInp) nameInp.value = profile.fullName;
     if (roleInp) roleInp.value = profile.roleFormLabel;
-    if (emailInp) emailInp.value = profile.email;
+    if (emailInp) {
+      // The sign-in email is the account identity; it is not editable here.
+      emailInp.value = profile.email;
+      emailInp.readOnly = true;
+    }
 
     // The department control is a <select> with a fixed option list. Assigning a
     // value it does not offer silently blanks the control, so only apply a
@@ -364,65 +347,37 @@ export const SettingsModule = {
   },
 
   /**
-   * Save active user profile details
+   * Save the signed-in user's profile details on the server
    */
-  saveProfile() {
-    const name = document.getElementById('settings-user-name')?.value?.trim() || '';
-    const email = document.getElementById('settings-user-email')?.value?.trim() || '';
-    const dept = document.getElementById('settings-user-dept')?.value || 'Dev';
-
-    if (!name || !email) {
-      this.app.showToast('Please enter a valid name and email address', 'warning');
+  async saveProfile() {
+    if (!this.v2User) {
+      this.app.showToast('Sign in again to update your profile.', 'warning');
       return;
     }
-
-    this.currentUser.name = name;
-    this.currentUser.email = email;
-    this.currentUser.dept = dept;
-
-    // Update in users list
-    const idx = this.users.findIndex(u => u.id === this.currentUser.id);
-    if (idx !== -1) {
-      this.users[idx] = { ...this.currentUser };
+    const name = document.getElementById('settings-user-name')?.value?.trim() || '';
+    const dept = document.getElementById('settings-user-dept')?.value || '';
+    if (!name) {
+      this.app.showToast('Please enter your name', 'warning');
+      return;
     }
-
-    Storage.set('current_user', this.currentUser);
-    Storage.set('portal_users', this.users);
-
-    // Sync resources list if member exists
-    const resList = this.app.resourcesList || [];
-    const resIdx = resList.findIndex(r => r.name === name || r.id === this.currentUser.id);
-    if (resIdx !== -1) {
-      resList[resIdx].name = name;
-      resList[resIdx].dept = dept;
-      Storage.set('resources', resList);
-      this.app.resourcesList = resList;
+    const [firstName, ...rest] = name.split(/\s+/);
+    const lastName = rest.join(' ') || this.v2User.lastName || '';
+    try {
+      const updated = await UserService.updateProfile(this.v2User.id, { firstName, lastName, department: dept });
+      this.applyProfile(updated);
+      this.app.showToast('User profile details updated successfully', 'success');
+      this.syncAvatarAcrossUI();
+    } catch (err) {
+      this.app.showToast(`Could not save profile: ${(err && err.message) || 'server error'}`, 'warning');
     }
+  },
 
-    this.app.showToast('User profile details updated successfully', 'success');
-    this.syncAvatarAcrossUI();
-    this.render();
+  fullName(u) {
+    return `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email || u.id;
   },
 
   /**
-   * Render active user session dropdown in settings
-   */
-  renderUserSwitcher() {
-    const select = document.getElementById('settings-active-user-select');
-    if (!select) return;
-
-    select.innerHTML = '';
-    this.users.forEach(u => {
-      const opt = document.createElement('option');
-      opt.value = u.id;
-      opt.textContent = `${u.name} [${u.dept}] (${u.role === 'admin' ? 'Admin' : 'Member - Entry Only'})`;
-      if (u.id === this.currentUser.id) opt.selected = true;
-      select.appendChild(opt);
-    });
-  },
-
-  /**
-   * Render Team Users Table in Settings
+   * Render Team Users Table in Settings from the V2 user directory
    */
   renderUsersTable() {
     const body = document.getElementById('settings-users-table-body');
@@ -430,33 +385,42 @@ export const SettingsModule = {
 
     body.innerHTML = '';
     if (this.users.length === 0) {
-      body.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-4">No team users registered.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-4">No user accounts returned by the server.</td></tr>`;
       return;
     }
 
-    this.users.forEach(u => {
+    const admin = this.isAdmin();
+    const selfId = this.v2User?.id || this.currentUser?.id;
+
+    this.users.forEach((u) => {
       const tr = document.createElement('tr');
       tr.style.borderBottom = '1px solid var(--border-color)';
-
-      const roleBadge = u.role === 'admin' 
-        ? '<span class="badge bg-danger-subtle text-danger font-semibold">Admin (Full Access)</span>' 
-        : '<span class="badge bg-info-subtle text-info font-semibold">Member (Entry Only)</span>';
+      const isSelf = u.id === selfId;
+      const active = u.isActive !== false;
+      const roleBadge = u.role === 'admin'
+        ? `<span class="badge bg-danger-subtle text-danger font-semibold">${esc(V2_ROLE_FORM_LABELS[u.role])}</span>`
+        : `<span class="badge bg-info-subtle text-info font-semibold">${esc(V2_ROLE_FORM_LABELS[u.role] || u.role)}</span>`;
+      const actions = [];
+      if (admin || isSelf) {
+        actions.push(`<button class="btn btn-sm btn-outline-primary py-0 px-2" onclick="window.portalSettingsInstance.openUserModal('${esc(u.id)}')" title="Edit user"><i class="fa-solid fa-pen-to-square"></i><span class="visually-hidden">Edit</span></button>`);
+      }
+      if (admin) {
+        actions.push(`<button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="window.portalSettingsInstance.openSetPasswordModal('${esc(u.id)}')" title="Set password"><i class="fa-solid fa-key"></i><span class="visually-hidden">Set password</span></button>`);
+        if (!isSelf) {
+          actions.push(active
+            ? `<button class="btn btn-sm btn-outline-danger py-0 px-2" onclick="window.portalSettingsInstance.setUserStatus('${esc(u.id)}', false)" title="Deactivate user"><i class="fa-solid fa-user-slash"></i><span class="visually-hidden">Deactivate</span></button>`
+            : `<button class="btn btn-sm btn-outline-success py-0 px-2" onclick="window.portalSettingsInstance.setUserStatus('${esc(u.id)}', true)" title="Activate user"><i class="fa-solid fa-user-check"></i><span class="visually-hidden">Activate</span></button>`);
+        }
+      }
 
       tr.innerHTML = `
-        <td style="padding: 10px 16px; font-weight: 600;">${u.name}</td>
-        <td style="color: var(--text-secondary);">${u.email}</td>
-        <td><span class="badge bg-light text-dark font-semibold border">${u.dept}</span></td>
+        <td style="padding: 10px 16px; font-weight: 600;">${esc(this.fullName(u))}${isSelf ? ' <span class="badge bg-light text-secondary border ms-1">You</span>' : ''}</td>
+        <td style="color: var(--text-secondary);">${esc(u.email)}</td>
+        <td><span class="badge bg-light text-dark font-semibold border">${esc(u.department || u.title || '—')}</span></td>
         <td>${roleBadge}</td>
-        <td><span class="badge ${u.status === 'active' ? 'bg-success' : 'bg-secondary'}">${u.status}</span></td>
+        <td><span class="badge ${active ? 'bg-success' : 'bg-secondary'}">${active ? 'Active' : 'Inactive'}</span></td>
         <td class="text-center">
-          <div class="d-flex justify-content-center gap-1">
-            <button class="btn btn-sm btn-outline-primary py-0 px-2" onclick="window.portalSettingsInstance.openUserModal('${u.id}')" title="Edit User">
-              <i class="fa-solid fa-pen-to-square"></i>
-            </button>
-            <button class="btn btn-sm btn-outline-danger py-0 px-2" onclick="window.portalSettingsInstance.deleteUser('${u.id}')" title="Delete User">
-              <i class="fa-solid fa-trash-can"></i>
-            </button>
-          </div>
+          <div class="d-flex justify-content-center gap-1">${actions.join('') || '<span class="text-muted small">—</span>'}</div>
         </td>
       `;
       body.appendChild(tr);
@@ -466,196 +430,217 @@ export const SettingsModule = {
   },
 
   /**
-   * Open Modal to Add / Edit User
+   * Open Modal to Add (register) or Edit a user on the server
    */
   openUserModal(userId = null) {
-    const target = userId ? this.users.find(u => u.id === userId) : null;
+    const target = userId ? this.users.find((u) => u.id === userId) : null;
     const isEdit = !!target;
+    const admin = this.isAdmin();
+    const isSelf = !!target && target.id === (this.v2User?.id || this.currentUser?.id);
+    if (!isEdit && !admin) {
+      this.app.showToast('Only administrators can create user accounts.', 'warning');
+      return;
+    }
+    if (isEdit && !admin && !isSelf) {
+      this.app.showToast('You may only edit your own profile.', 'warning');
+      return;
+    }
     const title = isEdit ? 'Edit User Details' : 'Add New Team Member / User';
 
-    const depts = ['Project Manager', 'Product Manager', 'Dev', 'QA', 'BA'];
-    let deptOptions = '';
-    depts.forEach(d => {
-      const sel = (target && target.dept === d) ? 'selected' : '';
-      deptOptions += `<option value="${d}" ${sel}>${d}</option>`;
-    });
+    const deptOptions = ['<option value="">— None —</option>']
+      .concat(DEPARTMENTS.map((d) => `<option value="${esc(d)}" ${target && target.department === d ? 'selected' : ''}>${esc(d)}</option>`))
+      .join('');
+    const roleOptions = V2_ROLES
+      .map((r) => `<option value="${r}" ${(target ? target.role === r : r === 'team-member') ? 'selected' : ''}>${esc(V2_ROLE_FORM_LABELS[r])}</option>`)
+      .join('');
 
     const bodyHtml = `
       <form id="user-edit-form" class="row g-3">
-        <div class="col-md-12">
-          <label class="form-label font-semibold">Full Name *</label>
-          <input type="text" class="form-control select-enterprise w-100" id="u-name" value="${target ? target.name : ''}" required placeholder="E.g. Jane Doe" />
-        </div>
-        
-        <div class="col-md-12">
-          <label class="form-label font-semibold">Email Address *</label>
-          <input type="email" class="form-control select-enterprise w-100" id="u-email" value="${target ? target.email : ''}" required placeholder="jane.doe@enterprise.com" />
-        </div>
-
         <div class="col-md-6">
-          <label class="form-label font-semibold">Department *</label>
-          <select class="form-select select-enterprise w-100" id="u-dept" required>
-            ${deptOptions}
-          </select>
+          <label class="form-label font-semibold" for="u-first-name">First Name *</label>
+          <input type="text" class="form-control select-enterprise w-100" id="u-first-name" value="${esc(target ? target.firstName : '')}" required placeholder="Jane" />
         </div>
-
         <div class="col-md-6">
-          <label class="form-label font-semibold">System Role & Access *</label>
-          <select class="form-select select-enterprise w-100" id="u-role" required>
-            <option value="member" ${target && target.role === 'member' ? 'selected' : ''}>Standard Member (Entry Only - No Delete)</option>
-            <option value="admin" ${target && target.role === 'admin' ? 'selected' : ''}>Administrator (Full Access)</option>
-          </select>
-          <div class="text-xs text-muted mt-1">Standard members cannot delete time logs or resources.</div>
+          <label class="form-label font-semibold" for="u-last-name">Last Name *</label>
+          <input type="text" class="form-control select-enterprise w-100" id="u-last-name" value="${esc(target ? target.lastName : '')}" required placeholder="Doe" />
         </div>
-
         <div class="col-md-12">
-          <label class="form-label font-semibold">Account Status</label>
+          <label class="form-label font-semibold" for="u-email">Email Address *</label>
+          <input type="email" class="form-control select-enterprise w-100" id="u-email" value="${esc(target ? target.email : '')}" ${isEdit ? 'readonly' : 'required'} placeholder="jane.doe@enterprise.com" />
+          ${isEdit ? '<div class="small text-muted mt-1">The sign-in email is the account identity and cannot be changed here.</div>' : ''}
+        </div>
+        ${isEdit ? '' : `
+        <div class="col-md-12">
+          <label class="form-label font-semibold" for="u-password">Temporary Password *</label>
+          <input type="password" class="form-control select-enterprise w-100" id="u-password" required autocomplete="new-password" placeholder="At least 8 characters, mixed case, number and symbol" />
+        </div>`}
+        <div class="col-md-6">
+          <label class="form-label font-semibold" for="u-dept">Department</label>
+          <select class="form-select select-enterprise w-100" id="u-dept">${deptOptions}</select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label font-semibold" for="u-title">Job Title</label>
+          <input type="text" class="form-control select-enterprise w-100" id="u-title" value="${esc(target ? (target.title || '') : '')}" placeholder="Senior Engineer" />
+        </div>
+        ${admin ? `
+        <div class="col-md-6">
+          <label class="form-label font-semibold" for="u-role">System Role & Access *</label>
+          <select class="form-select select-enterprise w-100" id="u-role" required>${roleOptions}</select>
+        </div>
+        ${isEdit && !isSelf ? `
+        <div class="col-md-6">
+          <label class="form-label font-semibold" for="u-status">Account Status</label>
           <select class="form-select select-enterprise w-100" id="u-status">
-            <option value="active" ${target && target.status === 'active' ? 'selected' : ''}>Active</option>
-            <option value="inactive" ${target && target.status === 'inactive' ? 'selected' : ''}>Inactive</option>
+            <option value="active" ${target.isActive !== false ? 'selected' : ''}>Active</option>
+            <option value="inactive" ${target.isActive === false ? 'selected' : ''}>Inactive</option>
           </select>
-        </div>
-
-        ${isEdit ? `
-          <div class="col-12 mt-3 pt-3 border-top d-flex justify-content-between align-items-center">
-            <button type="button" class="btn btn-sm btn-outline-danger d-flex align-items-center gap-1" id="btn-delete-user-modal">
-              <i class="fa-solid fa-trash-can"></i> Delete User Account
-            </button>
-            <span class="text-muted small">User ID: ${target.id}</span>
-          </div>
-        ` : ''}
+        </div>` : ''}` : ''}
+        ${isEdit ? `<div class="col-12 mt-2"><span class="text-muted small">User ID: ${esc(target.id)}</span></div>` : ''}
       </form>
     `;
 
     this.app.openModal(title, bodyHtml, (overlay) => {
-      const name = overlay.querySelector('#u-name')?.value?.trim() || '';
-      const email = overlay.querySelector('#u-email')?.value?.trim() || '';
-      const dept = overlay.querySelector('#u-dept')?.value || 'Dev';
-      const role = overlay.querySelector('#u-role')?.value || 'member';
-      const status = overlay.querySelector('#u-status')?.value || 'active';
-
-      if (!name || !email) {
-        this.app.showToast('Please enter name and email address', 'warning');
+      const read = (id) => overlay.querySelector(`#${id}`)?.value ?? '';
+      const payload = {
+        firstName: read('u-first-name').trim(),
+        lastName: read('u-last-name').trim(),
+        email: read('u-email').trim(),
+        password: isEdit ? '' : read('u-password'),
+        department: read('u-dept'),
+        title: read('u-title').trim(),
+        role: admin ? (read('u-role') || undefined) : undefined,
+        isActive: admin && isEdit && !isSelf ? read('u-status') !== 'inactive' : undefined,
+      };
+      if (!payload.firstName || !payload.lastName || (!isEdit && !payload.email)) {
+        this.app.showToast('Please enter first name, last name and email address', 'warning');
         return false;
       }
-
-      if (isEdit) {
-        const idx = this.users.findIndex(u => u.id === target.id);
-        if (idx !== -1) {
-          this.users[idx] = { ...this.users[idx], name, email, dept, role, status };
+      if (!isEdit) {
+        const policy = Authentication.validatePasswordPolicy(payload.password);
+        if (!policy.valid) {
+          this.app.showToast('Temporary password does not meet the policy: ' + policy.errors.join(', '), 'warning');
+          return false;
         }
-        this.app.showToast(`Updated details for ${name}`, 'success');
-      } else {
-        const newId = `USR00${this.users.length + 1}`;
-        const newUser = { id: newId, name, email, dept, role, status };
-        this.users.push(newUser);
-        this.app.showToast(`Added new user ${name} under ${dept}`, 'success');
       }
-
-      Storage.set('portal_users', this.users);
-
-      // Sync to resources list so they appear in Resource Planner & Daily Time Logging!
-      const resList = Storage.get('resources') || this.app.resourcesList || [];
-      const existingRes = resList.find(r => r.name === name || (target && r.name === target.name));
-      if (existingRes) {
-        existingRes.name = name;
-        existingRes.dept = dept;
-        existingRes.role = role === 'admin' ? 'Lead' : 'Team Specialist';
-      } else {
-        const newResId = `RES20${resList.length + 1}`;
-        resList.push({
-          id: newResId,
-          name,
-          role: role === 'admin' ? 'Lead / Manager' : 'Team Member',
-          dept,
-          allocation: 0,
-          status: 'pending'
-        });
-      }
-      Storage.set('resources', resList);
-      this.app.resourcesList = resList;
-
-      this.render();
+      this.submitUserModal(target, payload);
       return true;
     });
+  },
 
-    // Attach listener for Delete User Account button inside modal overlay if editing
-    if (isEdit) {
-      setTimeout(() => {
-        const modalEl = document.getElementById('global-modal-overlay');
-        if (modalEl) {
-          const modalDelBtn = modalEl.querySelector('#btn-delete-user-modal');
-          if (modalDelBtn) {
-            modalDelBtn.addEventListener('click', () => {
-              const cancelBtn = modalEl.querySelector('#global-modal-cancel-btn') || modalEl.querySelector('#global-modal-close-btn');
-              if (cancelBtn) cancelBtn.click();
-              this.deleteUser(target.id);
-            });
-          }
+  /** Persists the modal's changes on the server: register, profile, role, status. */
+  async submitUserModal(target, payload) {
+    try {
+      if (!target) {
+        const created = await UserService.register({
+          email: payload.email,
+          password: payload.password,
+          firstName: payload.firstName,
+          lastName: payload.lastName,
+          role: payload.role || 'team-member',
+          department: payload.department || undefined,
+          title: payload.title || undefined,
+        });
+        this.app.showToast(`Created user account for ${this.fullName(created)}`, 'success');
+      } else {
+        const profileChanged =
+          payload.firstName !== target.firstName || payload.lastName !== target.lastName
+          || payload.department !== (target.department || '') || payload.title !== (target.title || '');
+        let updated = target;
+        if (profileChanged) {
+          updated = await UserService.updateProfile(target.id, {
+            firstName: payload.firstName,
+            lastName: payload.lastName,
+            department: payload.department,
+            title: payload.title,
+          });
         }
-      }, 100);
+        if (payload.role && payload.role !== target.role) {
+          updated = await UserService.updateUserRole(target.id, payload.role);
+        }
+        if (payload.isActive !== undefined && payload.isActive !== (target.isActive !== false)) {
+          updated = await UserService.setStatus(target.id, payload.isActive);
+        }
+        if (updated && updated.id === this.v2User?.id) this.applyProfile(updated);
+        this.app.showToast(`Updated details for ${this.fullName(updated || target)}`, 'success');
+      }
+    } catch (err) {
+      this.app.showToast(`Could not save user: ${(err && err.message) || 'server error'}`, 'warning');
+    }
+    await this.loadUsers();
+    this.renderUsersTable();
+  },
+
+  /** Admin: activate or deactivate an account on the server. */
+  async setUserStatus(userId, isActive) {
+    if (!this.isAdmin()) {
+      this.app.showToast('Only administrators can change account status.', 'warning');
+      return;
+    }
+    const user = this.users.find((u) => u.id === userId);
+    if (!user) {
+      this.app.showToast('Selected user account was not found.', 'warning');
+      return;
+    }
+    const run = async () => {
+      try {
+        await UserService.setStatus(userId, isActive);
+        this.app.showToast(`${this.fullName(user)} is now ${isActive ? 'active' : 'inactive'}.`, 'info');
+      } catch (err) {
+        this.app.showToast(`Could not change status: ${(err && err.message) || 'server error'}`, 'warning');
+      }
+      await this.loadUsers();
+      this.renderUsersTable();
+    };
+    if (!isActive && this.app && typeof this.app.confirmModal === 'function') {
+      this.app.confirmModal({
+        title: 'Deactivate User Account',
+        bodyHtml: `<div class="p-2"><p class="mb-2 font-semibold text-danger" style="font-size: 0.95rem;">Deactivate <strong>${esc(this.fullName(user))}</strong> (${esc(user.email)})?</p><p class="text-secondary small mb-0">The account stays on record but can no longer sign in until it is reactivated.</p></div>`,
+        confirmText: 'Deactivate',
+        confirmClass: 'btn-enterprise-danger',
+        onConfirm: run,
+      });
+    } else {
+      run();
     }
   },
 
-  /**
-   * Delete user account
-   */
-  deleteUser(userId) {
-    if (!this.canDelete()) {
-      this.app.showToast('Delete permission restricted: Standard team members have entry-only access. Switch active session profile to an Administrator to delete user accounts.', 'danger');
+  /** Admin: set another user's password (not a recovery workflow). */
+  openSetPasswordModal(userId) {
+    if (!this.isAdmin()) {
+      this.app.showToast('Only administrators can set passwords.', 'warning');
       return;
     }
-
-    const user = this.users.find(u => u.id === userId);
-    if (!user) {
-      this.app.showToast('Selected user profile was not found or already removed.', 'warning');
-      return;
-    }
-
-    const executeDelete = () => {
-      this.users = this.users.filter(u => u.id !== userId);
-      Storage.set('portal_users', this.users);
-      
-      // Also remove from resources list
-      let resList = Storage.get('resources') || this.app.resourcesList || [];
-      resList = resList.filter(r => r.name !== user.name && r.id !== userId);
-      Storage.set('resources', resList);
-      this.app.resourcesList = resList;
-
-      // Handle edge case if current logged-in session user was deleted
-      if (this.currentUser && this.currentUser.id === userId) {
-        if (this.users.length > 0) {
-          this.currentUser = this.users[0];
-        } else {
-          this.currentUser = { id: 'USR001', name: 'Surya Prashanth', email: 'surya.prashanth.kp@gmail.com', dept: 'Project Manager', role: 'admin', status: 'active' };
-          this.users.push(this.currentUser);
-          Storage.set('portal_users', this.users);
-        }
-        Storage.set('current_user', this.currentUser);
-        if (this.app) this.app.currentUser = this.currentUser;
-        window.dispatchEvent(new CustomEvent('portal-user-switched', { detail: this.currentUser }));
+    const user = this.users.find((u) => u.id === userId);
+    if (!user) return;
+    const bodyHtml = `
+      <form id="user-password-form" class="row g-3">
+        <div class="col-12"><p class="text-secondary small mb-0">Set a new password for <strong>${esc(this.fullName(user))}</strong> (${esc(user.email)}). Share it with them securely; they can change it afterwards.</p></div>
+        <div class="col-md-6">
+          <label class="form-label font-semibold" for="u-new-password">New Password *</label>
+          <input type="password" class="form-control select-enterprise w-100" id="u-new-password" required autocomplete="new-password" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label font-semibold" for="u-confirm-password">Confirm Password *</label>
+          <input type="password" class="form-control select-enterprise w-100" id="u-confirm-password" required autocomplete="new-password" />
+        </div>
+      </form>`;
+    this.app.openModal('Set User Password', bodyHtml, (overlay) => {
+      const pw = overlay.querySelector('#u-new-password')?.value || '';
+      const confirm = overlay.querySelector('#u-confirm-password')?.value || '';
+      if (pw !== confirm) {
+        this.app.showToast('New password and confirmation do not match.', 'warning');
+        return false;
       }
-
-      this.app.showToast(`User account '${user.name}' removed from system successfully.`, 'info');
-      this.render();
-    };
-
-    if (this.app && typeof this.app.confirmModal === 'function') {
-      this.app.confirmModal({
-        title: 'Delete User Account',
-        bodyHtml: `
-          <div class="p-2">
-            <p class="mb-2 font-semibold text-danger" style="font-size: 0.95rem;">Are you sure you want to delete user account <strong>${user.name}</strong> (${user.email})?</p>
-            <p class="text-secondary text-xs mb-0">This will permanently remove their user profile, permissions, and corresponding entry in the Resource Planner.</p>
-          </div>
-        `,
-        confirmText: 'Delete User Account',
-        confirmClass: 'btn-enterprise-danger',
-        onConfirm: executeDelete
-      });
-    } else {
-      executeDelete();
-    }
+      const policy = Authentication.validatePasswordPolicy(pw);
+      if (!policy.valid) {
+        this.app.showToast('Password does not meet the policy: ' + policy.errors.join(', '), 'warning');
+        return false;
+      }
+      UserService.setPassword(userId, pw)
+        .then(() => this.app.showToast(`Password set for ${this.fullName(user)}.`, 'success'))
+        .catch((err) => this.app.showToast(`Could not set password: ${(err && err.message) || 'server error'}`, 'warning'));
+      return true;
+    });
   },
 
   /**
@@ -663,7 +648,7 @@ export const SettingsModule = {
    */
   openShareModal() {
     const devUrl = window.location.href;
-    
+
     const bodyHtml = `
       <div class="p-2">
         <p class="text-secondary" style="font-size: 0.9rem;">
@@ -673,16 +658,16 @@ export const SettingsModule = {
         <div class="mb-3">
           <label class="form-label font-semibold">App Share URL</label>
           <div class="input-group">
-            <input type="text" id="share-url-input" class="form-control select-enterprise" value="${devUrl}" readonly />
+            <input type="text" id="share-url-input" class="form-control select-enterprise" value="${esc(devUrl)}" readonly />
             <button class="btn btn-enterprise btn-enterprise-primary" id="btn-copy-share-url" type="button">
               <i class="fa-solid fa-copy"></i> Copy Link
             </button>
           </div>
         </div>
 
-        <div class="alert alert-info border-info-subtle bg-info-subtle text-info-emphasis p-3 rounded text-xs" style="font-size: 0.8rem;">
+        <div class="alert alert-info border-info-subtle bg-info-subtle text-info-emphasis p-3 rounded small" style="font-size: 0.8rem;">
           <i class="fa-solid fa-shield-halved me-1"></i>
-          <strong>Department & Role Control:</strong> When team members join, assign them to their respective department. Standard members will be granted entry-only permissions (cannot delete records).
+          <strong>Accounts:</strong> Team members sign in with the account an administrator creates for them here. Roles and access are enforced by the server.
         </div>
       </div>
     `;
@@ -702,3 +687,7 @@ export const SettingsModule = {
     });
   }
 };
+
+// Storage is imported for parity with the other settings-page helpers that
+// persist non-identity preferences; user records are never written to it.
+void Storage;

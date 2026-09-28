@@ -28,4 +28,14 @@ authRoutes.post(
 );
 
 authRoutes.get('/auth/me', authenticateToken, AuthController.me);
+// Sprint 12: self-service password change. Not a recovery flow — no tokens or email.
+authRoutes.post(
+  '/auth/change-password',
+  authenticateToken,
+  validateBody([
+    { field: 'currentPassword', required: true, type: 'string' },
+    { field: 'newPassword', required: true, type: 'string', minLength: 8 },
+  ]),
+  AuthController.changePassword
+);
 authRoutes.post('/auth/logout', AuthController.logout);

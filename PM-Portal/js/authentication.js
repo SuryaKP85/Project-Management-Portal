@@ -1,137 +1,63 @@
-/* authentication.js - Central Authentication and Session Management Service */
+/* authentication.js - Session management backed by the V2 server (Sprint 12) */
 
-import { Storage } from './storage.js';
 import { AuthService } from './services/authService.js';
 
+/**
+ * The V2 server is the only authenticator and the only user directory. This
+ * module keeps the V1.1 session record (`pm_portal_current_user`) that the
+ * rest of the portal reads, but that record is always built from the user the
+ * server authenticated. No credentials, hashes or account lists live in the
+ * browser.
+ */
+
+/** V2 role -> the label the V1.1 session record has always carried. */
+const V1_ROLE_LABELS = {
+  admin: 'Administrator',
+  'project-manager': 'Project Manager',
+  'product-manager': 'Product Manager',
+  'team-member': 'Team Member',
+  viewer: 'Viewer',
+};
+
+/** Retired local-account storage, cleared on every visit so nothing lingers. */
+const LEGACY_KEYS = ['pm_portal_users', 'pm_portal_auth_token'];
+
 export const Authentication = {
-  // Storage keys
-  USERS_KEY: 'pm_portal_users',
   CURRENT_USER_KEY: 'pm_portal_current_user',
-  TOKEN_KEY: 'pm_portal_auth_token',
 
-  // Default Administrator Account
-  DEFAULT_ADMIN: {
-    id: 'USR001',
-    firstName: 'System',
-    lastName: 'Administrator',
-    name: 'System Administrator',
-    email: 'admin@company.com',
-    passwordHash: 'Admin@123', // In production, hash with bcrypt; stored securely in LocalStorage for portal
-    department: 'Dev',
-    role: 'Administrator',
-    phone: '+1 (555) 019-2831',
-    manager: 'Executive Committee',
-    status: 'active',
-    avatar: '',
-    mustChangePassword: false,
-    createdAt: '2026-01-01T00:00:00.000Z'
-  },
-
-  /**
-   * Initializes users registry with default accounts if empty
-   */
+  /** Clears the retired local account registry; there is no local seeding. */
   init() {
-    let users = this.getUsers();
-    if (!users || !Array.isArray(users) || users.length === 0) {
-      users = [
-        this.DEFAULT_ADMIN,
-        {
-          id: 'USR002',
-          firstName: 'John',
-          lastName: 'Doe',
-          name: 'John Doe',
-          email: 'john.doe@company.com',
-          passwordHash: 'iRely@123',
-          department: 'Dev',
-          role: 'Project Manager',
-          phone: '+1 (555) 012-3456',
-          manager: 'System Administrator',
-          status: 'active',
-          avatar: '',
-          mustChangePassword: true,
-          createdAt: '2026-01-15T00:00:00.000Z'
-        },
-        {
-          id: 'USR003',
-          firstName: 'Sarah',
-          lastName: 'Connor',
-          name: 'Sarah Connor',
-          email: 'sarah.connor@company.com',
-          passwordHash: 'iRely@123',
-          department: 'Product Manager',
-          role: 'Product Manager',
-          phone: '+1 (555) 012-7890',
-          manager: 'System Administrator',
-          status: 'active',
-          avatar: '',
-          mustChangePassword: true,
-          createdAt: '2026-02-01T00:00:00.000Z'
-        },
-        {
-          id: 'USR004',
-          firstName: 'Alice',
-          lastName: 'Smith',
-          name: 'Alice Smith',
-          email: 'alice.smith@company.com',
-          passwordHash: 'iRely@123',
-          department: 'Dev',
-          role: 'Developer',
-          phone: '+1 (555) 019-4422',
-          manager: 'John Doe',
-          status: 'active',
-          avatar: '',
-          mustChangePassword: true,
-          createdAt: '2026-02-10T00:00:00.000Z'
-        },
-        {
-          id: 'USR005',
-          firstName: 'David',
-          lastName: 'Miller',
-          name: 'David Miller',
-          email: 'david.miller@company.com',
-          passwordHash: 'iRely@123',
-          department: 'QA',
-          role: 'QA',
-          phone: '+1 (555) 018-9911',
-          manager: 'John Doe',
-          status: 'active',
-          avatar: '',
-          mustChangePassword: true,
-          createdAt: '2026-03-01T00:00:00.000Z'
-        }
-      ];
-      this.saveUsers(users);
-    }
-
-    // No session is established here by design. Auto-assigning users[0] as the
-    // current user re-created an administrator session on every visit to
-    // login.html, which silently undid logout. The seed registry above is still
-    // populated; a user must authenticate explicitly for a session to exist.
-  },
-
-  /**
-   * Retrieves all users from storage
-   */
-  getUsers() {
-    try {
-      const raw = localStorage.getItem(this.USERS_KEY);
-      return raw ? JSON.parse(raw) : null;
-    } catch (e) {
-      console.error('Failed to parse users:', e);
-      return null;
+    for (const key of LEGACY_KEYS) {
+      try { localStorage.removeItem(key); } catch (e) { /* storage unavailable */ }
     }
   },
 
   /**
-   * Saves users list to storage
+   * Builds the V1.1-compatible session record from an authenticated V2 user.
+   * Shape is what existing modules read; values come only from the server.
    */
-  saveUsers(users) {
-    localStorage.setItem(this.USERS_KEY, JSON.stringify(users));
+  toSessionUser(v2User) {
+    if (!v2User || !v2User.id) return null;
+    const firstName = v2User.firstName || '';
+    const lastName = v2User.lastName || '';
+    return {
+      id: v2User.id,
+      firstName,
+      lastName,
+      name: `${firstName} ${lastName}`.trim() || v2User.email || 'User',
+      email: v2User.email || '',
+      department: v2User.department || '',
+      title: v2User.title || '',
+      role: V1_ROLE_LABELS[v2User.role] || v2User.role || 'Team Member',
+      v2Role: v2User.role,
+      status: v2User.isActive === false ? 'inactive' : 'active',
+      avatar: v2User.avatarUrl || '',
+      mustChangePassword: false,
+      createdAt: v2User.createdAt || '',
+    };
   },
 
-  /**
-   * Gets currently authenticated user
-   */
+  /** Currently signed-in user (session record), or null. */
   getCurrentUser() {
     try {
       const raw = localStorage.getItem(this.CURRENT_USER_KEY);
@@ -141,55 +67,58 @@ export const Authentication = {
     }
   },
 
-  /**
-   * Sets active session user
-   */
+  /** Stores or clears the session record. Never stores credentials. */
   setCurrentUser(user) {
     if (user) {
-      // Omit sensitive fields when storing session object
-      const safeUser = { ...user };
+      const { passwordHash, password, ...safeUser } = user;
       localStorage.setItem(this.CURRENT_USER_KEY, JSON.stringify(safeUser));
-      localStorage.setItem(this.TOKEN_KEY, 'token_' + Date.now() + '_' + Math.random().toString(36).substring(2));
     } else {
       localStorage.removeItem(this.CURRENT_USER_KEY);
-      localStorage.removeItem(this.TOKEN_KEY);
     }
   },
 
   /**
-   * Logs in with email and password
+   * @deprecated There is no browser user registry; the directory is the V2
+   * user service. Retained as empty no-ops for modules outside Sprint 12.
    */
-  login(email, password, remember = false) {
-    const users = this.getUsers() || [];
+  getUsers() {
+    return [];
+  },
+  saveUsers() {
+    /* no local registry */
+  },
+
+  /** Signs in against the V2 server. Never throws; returns { success, message, user }. */
+  async login(email, password, remember = false) {
     const cleanEmail = (email || '').trim().toLowerCase();
-    
-    const user = users.find(u => u.email.toLowerCase() === cleanEmail);
-    if (!user) {
-      return { success: false, message: 'Invalid email address or account does not exist.' };
+    if (!cleanEmail || !password) {
+      return { success: false, message: 'Please enter your email address and password.' };
     }
-
-    if (user.status === 'inactive' || user.status === 'deactivated') {
-      return { success: false, message: 'This account has been deactivated. Please contact your system administrator.' };
+    try {
+      const data = await AuthService.login(cleanEmail, password);
+      const session = this.toSessionUser(data && data.user);
+      if (!session) {
+        return { success: false, message: 'Sign-in failed: the server returned no user.' };
+      }
+      this.setCurrentUser(session);
+      try {
+        if (remember) localStorage.setItem('pm_portal_remembered_email', cleanEmail);
+        else localStorage.removeItem('pm_portal_remembered_email');
+      } catch (e) { /* storage unavailable */ }
+      return { success: true, user: session, mustChangePassword: false };
+    } catch (err) {
+      return { success: false, message: this.describeLoginError(err) };
     }
+  },
 
-    if (user.passwordHash !== password) {
-      return { success: false, message: 'Incorrect password entered.' };
+  describeLoginError(err) {
+    if (err && (err.status === 401 || err.status === 400)) {
+      return err.message || 'Invalid email or password.';
     }
-
-    // Login successful
-    this.setCurrentUser(user);
-
-    if (remember) {
-      localStorage.setItem('pm_portal_remembered_email', cleanEmail);
-    } else {
-      localStorage.removeItem('pm_portal_remembered_email');
+    if (err && (err.code === 'TIMEOUT' || err.status === undefined)) {
+      return 'The sign-in service is unreachable. Please try again in a moment.';
     }
-
-    return {
-      success: true,
-      user,
-      mustChangePassword: !!user.mustChangePassword
-    };
+    return (err && err.message) || 'Sign-in failed.';
   },
 
   /**
@@ -224,85 +153,41 @@ export const Authentication = {
     };
   },
 
-  /**
-   * Change password for logged in user or given user ID
-   */
-  changePassword(userId, oldPassword, newPassword) {
-    const users = this.getUsers() || [];
-    const idx = users.findIndex(u => u.id === userId);
-
-    if (idx === -1) {
-      return { success: false, message: 'User not found.' };
-    }
-
-    const user = users[idx];
-
-    // Validate old password unless forced reset
-    if (oldPassword && user.passwordHash !== oldPassword) {
-      return { success: false, message: 'Current password is incorrect.' };
-    }
-
-    // Validate policy
+  /** Changes the signed-in user's password on the server. Never throws. */
+  async changePassword(currentPassword, newPassword) {
     const policy = this.validatePasswordPolicy(newPassword);
     if (!policy.valid) {
       return { success: false, message: 'Password does not meet complexity requirements: ' + policy.errors.join(', ') };
     }
-
-    // Update password
-    users[idx].passwordHash = newPassword;
-    users[idx].mustChangePassword = false;
-    this.saveUsers(users);
-
-    // Sync session user if modifying active user
-    const curr = this.getCurrentUser();
-    if (curr && curr.id === userId) {
-      curr.mustChangePassword = false;
-      this.setCurrentUser(curr);
+    try {
+      await AuthService.changePassword(currentPassword, newPassword);
+      return { success: true, message: 'Password updated successfully.' };
+    } catch (err) {
+      return { success: false, message: (err && err.message) || 'Could not change password.' };
     }
+  },
 
-    return { success: true, message: 'Password updated successfully.' };
+  /** Re-reads the authenticated user from the server and refreshes the session record. */
+  async refreshSession() {
+    const user = await AuthService.getCurrentUser();
+    if (user) this.setCurrentUser(this.toSessionUser(user));
+    return user;
   },
 
   /**
-   * Resets password to temporary value
-   */
-  resetPassword(email, tempPassword = 'iRely@123') {
-    const users = this.getUsers() || [];
-    const cleanEmail = (email || '').trim().toLowerCase();
-    const idx = users.findIndex(u => u.email.toLowerCase() === cleanEmail);
-
-    if (idx === -1) {
-      return { success: false, message: 'No account registered with this email address.' };
-    }
-
-    users[idx].passwordHash = tempPassword;
-    users[idx].mustChangePassword = true;
-    this.saveUsers(users);
-
-    return { success: true, message: `Password reset to temporary password: ${tempPassword}`, tempPassword };
-  },
-
-  /**
-   * Logs out of both authentication generations.
-   *
-   * The V2 session is torn down first, because only the server can clear the
-   * HttpOnly auth_token cookie — script cannot reach it. A server failure must
-   * never strand the user in a half-logged-out state, so local V1/V2 state is
-   * cleared regardless of the outcome before redirecting.
+   * Logs out. The server session is torn down first, because only the server
+   * can clear the HttpOnly auth_token cookie; local state is cleared regardless
+   * of the outcome before redirecting.
    */
   async logout() {
     try {
-      // Reuses the existing V2 endpoint via AuthService/apiClient; this also
-      // clears pm_v2_auth_token and pm_v2_bridge_failure.
       await AuthService.logout();
     } catch (err) {
       console.warn('Server logout failed; clearing local session anyway:', err && err.message);
     }
 
-    // V1 session state: current user + client-minted token.
     this.setCurrentUser(null);
 
-    // Defensive sweep in case the V2 teardown above could not complete.
     try {
       sessionStorage.removeItem('pm_v2_auth_token');
       sessionStorage.removeItem('pm_v2_bridge_failure');
@@ -326,11 +211,6 @@ export const Authentication = {
         window.location.href = 'login.html';
       }
       return null;
-    }
-
-    if (user.mustChangePassword && !currentPath.endsWith('change-password.html')) {
-      window.location.href = 'change-password.html';
-      return user;
     }
 
     return user;

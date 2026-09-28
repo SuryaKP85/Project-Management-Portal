@@ -98,4 +98,34 @@ export const AuthService = {
     }
     return sanitizeUser(user);
   },
+
+  /**
+   * Sprint 12: the signed-in user changes their own password. The current
+   * password must verify; the new one is hashed with the same infrastructure
+   * as registration. Throws typed errors the global handler maps to 400/404.
+   */
+  async changePassword(payload: JwtPayload, currentPassword: string, newPassword: string): Promise<void> {
+    const user = await UserRepository.findById(payload.userId);
+    if (!user || !user.passwordHash) {
+      throw Object.assign(new Error('User not found'), { status: 404, code: 'NOT_FOUND' });
+    }
+    const currentOk = await verifyPassword(currentPassword, user.passwordHash);
+    if (!currentOk) {
+      throw Object.assign(new Error('Current password is incorrect.'), { status: 400, code: 'VALIDATION_ERROR' });
+    }
+    if (currentPassword === newPassword) {
+      throw Object.assign(new Error('New password must differ from the current password.'), { status: 400, code: 'VALIDATION_ERROR' });
+    }
+    await UserRepository.updatePassword(user.id, await hashPassword(newPassword));
+    await ActivityRepository.create({
+      id: `act_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+      entityType: 'user',
+      entityId: user.id,
+      action: 'update',
+      actorId: user.id,
+      actorName: `${user.firstName} ${user.lastName}`,
+      details: { fields: ['password'], self: true },
+      createdAt: new Date().toISOString(),
+    });
+  },
 };

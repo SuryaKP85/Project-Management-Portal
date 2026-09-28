@@ -18,6 +18,11 @@ export class AuthService {
     }
   }
 
+  /** Sprint 12: the signed-in user changes their own password on the server. */
+  static async changePassword(currentPassword, newPassword) {
+    return apiClient.post('/auth/change-password', { currentPassword, newPassword });
+  }
+
   static async logout() {
     try {
       await apiClient.post('/auth/logout', {});
@@ -30,40 +35,11 @@ export class AuthService {
   }
 
   /**
-   * Establishes the V2 JWT session alongside the existing V1.1 local sign-in,
-   * reusing the same credentials. Never throws: a failure here must not block
-   * the local login, it only means V2 API-backed modules stay unauthenticated.
-   *
-   * @returns {Promise<boolean>} true when a V2 session was established.
+   * @deprecated Sprint 12 retired the V1.1-to-V2 session bridge: the server is
+   * the only authenticator, so there is never a bridge failure to report.
+   * Kept so modules that still ask keep working unchanged.
    */
-  static async syncV2Session(email, password) {
-    try {
-      const data = await AuthService.login(email, password);
-      try { sessionStorage.removeItem('pm_v2_bridge_failure'); } catch { /* ignore */ }
-      return !!(data && data.token);
-    } catch (err) {
-      console.warn('V2 session could not be established for this account:', err && err.message);
-      // Record why the bridge failed so downstream modules can explain the
-      // situation instead of telling the user to sign in again — which would
-      // not help when the account simply has no server-side counterpart.
-      try {
-        sessionStorage.setItem('pm_v2_bridge_failure', JSON.stringify({
-          email,
-          status: err && err.status,
-          message: (err && err.message) || 'Unknown error',
-        }));
-      } catch { /* ignore */ }
-      return false;
-    }
-  }
-
-  /** Returns details of the last failed V2 session bridge, or null. */
   static getV2BridgeFailure() {
-    try {
-      const raw = sessionStorage.getItem('pm_v2_bridge_failure');
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
+    return null;
   }
 }

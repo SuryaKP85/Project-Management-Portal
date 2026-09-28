@@ -1,7 +1,14 @@
-/* profile.js - Profile Management and Avatar Engine */
+/* profile.js - Profile Management and Avatar Engine (server-backed, Sprint 12) */
 
 import { Authentication } from './authentication.js';
-import { Storage } from './storage.js';
+import { UserService } from './services/userService.js';
+
+/**
+ * Name, department and photo are stored on the V2 user record through the
+ * user service. Phone, language and timezone have no server field yet and
+ * remain on the local session record as display preferences.
+ */
+const LOCAL_PREFERENCE_FIELDS = ['phone', 'language', 'timezone'];
 
 export const ProfileModule = {
   app: null,
@@ -12,6 +19,9 @@ export const ProfileModule = {
     this.loadProfile();
     this.setupListeners();
     this.syncAvatarAcrossUI();
+    // Refresh the session record from the server so the page never shows a
+    // stale name or photo; the form is repopulated when the response arrives.
+    this.refreshFromServer();
   },
 
   loadProfile() {
@@ -31,11 +41,24 @@ export const ProfileModule = {
     if (emailInp) emailInp.value = this.user.email || '';
     if (phoneInp) phoneInp.value = this.user.phone || '';
     if (deptInp) deptInp.value = this.user.department || 'Dev';
-    if (roleInp) roleInp.value = this.user.role || 'Administrator';
+    if (roleInp) roleInp.value = this.user.role || 'Team Member';
     if (langInp) langInp.value = this.user.language || 'en';
     if (tzInp) tzInp.value = this.user.timezone || 'UTC-05:00';
 
     this.renderAvatarPreview();
+  },
+
+  async refreshFromServer() {
+    try {
+      const serverUser = await Authentication.refreshSession();
+      if (serverUser) {
+        this.applyServerUser(serverUser);
+        this.loadProfile();
+        this.syncAvatarAcrossUI();
+      }
+    } catch (err) {
+      console.warn('Could not refresh profile from the server:', err && err.message);
+    }
   },
 
   renderAvatarPreview() {
@@ -44,12 +67,12 @@ export const ProfileModule = {
 
     if (this.user && this.user.avatar) {
       previewEl.innerHTML = `
-        <img src="${this.user.avatar}" alt="Profile Avatar" style="width: 100px; height: 100px; border-radius: 50%; object-fit: cover; border: 3px solid var(--brand-primary);" />
+        <img src="${this.user.avatar}" alt="Profile Avatar" style="width: 100px; height: 100px; border-radius: 50%; object-fit: cover; border: 3px solid var(--brand-primary); box-shadow: var(--shadow-md);" />
       `;
     } else {
       const initials = this.user ? `${(this.user.firstName?.[0] || this.user.name?.[0] || 'A')}${(this.user.lastName?.[0] || '')}` : 'A';
       previewEl.innerHTML = `
-        <div class="d-flex align-items-center justify-content-center font-bold text-white shadow-sm" style="width: 100px; height: 100px; border-radius: 50%; background-color: var(--brand-primary); font-size: 2.2rem; border: 3px solid var(--border-color);">
+        <div class="d-flex align-items-center justify-content-center font-bold text-white shadow-sm" style="width: 100px; height: 100px; border-radius: 50%; background: linear-gradient(135deg, var(--brand-primary), var(--brand-accent)); font-size: 2rem;">
           ${initials}
         </div>
       `;
@@ -102,15 +125,7 @@ export const ProfileModule = {
     }
 
     if (removeBtn) {
-      removeBtn.addEventListener('click', () => {
-        if (this.user) {
-          this.user.avatar = '';
-          this.updateUserData(this.user);
-          this.renderAvatarPreview();
-          this.syncAvatarAcrossUI();
-          if (this.app) this.app.showToast('Profile photo removed.', 'info');
-        }
-      });
+      removeBtn.addEventListener('click', () => this.saveAvatar(''));
     }
   },
 
@@ -126,20 +141,25 @@ export const ProfileModule = {
     }
 
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const base64Data = e.target.result;
-      if (this.user) {
-        this.user.avatar = base64Data;
-        this.updateUserData(this.user);
-        this.renderAvatarPreview();
-        this.syncAvatarAcrossUI();
-        if (this.app) this.app.showToast('Profile photo updated successfully.', 'success');
-      }
-    };
+    reader.onload = (e) => this.saveAvatar(e.target.result);
     reader.readAsDataURL(file);
   },
 
-  saveProfile() {
+  /** Stores the photo on the server profile ('' removes it). */
+  async saveAvatar(dataUrl) {
+    if (!this.user) return;
+    try {
+      const updated = await UserService.updateProfile(this.user.id, { avatarUrl: dataUrl || '' });
+      this.applyServerUser(updated);
+      this.renderAvatarPreview();
+      this.syncAvatarAcrossUI();
+      if (this.app) this.app.showToast(dataUrl ? 'Profile photo updated successfully.' : 'Profile photo removed.', dataUrl ? 'success' : 'info');
+    } catch (err) {
+      if (this.app) this.app.showToast(`Could not save the photo: ${(err && err.message) || 'server error'}`, 'warning');
+    }
+  },
+
+  async saveProfile() {
     if (!this.user) return;
 
     const nameInp = document.getElementById('profile-full-name');
@@ -148,32 +168,53 @@ export const ProfileModule = {
     const langInp = document.getElementById('profile-language');
     const tzInp = document.getElementById('profile-timezone');
 
-    if (nameInp) this.user.name = nameInp.value.trim();
-    if (phoneInp) this.user.phone = phoneInp.value.trim();
-    if (deptInp) this.user.department = deptInp.value;
-    if (langInp) this.user.language = langInp.value;
-    if (tzInp) this.user.timezone = tzInp.value;
+    const fullName = nameInp ? nameInp.value.trim() : '';
+    if (!fullName) {
+      if (this.app) this.app.showToast('Please enter your name.', 'warning');
+      return;
+    }
+    const [firstName, ...rest] = fullName.split(/\s+/);
+    const lastName = rest.join(' ') || this.user.lastName || '';
 
-    this.updateUserData(this.user);
-    this.syncAvatarAcrossUI();
-    if (this.app) this.app.showToast('Profile details saved successfully.', 'success');
-  },
+    // Display preferences with no server field stay on the session record.
+    const preferences = {
+      phone: phoneInp ? phoneInp.value.trim() : this.user.phone,
+      language: langInp ? langInp.value : this.user.language,
+      timezone: tzInp ? tzInp.value : this.user.timezone,
+    };
 
-  updateUserData(updatedUser) {
-    this.user = updatedUser;
-    Authentication.setCurrentUser(updatedUser);
-
-    // Update in users registry
-    const users = Authentication.getUsers() || [];
-    const idx = users.findIndex(u => u.id === updatedUser.id);
-    if (idx !== -1) {
-      users[idx] = { ...users[idx], ...updatedUser };
-      Authentication.saveUsers(users);
+    try {
+      const updated = await UserService.updateProfile(this.user.id, {
+        firstName,
+        lastName,
+        department: deptInp ? deptInp.value : this.user.department,
+      });
+      this.applyServerUser(updated, preferences);
+      this.syncAvatarAcrossUI();
+      if (this.app) this.app.showToast('Profile details saved successfully.', 'success');
+    } catch (err) {
+      if (this.app) this.app.showToast(`Could not save profile: ${(err && err.message) || 'server error'}`, 'warning');
     }
   },
 
+  /**
+   * Rebuilds the session record from the server user, carrying over the
+   * local display preferences. The server is the only source for identity.
+   */
+  applyServerUser(serverUser, preferences = null) {
+    const previous = this.user || Authentication.getCurrentUser() || {};
+    const session = Authentication.toSessionUser(serverUser);
+    if (!session) return;
+    for (const field of LOCAL_PREFERENCE_FIELDS) {
+      const value = preferences && preferences[field] !== undefined ? preferences[field] : previous[field];
+      if (value !== undefined) session[field] = value;
+    }
+    this.user = session;
+    Authentication.setCurrentUser(session);
+  },
+
   syncAvatarAcrossUI() {
-    this.user = Authentication.getCurrentUser() || Storage.get('current_user');
+    this.user = Authentication.getCurrentUser();
     if (!this.user) return;
 
     const avatarSrc = this.user.avatar || 'assets/baby_feet.jpg';
@@ -192,7 +233,7 @@ export const ProfileModule = {
         navAvatar.innerHTML = `<img src="${this.user.avatar}" alt="Avatar" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;" />`;
       } else {
         const initials = `${(this.user.firstName?.[0] || this.user.name?.[0] || 'A')}${(this.user.lastName?.[0] || '')}`;
-        navAvatar.innerHTML = `<span class="avatar-circle font-bold d-inline-flex align-items-center justify-content-center" style="width: 32px; height: 32px; border-radius: 50%; background-color: var(--brand-primary); color: white; font-size: 0.8rem;">${initials}</span>`;
+        navAvatar.innerHTML = `<span class="avatar-circle font-bold d-inline-flex align-items-center justify-content-center" style="width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, var(--brand-primary), var(--brand-accent)); color: #fff; font-size: 0.8rem;">${initials}</span>`;
       }
     }
 

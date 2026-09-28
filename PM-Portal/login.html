@@ -79,18 +79,13 @@
       </button>
     </form>
 
-    <div class="p-3 bg-light rounded border mt-3" style="font-size: 0.775rem;">
-      <div class="font-bold text-dark mb-1"><i class="fa-solid fa-shield-halved text-primary me-1"></i> Default Admin Credentials:</div>
-      <div class="d-flex justify-content-between text-muted">
-        <span>Email: <strong>admin@company.com</strong></span>
-        <span>Pass: <strong>Admin@123</strong></span>
-      </div>
+    <div class="p-3 bg-light rounded border mt-3 text-muted" style="font-size: 0.775rem;">
+      <i class="fa-solid fa-shield-halved text-primary me-1"></i> Sign in with the account your portal administrator created for you. Accounts and passwords are managed on the server.
     </div>
   </div>
 
   <script type="module">
     import { Authentication } from './js/authentication.js';
-    import { AuthService } from './js/services/authService.js';
 
     document.addEventListener('DOMContentLoaded', () => {
       Authentication.init();
@@ -100,9 +95,6 @@
       if (remembered) {
         document.getElementById('login-email').value = remembered;
         document.getElementById('login-remember').checked = true;
-      } else {
-        document.getElementById('login-email').value = 'admin@company.com';
-        document.getElementById('login-password').value = 'Admin@123';
       }
 
       // Toggle password visibility
@@ -128,18 +120,15 @@
         const password = document.getElementById('login-password').value;
         const remember = document.getElementById('login-remember').checked;
 
-        const result = Authentication.login(email, password, remember);
+        // Sprint 12: the V2 server is the only authenticator. The session
+        // record is built from the user it returns.
+        const result = await Authentication.login(email, password, remember);
 
         if (!result.success) {
           alertBox.textContent = result.message;
           alertBox.classList.remove('d-none');
           return;
         }
-
-        // Establish the V2 JWT session with the same credentials so that
-        // API-backed modules (Governance, Dependencies, Delivery, Sprints)
-        // are authenticated. Best-effort: a failure never blocks local sign-in.
-        await AuthService.syncV2Session(email, password);
 
         if (result.mustChangePassword) {
           window.location.href = 'change-password.html';

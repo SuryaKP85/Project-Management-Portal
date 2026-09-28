@@ -80,6 +80,19 @@ export const AuthController = {
     }
   },
 
+  /** POST /auth/change-password — the signed-in user only. */
+  async changePassword(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } });
+      }
+      await AuthService.changePassword(req.user, req.body.currentPassword, req.body.newPassword);
+      return res.json({ success: true, data: { message: 'Password updated successfully' } });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async logout(req: Request, res: Response) {
     res.clearCookie('auth_token');
     return res.json({

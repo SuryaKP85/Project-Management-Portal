@@ -3945,6 +3945,157 @@ async function runTests() {
   const uiSrc39 = fs35.readFileSync('PM-Portal/js/executiveDashboard.js', 'utf8');
   assert(/productsWithoutPortfolio/.test(uiSrc39) && /Products without portfolio/.test(uiSrc39), 'Executive UI renders portfolio-less products as their own group');
 
+  // 40. Identity & People Foundation (Sprint 12)
+  // The V2 server is the only authenticator and user directory: login, profile,
+  // status, password administration, listing rules and the browser source.
+  console.log('\n--- 40. Identity & People Foundation (Sprint 12) ---');
+  const { AuthService: Auth40 } = await import('../server/services/authService');
+  const { UserService: Users40, PROFILE_FIELDS: PROFILE_FIELDS40 } = await import('../server/services/userService');
+  const { UserController: UserCtl40 } = await import('../server/controllers/userController');
+  const { AuthController: AuthCtl40 } = await import('../server/controllers/authController');
+  const { userRoutes: userRoutes40 } = await import('../server/routes/userRoutes');
+  const { authRoutes: authRoutes40 } = await import('../server/routes/authRoutes');
+  const { requireRoles: requireRoles40 } = await import('../server/middleware/authMiddleware');
+  const { UserRepository: UserRepo40 } = await import('../server/repositories/userRepository');
+  const { errorHandler: errorHandler40 } = await import('../server/middleware/errorHandler');
+  const res40 = () => {
+    const r: any = { statusCode: 200, body: null };
+    r.status = (c: number) => { r.statusCode = c; return r; };
+    r.json = (b: any) => { r.body = b; return r; };
+    r.cookie = () => r;
+    r.clearCookie = () => r;
+    return r;
+  };
+  const jwtOf40 = (u: any) => ({ userId: u.id, email: u.email, role: u.role, firstName: u.firstName, lastName: u.lastName });
+  const reqAs40 = (u: any, over: any = {}) => ({
+    params: {}, query: {}, body: {}, headers: {}, cookies: {}, method: 'TEST', url: '/sprint-12', ip: '127.0.0.1', socket: { remoteAddress: '127.0.0.1' },
+    user: u ? jwtOf40(u) : undefined,
+    ...over,
+  });
+  /** Runs a controller and, if it forwarded an error, the global handler — like Express would. */
+  const call40 = async (handler: any, req: any) => {
+    const res = res40();
+    let forwarded: any = null;
+    await handler(req, res, (e: any) => { forwarded = e; });
+    if (forwarded) errorHandler40(forwarded, req, res, next27 as any);
+    return res;
+  };
+  const loginFails40 = async (email: string, password: string) => { try { await Auth40.login(email, password); return null; } catch (e: any) { return e; } };
+  const adminUser40 = (await UserRepo40.findByEmail('admin@company.com'))!;
+
+  // 1–2. login against the V2 directory
+  const login40 = await Auth40.login('admin@company.com', 'Admin@123');
+  assert(!!login40.token && login40.user.email === 'admin@company.com' && !('passwordHash' in login40.user), 'Login succeeds with a valid V2 user and the response carries no password hash');
+  const wrong40 = await loginFails40('admin@company.com', 'Not-The-Password-1');
+  assert(!!wrong40 && /invalid/i.test(wrong40.message), 'Wrong password is rejected');
+  const badLoginRes40 = await call40(AuthCtl40.login, reqAs40(null, { body: { email: 'admin@company.com', password: 'Not-The-Password-1' } }));
+  assert(badLoginRes40.statusCode === 401 && badLoginRes40.body.error.code === 'AUTH_FAILED', 'Login controller answers 401 AUTH_FAILED');
+
+  // temporary accounts through the existing admin registration
+  const stamp40 = Date.now();
+  const member40 = await Auth40.register({ email: `member.s12.${stamp40}@company.com`, password: 'Member@12345', firstName: 'Mia', lastName: 'Member', role: 'team-member' }, login40.user);
+  const other40 = await Auth40.register({ email: `other.s12.${stamp40}@company.com`, password: 'Other@12345', firstName: 'Omar', lastName: 'Other', role: 'team-member' }, login40.user);
+  try {
+    // 5–7. profile updates
+    assert(JSON.stringify([...PROFILE_FIELDS40]) === JSON.stringify(['firstName', 'lastName', 'department', 'title', 'avatarUrl']), 'Profile endpoint accepts exactly the five approved fields');
+    const selfRes40 = await call40(UserCtl40.updateProfile, reqAs40(member40, { params: { id: member40.id }, body: { firstName: 'Mia', lastName: 'Updated', title: 'Engineer', role: 'admin', isActive: false, email: 'x@y.z' } }));
+    assert(selfRes40.statusCode === 200 && selfRes40.body.data.user.lastName === 'Updated' && selfRes40.body.data.user.title === 'Engineer', 'Self profile update succeeds');
+    assert(selfRes40.body.data.user.role === 'team-member' && selfRes40.body.data.user.isActive === true && selfRes40.body.data.user.email === member40.email && !('passwordHash' in selfRes40.body.data.user), 'Profile endpoint ignores role, isActive and email and exposes no hash');
+    const adminEditRes40 = await call40(UserCtl40.updateProfile, reqAs40(adminUser40, { params: { id: member40.id }, body: { department: 'Platform' } }));
+    assert(adminEditRes40.statusCode === 200 && adminEditRes40.body.data.user.department === 'Platform', 'Admin profile update succeeds');
+    const crossRes40 = await call40(UserCtl40.updateProfile, reqAs40(member40, { params: { id: other40.id }, body: { firstName: 'Hacked' } }));
+    assert(crossRes40.statusCode === 403 && crossRes40.body.error.code === 'FORBIDDEN' && (await UserRepo40.findById(other40.id))!.firstName === 'Omar', 'Non-admin cannot edit another user');
+    const blankRes40 = await call40(UserCtl40.updateProfile, reqAs40(member40, { params: { id: member40.id }, body: { firstName: '   ' } }));
+    assert(blankRes40.statusCode === 400 && blankRes40.body.error.code === 'VALIDATION_ERROR', 'Blank names are rejected');
+    const missingRes40 = await call40(UserCtl40.updateProfile, reqAs40(adminUser40, { params: { id: 'usr_nope' }, body: { title: 'x' } }));
+    assert(missingRes40.statusCode === 404, 'Profile update of an unknown user is 404');
+
+    // 8. role change stays admin-only (route guard + middleware behaviour)
+    const layers40 = (userRoutes40 as any).stack.filter((l: any) => l.route).map((l: any) => ({ path: l.route.path, methods: Object.keys(l.route.methods), n: l.route.stack.length, handlers: l.route.stack.map((s: any) => s.name) }));
+    const layer40 = (p: string, m: string) => layers40.find((l: any) => l.path === p && l.methods.includes(m));
+    assert(!!layer40('/users/:id/role', 'patch') && layer40('/users/:id/role', 'patch').n >= 4, 'Role route keeps authenticateToken, requireRoles and validation');
+    const deniedRes40 = res40(); let passed40 = false;
+    requireRoles40(['admin'])(reqAs40(member40) as any, deniedRes40 as any, () => { passed40 = true; });
+    assert(!passed40 && deniedRes40.statusCode === 403, 'Role change remains admin-only (team-member denied by the guard)');
+    assert(!!layer40('/users/:id', 'patch') && layer40('/users/:id', 'patch').handlers.includes('authenticateToken'), 'Profile route requires authentication');
+    assert(!!layer40('/users/:id/status', 'patch') && layer40('/users/:id/status', 'patch').n >= 4 && !!layer40('/users/:id/set-password', 'post') && layer40('/users/:id/set-password', 'post').n >= 4, 'Status and set-password routes carry guards and validation');
+    const cpLayer40 = (authRoutes40 as any).stack.find((l: any) => l.route && l.route.path === '/auth/change-password');
+    assert(!!cpLayer40 && cpLayer40.route.stack.map((s: any) => s.name).includes('authenticateToken'), 'Change-password route is registered and authenticated');
+
+    // 9–11. activation
+    const selfDeact40 = await call40(UserCtl40.updateStatus, reqAs40(adminUser40, { params: { id: adminUser40.id }, body: { isActive: false } }));
+    assert(selfDeact40.statusCode === 400 && selfDeact40.body.error.code === 'VALIDATION_ERROR' && (await UserRepo40.findById(adminUser40.id))!.isActive === true, 'Admin cannot deactivate their own account');
+    const deact40 = await call40(UserCtl40.updateStatus, reqAs40(adminUser40, { params: { id: member40.id }, body: { isActive: false } }));
+    assert(deact40.statusCode === 200 && deact40.body.data.user.isActive === false, 'Admin can deactivate another user');
+    const inactiveLogin40 = await loginFails40(member40.email, 'Member@12345');
+    assert(!!inactiveLogin40 && /deactivated/i.test(inactiveLogin40.message), 'Inactive user cannot log in');
+
+    // 16–17. listing
+    assert(!(await Users40.getAllUsers()).some((u) => u.id === member40.id) && (await Users40.getAllUsers({ includeInactive: true })).some((u) => u.id === member40.id), 'Inactive users are excluded by default and included on request');
+    const listAdminRes40 = await call40(UserCtl40.list, reqAs40(adminUser40, { query: { includeInactive: 'true' } }));
+    assert(listAdminRes40.statusCode === 200 && listAdminRes40.body.data.users.some((u: any) => u.id === member40.id) && listAdminRes40.body.data.users.every((u: any) => !('passwordHash' in u)), 'Admin can request inactive users; no hash is exposed');
+    const listMemberRes40 = await call40(UserCtl40.list, reqAs40(other40, { query: { includeInactive: 'true' } }));
+    assert(listMemberRes40.statusCode === 403 && listMemberRes40.body.error.code === 'FORBIDDEN', 'Non-admin cannot request inactive users');
+    const listPlainRes40 = await call40(UserCtl40.list, reqAs40(other40));
+    assert(listPlainRes40.statusCode === 200 && !listPlainRes40.body.data.users.some((u: any) => u.id === member40.id), 'Normal listing excludes inactive users');
+
+    const react40 = await call40(UserCtl40.updateStatus, reqAs40(adminUser40, { params: { id: member40.id }, body: { isActive: true } }));
+    assert(react40.statusCode === 200 && react40.body.data.user.isActive === true && !!(await Auth40.login(member40.email, 'Member@12345')).token, 'Admin can reactivate a user, who can log in again');
+
+    // 12–13. self-service password change
+    const wrongCurrentRes40 = await call40(AuthCtl40.changePassword, reqAs40(member40, { body: { currentPassword: 'Nope@12345', newPassword: 'Member@67890' } }));
+    assert(wrongCurrentRes40.statusCode === 400 && wrongCurrentRes40.body.error.code === 'VALIDATION_ERROR' && !!(await Auth40.login(member40.email, 'Member@12345')).token, 'Change-password requires the correct current password');
+    const changeRes40 = await call40(AuthCtl40.changePassword, reqAs40(member40, { body: { currentPassword: 'Member@12345', newPassword: 'Member@67890' } }));
+    assert(changeRes40.statusCode === 200 && !!(await Auth40.login(member40.email, 'Member@67890')).token, 'Changed password works for subsequent login');
+    assert(!!(await loginFails40(member40.email, 'Member@12345')), 'Old password no longer works after the change');
+
+    // 14–15. admin set-password
+    const setRes40 = await call40(UserCtl40.setPassword, reqAs40(adminUser40, { params: { id: member40.id }, body: { password: 'Admin-Set@999' } }));
+    assert(setRes40.statusCode === 200 && !!(await Auth40.login(member40.email, 'Admin-Set@999')).token && !!(await loginFails40(member40.email, 'Member@67890')), 'Admin set-password works and replaces the previous password');
+    const setDenied40 = res40(); let setPassed40 = false;
+    requireRoles40(['admin'])(reqAs40(other40) as any, setDenied40 as any, () => { setPassed40 = true; });
+    assert(!setPassed40 && setDenied40.statusCode === 403, "Non-admin cannot set another user's password");
+    const setMissing40 = await call40(UserCtl40.setPassword, reqAs40(adminUser40, { params: { id: 'usr_nope' }, body: { password: 'Admin-Set@999' } }));
+    assert(setMissing40.statusCode === 404, 'Set-password for an unknown user is 404');
+
+    // 18. activity trail without secrets
+    const acts40 = (await ActivityRepository.findRecent(120)).filter((a: any) => a.entityType === 'user' && a.entityId === member40.id);
+    const actText40 = JSON.stringify(acts40.map((a: any) => a.details || {}));
+    assert(acts40.some((a: any) => a.action === 'status_change' && a.details?.isActive === false) && acts40.some((a: any) => a.action === 'status_change' && a.details?.isActive === true), 'Activity records deactivation and reactivation');
+    assert(acts40.some((a: any) => a.action === 'update' && Array.isArray(a.details?.fields) && a.details.fields.includes('lastName')) && acts40.filter((a: any) => a.action === 'update' && a.details?.fields?.includes('password')).length >= 2, 'Activity records profile edits and password administration');
+    assert(!/Member@|Admin-Set|passwordHash|password_hash/.test(actText40), 'Activity details never contain passwords or hashes');
+  } finally {
+    // No delete API by design; retire the temporary accounts.
+    for (const id of [member40.id, other40.id]) await UserRepo40.update(id, { isActive: false });
+  }
+
+  // 19–22. browser source: server-only authentication, no local registry, no plaintext credentials
+  const authJs40 = fs35.readFileSync('PM-Portal/js/authentication.js', 'utf8');
+  const loginHtml40 = fs35.readFileSync('PM-Portal/login.html', 'utf8');
+  const settingsJs40 = fs35.readFileSync('PM-Portal/js/settings.js', 'utf8');
+  const projectsJs40 = fs35.readFileSync('PM-Portal/js/projects.js', 'utf8');
+  const userSvcJs40 = fs35.readFileSync('PM-Portal/js/services/userService.js', 'utf8');
+  const authSvcJs40 = fs35.readFileSync('PM-Portal/js/services/authService.js', 'utf8');
+  const forgotHtml40 = fs35.readFileSync('PM-Portal/forgot-password.html', 'utf8');
+  const changeHtml40 = fs35.readFileSync('PM-Portal/change-password.html', 'utf8');
+  assert(/AuthService\.login\(/.test(authJs40) && !/passwordHash\s*[!=]==?|DEFAULT_ADMIN|Admin@123|iRely@123|user\.passwordHash/.test(authJs40), 'Login code contains no plaintext password comparison or default accounts');
+  assert(/await Authentication\.login\(/.test(loginHtml40) && !/syncV2Session|Admin@123|iRely@123/.test(loginHtml40 + authSvcJs40), 'Login page authenticates only through the server and ships no credentials');
+  assert(!/resetPassword\(/.test(forgotHtml40) && !/iRely@123/.test(forgotHtml40) && /await Authentication\.changePassword\(oldPass, newPass\)/.test(changeHtml40), 'No local password reset remains; password change goes to the server');
+  assert(!/Storage\.set\('portal_users'/.test(settingsJs40) && !/Storage\.get\('portal_users'/.test(settingsJs40) && !/renderUserSwitcher|settings-active-user-select|portal-user-switched/.test(settingsJs40) && !/settings-active-user-select/.test(html36), 'Settings no longer writes portal_users and the user switcher is gone');
+  assert(/UserService\.getUsers\(/.test(settingsJs40) && /UserService\.register\(/.test(settingsJs40) && /UserService\.updateProfile\(/.test(settingsJs40) && /UserService\.updateUserRole\(/.test(settingsJs40) && /UserService\.setStatus\(/.test(settingsJs40) && /UserService\.setPassword\(/.test(settingsJs40), 'Settings user administration is bound to the V2 user API');
+  assert(/this\.v2Users = await UserService\.getUsers\(\)/.test(projectsJs40) && !/Storage\.get\('portal_users'\)/.test(projectsJs40) && !/Authentication\.getUsers\(\)/.test(projectsJs40), 'Project manager picker uses V2 users');
+  assert(/\/users\/\$\{id\}\/status/.test(userSvcJs40) && /\/users\/\$\{id\}\/set-password/.test(userSvcJs40) && /\/auth\/change-password/.test(authSvcJs40) && /\/auth\/register/.test(userSvcJs40), 'Browser services target the new identity endpoints');
+  assert(!/passwordHash/.test(settingsJs40 + userSvcJs40 + authSvcJs40 + loginHtml40) && !/passwordHash/.test(authJs40.replace(/const \{ passwordHash, password, \.\.\.safeUser \} = user;/, '')), 'No password hash is handled anywhere in the browser identity code');
+  assert(/pm_portal_users/.test(authJs40) && /localStorage\.removeItem\(key\)/.test(authJs40), 'Retired local account storage is cleared on load');
+
+  // Review follow-ups: the dead legacy module is gone and the standalone Profile page is server-backed.
+  const profileJs40 = fs35.readFileSync('PM-Portal/js/profile.js', 'utf8');
+  assert(!fs35.existsSync('PM-Portal/js/userManagement.js') && !/userManagement|UserManagementModule/.test(html36 + fs35.readFileSync('PM-Portal/js/app.js', 'utf8')), 'Legacy userManagement.js is removed and unreferenced');
+  assert(/UserService\.updateProfile\(this\.user\.id/.test(profileJs40) && /Authentication\.toSessionUser\(/.test(profileJs40) && !/Authentication\.(getUsers|saveUsers)\(|Storage\.get\('current_user'\)/.test(profileJs40), 'Profile page saves through the V2 user service and no local registry');
+  const browserFiles40 = fs35.readdirSync('PM-Portal/js').filter((f: string) => f.endsWith('.js')).map((f: string) => `PM-Portal/js/${f}`)
+    .concat(['PM-Portal/login.html', 'PM-Portal/profile.html', 'PM-Portal/change-password.html', 'PM-Portal/forgot-password.html', 'PM-Portal/index.html']);
+  const leaks40 = browserFiles40.filter((f: string) => /Admin@123|iRely@123|Authentication\.resetPassword\(|user\.passwordHash|passwordHash: '/.test(fs35.readFileSync(f, 'utf8')));
+  assert(leaks40.length === 0, `No browser file retains the plaintext/default local authentication mechanism (${leaks40.join(', ') || 'none'})`);
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('========================================\n');

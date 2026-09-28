@@ -274,4 +274,20 @@ export const UserRepository = {
     memoryUsers.set(id, updated);
     return sanitizeUser(updated);
   },
+
+  /**
+   * Sprint 12: replaces a user's password hash. Kept apart from update() so the
+   * hash is never carried inside a general-purpose profile update.
+   */
+  async updatePassword(id: string, passwordHash: string): Promise<boolean> {
+    await seedReady;
+    const existing = await this.findById(id);
+    if (!existing) return false;
+    const updatedAt = new Date().toISOString();
+    if (isDbConnected()) {
+      await query('UPDATE users SET password_hash = $1, updated_at = $2 WHERE id = $3', [passwordHash, updatedAt, id]);
+    }
+    memoryUsers.set(id, { ...existing, passwordHash, updatedAt });
+    return true;
+  },
 };
