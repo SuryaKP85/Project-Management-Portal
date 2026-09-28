@@ -3388,6 +3388,87 @@ async function runTests() {
   assert(!fs35.readFileSync('PM-Portal/js/dashboard.js', 'utf8').includes('executive/overview'), 'V1.1 dashboard is untouched');
   assert((await GLR28.findBySourceType('roadmap')).length === 0, '§35 links cleaned up');
 
+  // --- j. Sprint 11.4 cross-project insights: descriptive facts from the existing health results ---
+  const { ProjectHealthService: PHS35 } = await import('../server/services/projectHealthService');
+  const baseIns35 = (await overview({})).insights;
+  const scopedAll35 = await ProjRepo24.findAll();
+  const results35 = new Map<string, any>();
+  for (const p of scopedAll35) results35.set(p.id, await PHS35.computeHealth(p, { now: now35 }));
+  const qualifies35 = (r: any) => r.band === 'At Risk' || r.band === 'Critical' || r.factors.some((f: any) => f.included && f.severity === 'danger');
+  const expectedAttention35 = scopedAll35.filter((p: any) => qualifies35(results35.get(p.id)));
+  assert(baseIns35.attentionTotal === expectedAttention35.length && baseIns35.attentionRequired.length === Math.min(10, expectedAttention35.length), `Attention list selects At Risk/Critical bands or danger factors (${baseIns35.attentionTotal})`);
+  assert(baseIns35.attentionRequired.every((a: any, i: number, arr: any[]) => i === 0 || arr[i - 1].score <= a.score), 'Attention list is ordered by score ascending');
+  assert(baseIns35.attentionRequired.every((a: any) => { const r = results35.get(a.projectId); const p = scopedAll35.find((x: any) => x.id === a.projectId)!; return r.score === a.score && r.band === a.band && a.progress === p.progress && a.projectCode === p.code; }), 'Attention entries carry the canonical score, band and project progress');
+  assert(baseIns35.attentionRequired.every((a: any) => { const r = results35.get(a.projectId); const danger = r.factors.filter((f: any) => f.included && f.severity === 'danger').map((f: any) => f.label); return a.reasons.length > 0 && danger.every((l: string) => a.reasons.includes(l)) && new Set(a.reasons).size === a.reasons.length && a.reasons.every((s: string) => !/^[a-z_]+$/.test(s)); }), 'Reasons are server-generated labels: every danger factor label, no duplicates, no factor ids');
+  const countIf35 = (pred: (s: any) => boolean) => scopedAll35.filter((p: any) => pred(results35.get(p.id).signals)).length;
+  const sumOf35 = (key: string) => scopedAll35.reduce((n: number, p: any) => n + results35.get(p.id).signals[key], 0);
+  assert(baseIns35.projectSignals.highCriticalRiskProjects === countIf35((s) => s.openHighOrCriticalRisks > 0) && baseIns35.projectSignals.highCriticalIssueProjects === countIf35((s) => s.openHighOrCriticalIssues > 0), 'High/critical risk and issue project counts match the canonical signals');
+  assert(baseIns35.projectSignals.blockingDependencyProjects === countIf35((s) => s.blockingDependencies > 0) && baseIns35.projectSignals.blockedWorkProjects === countIf35((s) => s.blockedStories > 0 || s.blockedTasks > 0), 'Blocking dependency and blocked work project counts match the canonical signals');
+  assert(baseIns35.projectSignals.scoredProjects === scopedAll35.length && baseIns35.projectSignals.scopedProjects === scopedAll35.length && baseIns35.healthComplete === true, 'All scoped projects are scored on the unbounded overview');
+  assert(baseIns35.deliveryBottlenecks.blockedStories === sumOf35('blockedStories') && baseIns35.deliveryBottlenecks.blockedTasks === sumOf35('blockedTasks') && baseIns35.deliveryBottlenecks.storiesAwaitingQa === sumOf35('storiesAwaitingQa') && baseIns35.deliveryBottlenecks.slippedMilestones === sumOf35('slippedMilestones'), 'Bottleneck totals are sums of the canonical per-project signals');
+  assert(baseIns35.deliveryBottlenecks.overdueProjects === countIf35((s) => s.isPastEndDate), 'Overdue projects reuse the isPastEndDate signal, one per project');
+
+  // Isolated fixtures in their own portfolio/product so the scoped counts are exact.
+  const fxProjects35: string[] = [];
+  const fxCleanup35: Array<() => Promise<unknown>> = [];
+  await PortRepo35.create({ id: 'port_s114', code: 'PORT-S114', name: 'Sprint 11.4 portfolio', health: 'healthy' } as any);
+  await ProdRepo35.create({ id: 'prod_s114', code: 'PROD-S114', name: 'Sprint 11.4 product', portfolioId: 'port_s114' } as any);
+  const mkProject35 = async (id: string, extra: Record<string, unknown>) => {
+    fxProjects35.push(id);
+    return ProjRepo24.create({ id, code: id, name: id, client: 'Probe', status: 'in-progress', risk: 'Low', progress: 10, budget: 0, portfolioId: 'port_s114', startDate: '2026-09-01', endDate: '2027-06-30', ...extra } as any);
+  };
+  try {
+    for (let n = 1; n <= 12; n += 1) await mkProject35(`PRJ-S114-OD${String(n).padStart(2, '0')}`, { startDate: '2025-10-01', endDate: '2026-03-31', progress: 30 + n });
+    await mkProject35('PRJ-S114-DANGER', { productId: 'prod_s114' });
+    await mkProject35('PRJ-S114-RISK', { productId: 'prod_s114' });
+    await mkProject35('PRJ-S114-WARN', {});
+    await StoryRepository.create({ id: 'STY-S114-BLOCKED', code: 'STY-S114-BLOCKED', title: 'blocked story', projectId: 'PRJ-S114-DANGER', status: 'blocked', priority: 'medium', storyPoints: 1 } as any);
+    fxCleanup35.push(() => StoryRepository.delete('STY-S114-BLOCKED'));
+    await StoryRepository.create({ id: 'STY-S114-QA', code: 'STY-S114-QA', title: 'story in testing', projectId: 'PRJ-S114-DANGER', status: 'testing', priority: 'medium', storyPoints: 1 } as any);
+    fxCleanup35.push(() => StoryRepository.delete('STY-S114-QA'));
+    await TaskRepository.create({ id: 'TSK-S114-BLOCKED', code: 'TSK-S114-BLOCKED', title: 'blocked task', projectId: 'PRJ-S114-DANGER', status: 'blocked', priority: 'medium' } as any);
+    fxCleanup35.push(() => TaskRepository.delete('TSK-S114-BLOCKED'));
+    const risk35 = await RiskRepo35.create({ projectId: 'PRJ-S114-RISK', title: 'high risk', probability: 4, impact: 3, status: 'Identified' } as any);
+    fxCleanup35.push(() => RiskRepo35.delete(risk35.id));
+    const issue35 = await IssueRepo35.create({ projectId: 'PRJ-S114-RISK', title: 'high issue', severity: 'High', priority: 'High', status: 'Open' } as any);
+    fxCleanup35.push(() => IssueRepo35.delete(issue35.id));
+    const mls35fx = await MlsRepo35.create({ projectId: 'PRJ-S114-RISK', name: 'slipped milestone', status: 'Planned', targetDate: '2026-01-15', health: 'On Track', type: 'delivery' } as any);
+    fxCleanup35.push(() => MlsRepo35.delete(mls35fx.id));
+    const dep35 = await DepRepo35.create({ projectId: 'PRJ-S114-WARN', sourceEntityId: 'PRJ-S114-WARN', targetEntityId: 'FEAT-S114-EXTERNAL', sourceEntityType: 'project', targetEntityType: 'feature', dependencyType: 'Blocks', status: 'Blocked', title: 'blocking dependency' } as any);
+    assert(!!dep35.dependency, `Blocking dependency fixture created (${dep35.error ?? 'ok'})`);
+    if (dep35.dependency) fxCleanup35.push(() => DepRepo35.delete(dep35.dependency!.id));
+
+    const pfIns35 = (await overview({ portfolioId: 'port_s114' })).insights;
+    assert(pfIns35.projectSignals.scopedProjects === 15 && pfIns35.projectSignals.scoredProjects === 15 && pfIns35.healthComplete === true, 'Portfolio filter: insights cover exactly the 15 fixture projects');
+    assert(pfIns35.attentionTotal === 14 && pfIns35.attentionRequired.length === 10, 'attentionTotal is uncapped (14) while attentionRequired is capped at 10');
+    assert(pfIns35.attentionRequired.every((a: any, i: number, arr: any[]) => i === 0 || arr[i - 1].score <= a.score), 'Capped attention list keeps score-ascending order');
+    assert(!pfIns35.attentionRequired.some((a: any) => a.projectId === 'PRJ-S114-WARN'), 'A warning-only project (blocking dependency) does not qualify for attention');
+    assert(pfIns35.projectSignals.highCriticalRiskProjects === 1 && pfIns35.projectSignals.highCriticalIssueProjects === 1 && pfIns35.projectSignals.blockingDependencyProjects === 1 && pfIns35.projectSignals.blockedWorkProjects === 1, 'Project signals count projects once per category (1/1/1/1)');
+    assert(pfIns35.deliveryBottlenecks.blockedStories === 1 && pfIns35.deliveryBottlenecks.blockedTasks === 1 && pfIns35.deliveryBottlenecks.storiesAwaitingQa === 1 && pfIns35.deliveryBottlenecks.slippedMilestones === 1 && pfIns35.deliveryBottlenecks.overdueProjects === 12, 'Bottlenecks: 1 blocked story, 1 blocked task, 1 awaiting QA, 1 slipped milestone, 12 overdue projects');
+
+    const prIns35 = (await overview({ productId: 'prod_s114' })).insights;
+    assert(prIns35.projectSignals.scopedProjects === 2 && prIns35.attentionTotal === 2 && prIns35.attentionRequired.length === 2, 'Product filter: the two product projects both qualify');
+    const dangerEntry35 = prIns35.attentionRequired.find((a: any) => a.projectId === 'PRJ-S114-DANGER')!;
+    const riskEntry35 = prIns35.attentionRequired.find((a: any) => a.projectId === 'PRJ-S114-RISK')!;
+    assert(!!dangerEntry35 && dangerEntry35.reasons.includes('Blocked stories'), `A danger factor selects a project whatever its band (${dangerEntry35?.band}: ${dangerEntry35?.reasons.join(', ')})`);
+    assert(!!riskEntry35 && riskEntry35.reasons.includes('Unmitigated high/critical risks') && riskEntry35.reasons.includes('Open high/critical issues') && riskEntry35.reasons.includes('Milestone slippage'), 'Reasons carry the existing factor labels for risks, issues and slippage');
+    assert(prIns35.projectSignals.blockedWorkProjects === 1 && prIns35.projectSignals.highCriticalRiskProjects === 1 && prIns35.projectSignals.blockingDependencyProjects === 0, 'Product filter: signals follow the scoped population');
+
+    const allIns35 = (await overview({})).insights;
+    assert(allIns35.attentionTotal === baseIns35.attentionTotal + 14 && allIns35.deliveryBottlenecks.overdueProjects === baseIns35.deliveryBottlenecks.overdueProjects + 12, 'Unfiltered insights grow by exactly the fixture projects');
+
+    const emptyIns35 = (await overview({ portfolioId: 'port_2' })).insights;
+    assert(emptyIns35.attentionTotal === 0 && emptyIns35.attentionRequired.length === 0 && emptyIns35.projectSignals.scopedProjects === 0 && emptyIns35.projectSignals.scoredProjects === 0 && emptyIns35.healthComplete === true && emptyIns35.deliveryBottlenecks.overdueProjects === 0, 'Empty portfolio reports zero insights and complete health');
+
+    const partialIns35 = (await overview({ portfolioId: 'port_s114' }, 'admin', { maxHealthProjects: 3 })).insights;
+    assert(partialIns35.healthComplete === false && partialIns35.projectSignals.scoredProjects === 3 && partialIns35.projectSignals.scopedProjects === 15 && partialIns35.attentionTotal <= 3, 'Incomplete health: counts cover scored projects only and healthComplete is false');
+  } finally {
+    for (const undo of fxCleanup35.reverse()) await undo();
+    for (const id of fxProjects35) await ProjRepo24.delete(id);
+    await ProdRepo35.delete('prod_s114');
+    await PortRepo35.delete('port_s114');
+  }
+  assert(JSON.stringify((await overview({})).insights) === JSON.stringify(baseIns35), 'Insights return to the seeded baseline after fixture cleanup');
   // 36. Executive Overview — frontend integration (Sprint 11.1B)
   // Static, source-level checks: the browser code has no Node harness, so the
   // contract is pinned by inspecting what the files do and do not contain.
@@ -3472,7 +3553,7 @@ async function runTests() {
   assert(!/[<>]=? ?(90|75|60|45)\b/.test(mod36) && !/Excellent'?\s*:\s*\d|Healthy'?\s*:\s*\d|Monitor'?\s*:\s*\d/.test(mod36), 'No health thresholds are duplicated in the UI');
   assert(/<caption class="visually-hidden">[^<]*derived health and declared health[^<]*<\/caption>/.test(mod36), 'Hierarchy table has a caption');
   const ths36 = mod36.match(/<th\b[^>]*>/g) || [];
-  assert(ths36.length === 11 && ths36.every((t) => /scope="col"/.test(t)), `Every table header (hierarchy 6 + goals 5) carries scope="col" (${ths36.length})`);
+  assert(ths36.length === 15 && ths36.every((t) => /scope="col"/.test(t)), `Every table header (hierarchy 6 + goals 5 + attention 4) carries scope="col" (${ths36.length})`);
   assert(/Incomplete \(\$\{escapeHtml\(health\.computedFor\)\}\/\$\{escapeHtml\(rollup\.total\)\}\)/.test(mod36) && !/title="Scored/.test(mod36), 'Hierarchy incomplete state is visible text, not a tooltip');
   assert(/Derived health is calculated from project data by the health model\. Declared health is set by portfolio management\. They are independent and use different scales\./.test(mod36), 'Legend explains the two independent scales');
   assert(!/declaredHealth|Derived Health|Declared health/.test(dash36) && !/ExecutiveOverview|declaredCell|rollupCells/.test(dash36), 'V1.1 dashboard is untouched by the 11.2D presentation');
@@ -3488,6 +3569,19 @@ async function runTests() {
   const strategySrc36 = (mod36.match(/renderStrategy\(o\) \{[\s\S]*?\n  \},/) || [''])[0];
   assert(strategySrc36.length > 0 && !/'(success|warning|danger)'/.test(strategySrc36) && !/score/i.test(strategySrc36.replace(/Alignment counts are descriptive, not a score/, '')), 'Strategic cards use neutral tones and never present a strategy score');
   assert(/counts once per initiative/.test(mod36), 'UI explains the per-initiative progress basis');
+
+  // 15. Sprint 11.4 — cross-project insights render server-provided values only.
+  assert(/renderInsights\(o\) \{/.test(mod36) && /this\.renderInsights\(o\),/.test(mod36), 'Insights section is rendered in the overview');
+  assert(/Attention required/.test(mod36) && /No projects need attention/.test(mod36) && /Showing \$\{[^}]*\} of \$\{escapeHtml\(i\.attentionTotal\)\} projects/.test(mod36), 'Attention table, empty state and cap note are rendered');
+  assert(/Signals are based on scored projects only/.test(mod36), 'Incomplete health note is visible text');
+  assert(/<caption class="visually-hidden">Projects needing attention/.test(mod36) && /role="status"/.test(mod36), 'Attention table has a caption and accessible status text');
+  assert(/Projects with high\/critical risks/.test(mod36) && /Projects with high\/critical issues/.test(mod36) && /Projects with blocking dependencies/.test(mod36) && /Projects with blocked work/.test(mod36) && /of \$\{escapeHtml\(ps\.scoredProjects/.test(mod36), 'Project signal cards carry "N of M scored projects" subtitles');
+  assert(/Blocked stories/.test(mod36) && /Blocked tasks/.test(mod36) && /Awaiting QA/.test(mod36) && /Slipped milestones/.test(mod36) && /Overdue projects/.test(mod36), 'Bottleneck metrics are rendered');
+  assert(/ps\.highCriticalRiskProjects/.test(mod36) && /db\.blockedTasks/.test(mod36) && /p\.reasons/.test(mod36) && /BAND_CLASS\[p\.band\]/.test(mod36), 'Insight values and the band badge come from the server insights block');
+  const insightsSrc36 = (mod36.match(/renderInsights\(o\) \{[\s\S]*?\n  \},/) || [''])[0];
+  assert(insightsSrc36.length > 0 && !/\.factors\b|\.signals\b|danger|isPastEndDate|openHighOrCritical|\.score\s*[<>+\-]|\.sort\(|\.filter\(|\.length\s*[-+*\/]/.test(insightsSrc36), 'No client-side factor, signal, selection or scoring logic in the insights renderer');
+  assert(!/'(success|warning|danger)'/.test(insightsSrc36) && !/(priority|risk|execution|portfolio|strategy|attention|insight) score/i.test(insightsSrc36) && !/scoreFor|computeScore|rank\(/.test(insightsSrc36), 'Insight cards use neutral tones and present no new score');
+  assert(/not a health factor/.test(mod36), 'UI states that blocked tasks are not a health factor');
 
   // 37. Declared health vocabulary (Sprint 11.2B)
   // Portfolio and Product share one hand-entered vocabulary: healthy | at-risk |

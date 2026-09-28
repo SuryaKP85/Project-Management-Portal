@@ -872,6 +872,49 @@ export interface ExecutiveActivityEntry {
   summary: string;
 }
 
+/** Sprint 11.4 — one project on the executive attention list. */
+export interface ExecutiveAttentionProject {
+  projectId: string;
+  projectCode: string;
+  projectName: string;
+  /** ProjectHealthService score and band, verbatim. */
+  score: number;
+  band: string;
+  /** Canonical Project.progress. */
+  progress: number;
+  /** Human-readable labels of the health factors behind the selection (danger first, warning as context). */
+  reasons: string[];
+}
+
+/**
+ * Sprint 11.4 — cross-project insights, derived only from the scoped projects
+ * and their existing ProjectHealthService results. Descriptive facts: no new
+ * score, and counts under `projectSignals` are projects, not records.
+ */
+export interface ExecutiveInsights {
+  /** At most 10 qualifying projects, ordered by score ascending. */
+  attentionRequired: ExecutiveAttentionProject[];
+  /** Qualifying projects before the display cap. */
+  attentionTotal: number;
+  projectSignals: {
+    highCriticalRiskProjects: number;
+    highCriticalIssueProjects: number;
+    blockingDependencyProjects: number;
+    blockedWorkProjects: number;
+    scoredProjects: number;
+    scopedProjects: number;
+  };
+  /** Sums of the per-project health signals across scored projects. */
+  deliveryBottlenecks: {
+    blockedStories: number;
+    blockedTasks: number;
+    storiesAwaitingQa: number;
+    slippedMilestones: number;
+    overdueProjects: number;
+  };
+  /** False when some scoped projects have no health result; counts then cover scored projects only. */
+  healthComplete: boolean;
+}
 export interface ExecutiveOverview {
   scope: {
     portfolioId?: string;
@@ -888,6 +931,8 @@ export interface ExecutiveOverview {
    * and are listed here rather than dropped from the hierarchy.
    */
   productsWithoutPortfolio: ExecutiveProductNode[];
+  /** Sprint 11.4 — descriptive cross-project facts from the same scoped projects and health results. */
+  insights: ExecutiveInsights;
   strategy: ExecutiveStrategySummary;
   governance: ExecutiveGovernanceSummary;
   recentActivity: ExecutiveActivityEntry[];

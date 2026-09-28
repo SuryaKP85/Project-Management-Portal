@@ -15,6 +15,7 @@ import {
   ExecutiveProjectRollup,
   ExecutiveHealthRollup,
   ExecutiveStrategySummary,
+  ExecutiveInsights,
   ExecutiveGovernanceSummary,
   ExecutiveActivityEntry,
   ExecutivePortfolioNode,
@@ -262,6 +263,7 @@ export const ExecutiveDashboardService = {
       projects: overallRollup,
       portfolios: portfolioNodes,
       productsWithoutPortfolio,
+      insights: summariseInsights(scopedProjects, healthByProjectId),
       strategy: summariseStrategy(filter, filtered, scopedProjects, scopedProjectIds, goals, roadmapItems, roadmapLinks),
       governance: summariseGovernance(
         filtered,
@@ -288,6 +290,77 @@ export const ExecutiveDashboardService = {
     };
   },
 };
+
+/** Bands that put a project on the attention list on their own. */
+const ATTENTION_BANDS = new Set<string>(['At Risk', 'Critical']);
+export const ATTENTION_LIMIT = 10;
+
+/**
+ * Sprint 11.4 — cross-project insights over the scoped projects and their
+ * existing ProjectHealthService results. Nothing is re-scored and no new
+ * rating is introduced: a project needs attention when its canonical band is
+ * At Risk / Critical or any included factor carries danger severity, and the
+ * list is simply the qualifying projects by score ascending. `projectSignals`
+ * counts projects, not records, so it is distinct from the governance totals.
+ * Only scored projects have signals; `healthComplete` says whether that is all
+ * of them.
+ */
+export function summariseInsights(
+  scopedProjects: Project[],
+  healthByProjectId: Map<string, ProjectHealthResult>
+): ExecutiveInsights {
+  const scored = scopedProjects.flatMap((p) => {
+    const result = healthByProjectId.get(p.id);
+    return result ? [{ project: p, result }] : [];
+  });
+
+  const reasonsFor = (result: ProjectHealthResult): string[] => {
+    const labels: string[] = [];
+    for (const severity of ['danger', 'warning'] as const) {
+      for (const f of result.factors) {
+        if (f.included && f.severity === severity && !labels.includes(f.label)) labels.push(f.label);
+      }
+    }
+    return labels.length > 0 ? labels : [`Derived health ${result.band}`];
+  };
+
+  const qualifying = scored
+    .filter(({ result }) => ATTENTION_BANDS.has(result.band) || result.factors.some((f) => f.included && f.severity === 'danger'))
+    .sort((a, b) => a.result.score - b.result.score || a.project.code.localeCompare(b.project.code));
+
+  const count = (pred: (s: ProjectHealthResult['signals']) => boolean) => scored.filter(({ result }) => pred(result.signals)).length;
+  const sum = (key: 'blockedStories' | 'blockedTasks' | 'storiesAwaitingQa' | 'slippedMilestones') =>
+    scored.reduce((n, { result }) => n + result.signals[key], 0);
+
+  return {
+    attentionRequired: qualifying.slice(0, ATTENTION_LIMIT).map(({ project, result }) => ({
+      projectId: project.id,
+      projectCode: project.code,
+      projectName: project.name,
+      score: result.score,
+      band: result.band,
+      progress: project.progress,
+      reasons: reasonsFor(result),
+    })),
+    attentionTotal: qualifying.length,
+    projectSignals: {
+      highCriticalRiskProjects: count((s) => s.openHighOrCriticalRisks > 0),
+      highCriticalIssueProjects: count((s) => s.openHighOrCriticalIssues > 0),
+      blockingDependencyProjects: count((s) => s.blockingDependencies > 0),
+      blockedWorkProjects: count((s) => s.blockedStories > 0 || s.blockedTasks > 0),
+      scoredProjects: scored.length,
+      scopedProjects: scopedProjects.length,
+    },
+    deliveryBottlenecks: {
+      blockedStories: sum('blockedStories'),
+      blockedTasks: sum('blockedTasks'),
+      storiesAwaitingQa: sum('storiesAwaitingQa'),
+      slippedMilestones: sum('slippedMilestones'),
+      overdueProjects: count((s) => s.isPastEndDate),
+    },
+    healthComplete: scored.length === scopedProjects.length,
+  };
+}
 
 function summariseStrategy(
   filter: ExecutiveOverviewFilter,

@@ -177,6 +177,7 @@ export const ExecutiveOverviewModule = {
     container.innerHTML = [
       this.renderHeadline(o),
       this.renderHealthDistribution(o),
+      this.renderInsights(o),
       this.renderStrategy(o),
       this.renderGovernance(o),
       this.renderHierarchy(o),
@@ -306,6 +307,70 @@ export const ExecutiveOverviewModule = {
         </div>
         <div class="text-xs text-muted mb-2">${note}</div>
         ${rows}
+      </div>`;
+  },
+
+  /**
+   * Sprint 11.4 — cross-project insights. Everything shown is decided by the
+   * server: which projects need attention, their order, the reason labels, the
+   * project counts and the bottleneck totals. This method only lays them out.
+   */
+  renderInsights(o) {
+    const i = o.insights;
+    if (!i || !o.projects?.total) return '';
+    const ps = i.projectSignals || {};
+    const db = i.deliveryBottlenecks || {};
+    const attention = i.attentionRequired || [];
+    const rows = attention.map((p) => `
+          <tr>
+            <td>${escapeHtml(p.projectName)} <span class="text-muted small">${escapeHtml(p.projectCode)}</span></td>
+            <td><span class="badge ${BAND_CLASS[p.band] || 'bg-light text-secondary border'}">${escapeHtml(p.band)}</span> <span class="fw-semibold">${escapeHtml(p.score)}</span></td>
+            <td class="text-end">${escapeHtml(p.progress)}%</td>
+            <td>${(p.reasons || []).map((r) => `<span class="badge bg-light text-dark border me-1 mb-1">${escapeHtml(r)}</span>`).join('') || '<span class="text-muted small">—</span>'}</td>
+          </tr>`).join('');
+    const capNote = i.attentionTotal > attention.length
+      ? `<div class="text-muted small mt-2" role="status">Showing ${escapeHtml(attention.length)} of ${escapeHtml(i.attentionTotal)} projects</div>`
+      : '';
+    const incompleteNote = i.healthComplete
+      ? ''
+      : `<div class="text-warning small mb-2" role="status"><i class="fa-solid fa-triangle-exclamation me-1"></i>Signals are based on scored projects only: ${escapeHtml(ps.scoredProjects)} of ${escapeHtml(ps.scopedProjects)} projects scored.</div>`;
+    const attentionTable = attention.length === 0
+      ? '<p class="text-muted small mb-0" role="status">No projects need attention</p>'
+      : `
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <caption class="visually-hidden">Projects needing attention: derived health band and score, progress and the reasons reported by the health model</caption>
+            <thead class="table-light small text-muted text-uppercase">
+              <tr><th scope="col">Project</th><th scope="col">Health</th><th scope="col" class="text-end">Progress</th><th scope="col">Attention</th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>${capNote}`;
+    const signalSubtitle = (n) => `${escapeHtml(n ?? '—')} of ${escapeHtml(ps.scoredProjects ?? '—')} scored projects`;
+    const bottleneck = (labelText, n) => `<span class="badge bg-light text-dark border me-1 mb-1">${labelText}: ${escapeHtml(n ?? '—')}</span>`;
+    return `
+      <div class="card p-3 mb-4 shadow-sm border-0">
+        <div class="small text-muted text-uppercase fw-semibold mb-3">Cross-project insights</div>
+        ${incompleteNote}
+        <div class="fw-bold mb-2"><i class="fa-solid fa-triangle-exclamation me-1 text-primary"></i>Attention required</div>
+        ${attentionTable}
+        <div class="fw-bold mt-4 mb-2"><i class="fa-solid fa-diagram-project me-1 text-primary"></i>Project signals</div>
+        <div class="stats-grid">
+          ${this.kpiCard('Projects with high/critical risks', escapeHtml(ps.highCriticalRiskProjects ?? '—'), signalSubtitle(ps.highCriticalRiskProjects), 'primary', 'fa-fire')}
+          ${this.kpiCard('Projects with high/critical issues', escapeHtml(ps.highCriticalIssueProjects ?? '—'), signalSubtitle(ps.highCriticalIssueProjects), 'primary', 'fa-bug')}
+          ${this.kpiCard('Projects with blocking dependencies', escapeHtml(ps.blockingDependencyProjects ?? '—'), signalSubtitle(ps.blockingDependencyProjects), 'primary', 'fa-link')}
+          ${this.kpiCard('Projects with blocked work', escapeHtml(ps.blockedWorkProjects ?? '—'), signalSubtitle(ps.blockedWorkProjects), 'primary', 'fa-hand')}
+        </div>
+        <div class="text-xs text-muted mt-2">Project counts, one per project per category. The governance snapshot below counts records.</div>
+        <div class="fw-bold mt-4 mb-2"><i class="fa-solid fa-road-barrier me-1 text-primary"></i>Delivery bottlenecks</div>
+        <div>
+          ${bottleneck('Blocked stories', db.blockedStories)}
+          ${bottleneck('Blocked tasks', db.blockedTasks)}
+          ${bottleneck('Awaiting QA', db.storiesAwaitingQa)}
+          ${bottleneck('Slipped milestones', db.slippedMilestones)}
+          ${bottleneck('Overdue projects', db.overdueProjects)}
+        </div>
+        <div class="text-xs text-muted mt-2">Totals across scored projects. Blocked tasks are a delivery fact, not a health factor.</div>
       </div>`;
   },
 
