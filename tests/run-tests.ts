@@ -4096,6 +4096,286 @@ async function runTests() {
     .concat(['PM-Portal/login.html', 'PM-Portal/profile.html', 'PM-Portal/change-password.html', 'PM-Portal/forgot-password.html', 'PM-Portal/index.html']);
   const leaks40 = browserFiles40.filter((f: string) => /Admin@123|iRely@123|Authentication\.resetPassword\(|user\.passwordHash|passwordHash: '/.test(fs35.readFileSync(f, 'utf8')));
   assert(leaks40.length === 0, `No browser file retains the plaintext/default local authentication mechanism (${leaks40.join(', ') || 'none'})`);
+  // 41. Microsoft 365 connection + Outlook calendar (Sprint 10A)
+  // Account integration only. All Microsoft HTTP goes through an injected fake
+  // fetch, so no tenant is needed. Also covers the global active-user check.
+  console.log('\n--- 41. Microsoft 365 Connection & Outlook Calendar (Sprint 10A) ---');
+  const crypto41 = await import('crypto');
+  const { config: cfg41 } = await import('../server/config/env');
+  const { MicrosoftIdentityService: MsId41, MICROSOFT_SCOPES: SCOPES41, OAUTH_STATE_TTL_MS: TTL41 } = await import('../server/integrations/microsoft365/microsoftIdentityService');
+  const { setMicrosoftFetch: setFetch41 } = await import('../server/integrations/microsoft365/microsoftGraphClient');
+  const { encryptToken: enc41, decryptToken: dec41, parseEncryptionKey: parseKey41 } = await import('../server/integrations/microsoft365/tokenCrypto');
+  const { MicrosoftIntegrationService: MsSvc41, mapCalendarEvent: map41 } = await import('../server/services/microsoftIntegrationService');
+  const { MicrosoftConnectionRepository: MsRepo41 } = await import('../server/repositories/microsoftConnectionRepository');
+  const { MicrosoftController: MsCtl41 } = await import('../server/controllers/microsoftController');
+  const { microsoftRoutes: msRoutes41 } = await import('../server/routes/microsoftRoutes');
+  const { authenticateToken: authMw41 } = await import('../server/middleware/authMiddleware');
+  const { generateToken: gen41 } = await import('../server/auth/jwt');
+
+  const savedMs41 = { ...cfg41.microsoft };
+  const KEY41 = crypto41.randomBytes(32).toString('hex');
+  const b64u41 = (o: any) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const idToken41 = `${b64u41({ alg: 'none' })}.${b64u41({ tid: 'tenant-contoso' })}.sig`;
+  const calls41: any[] = [];
+  const secrets41: string[] = [];
+  let graphId41 = 'ms-graph-user-A';
+  let tokenCounter41 = 0;
+  let tokenFailure41: any = null;
+  let calendarStatus41 = 200;
+  const calendarFixture41 = {
+    value: [
+      { id: 'evt-1', subject: 'Sprint review', start: { dateTime: '2030-01-07T10:00:00.0000000', timeZone: 'UTC' }, end: { dateTime: '2030-01-07T11:00:00.0000000', timeZone: 'UTC' }, isAllDay: false, location: { displayName: 'Room 4' }, organizer: { emailAddress: { name: 'Pat Organizer', address: 'pat@contoso.com' } }, webLink: 'https://outlook.office365.com/owa/?itemid=evt-1', isCancelled: false, showAs: 'busy', bodyPreview: 'secret agenda' },
+      { id: 'evt-2', subject: '  ', start: { dateTime: '2030-01-08T00:00:00.0000000', timeZone: 'UTC' }, end: { dateTime: '2030-01-09T00:00:00.0000000', timeZone: 'UTC' }, isAllDay: true, location: {}, organizer: {}, webLink: 'javascript:alert(1)', isCancelled: true },
+    ],
+    '@odata.nextLink': 'https://graph.microsoft.com/v1.0/me/calendarView?$skip=50',
+  };
+  setFetch41(async (url: string, init: any) => {
+    calls41.push({ url, method: init.method, headers: { ...init.headers }, body: init.body });
+    const reply = (status: number, body: any) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+    if (url.includes('/oauth2/v2.0/token')) {
+      if (tokenFailure41) return reply(400, tokenFailure41);
+      tokenCounter41 += 1;
+      secrets41.push(`access-${tokenCounter41}`, `refresh-${tokenCounter41}`);
+      return reply(200, { token_type: 'Bearer', access_token: `access-${tokenCounter41}`, refresh_token: `refresh-${tokenCounter41}`, expires_in: 3600, scope: SCOPES41.join(' '), id_token: idToken41 });
+    }
+    if (url.startsWith('https://graph.microsoft.com/v1.0/me/calendarView')) {
+      return calendarStatus41 === 200 ? reply(200, calendarFixture41) : reply(calendarStatus41, { error: { code: 'InvalidAuthenticationToken' } });
+    }
+    if (url.startsWith('https://graph.microsoft.com/v1.0/me')) {
+      return reply(200, { id: graphId41, mail: `${graphId41}@contoso.com`, userPrincipalName: `${graphId41}@contoso.com` });
+    }
+    return reply(404, {});
+  });
+  const res41 = () => {
+    const r: any = { statusCode: 200, body: null, headers: {}, redirectedTo: null, contentType: null };
+    r.status = (c: number) => { r.statusCode = c; return r; };
+    r.json = (b: any) => { r.body = b; return r; };
+    r.setHeader = (k: string, v: string) => { r.headers[k.toLowerCase()] = v; return r; };
+    r.type = (t: string) => { r.contentType = t; return r; };
+    r.send = (b: any) => { r.body = b; return r; };
+    r.redirect = (s: number, u: string) => { r.statusCode = s; r.redirectedTo = u; return r; };
+    return r;
+  };
+  const run41 = async (handler: any, req: any) => {
+    const res = res41();
+    let forwarded: any = null;
+    await handler(req, res, (e: any) => { forwarded = e; });
+    if (forwarded) errorHandler40(forwarded, req, res, next27 as any);
+    return res;
+  };
+  const fails41 = async (fn: () => any) => { try { await fn(); return null; } catch (e: any) { return e; } };
+  const tokenCalls41 = () => calls41.filter((c) => c.url.includes('/oauth2/v2.0/token'));
+  const responses41: string[] = [];
+  const keep41 = (r: any) => { responses41.push(typeof r.body === 'string' ? r.body : JSON.stringify(r.body)); return r; };
+
+  const stamp41 = Date.now();
+  const userA41 = await Auth40.register({ email: `ms.a.${stamp41}@company.com`, password: 'MsUser@12345', firstName: 'Ada', lastName: 'Outlook', role: 'team-member', department: 'QA', title: 'Tester' }, login40.user);
+  const userB41 = await Auth40.register({ email: `ms.b.${stamp41}@company.com`, password: 'MsUser@12345', firstName: 'Ben', lastName: 'Outlook', role: 'team-member' }, login40.user);
+  const actorA41 = { id: userA41.id, firstName: 'Ada', lastName: 'Outlook' };
+  const actorB41 = { id: userB41.id, firstName: 'Ben', lastName: 'Outlook' };
+  try {
+    // --- configuration: no insecure fallback ---
+    Object.assign(cfg41.microsoft, { clientId: '', clientSecret: '', tenantId: 'organizations', redirectUri: 'http://localhost:5173/api/v1/auth/microsoft/callback', tokenEncryptionKey: '' });
+    assert(MsId41.configurationIssue() === 'missing-client-credentials', 'Without client credentials the integration is not configured');
+    const notCfgStatus41 = keep41(await run41(MsCtl41.status, reqAs40(userA41)));
+    assert(notCfgStatus41.statusCode === 200 && notCfgStatus41.body.data.configured === false && notCfgStatus41.body.data.connected === false, 'Status reports not configured and not connected');
+    Object.assign(cfg41.microsoft, { clientId: 'client-s10a', clientSecret: 'secret-s10a' });
+    assert(MsId41.configurationIssue() === 'missing-encryption-key' && !MsId41.isConfigured(), 'Credentials without an encryption key leave the integration not configured');
+    const noKeyConnect41 = keep41(await run41(MsCtl41.connect, reqAs40(userA41, { body: {} })));
+    assert(noKeyConnect41.statusCode === 503 && noKeyConnect41.body.error.code === 'MICROSOFT_NOT_CONFIGURED', 'Connect fails safely with 503 when the encryption key is missing');
+    cfg41.microsoft.tokenEncryptionKey = 'not-a-valid-key';
+    assert(MsId41.configurationIssue() === 'invalid-encryption-key' && parseKey41('not-a-valid-key') === null, 'A malformed encryption key is rejected, never used');
+    cfg41.microsoft.tokenEncryptionKey = KEY41;
+    assert(MsId41.isConfigured() && parseKey41(KEY41)!.length === 32, 'Credentials plus a 32-byte key configure the integration');
+
+    // --- 1, 6, 8, 9. state, PKCE and scopes ---
+    const auth1 = MsId41.beginAuthorization(userA41.id);
+    const auth2 = MsId41.beginAuthorization(userA41.id);
+    const url1 = new URL(auth1.authorizationUrl);
+    assert(auth1.state !== auth2.state && /^[A-Za-z0-9_-]{43}$/.test(auth1.state) && auth1.state !== 'surya_pm_ms_oauth' && url1.searchParams.get('state') === auth1.state, 'OAuth state is cryptographically random and unique per request');
+    assert(url1.origin === 'https://login.microsoftonline.com' && url1.pathname === '/organizations/oauth2/v2.0/authorize' && url1.searchParams.get('code_challenge_method') === 'S256' && /^[A-Za-z0-9_-]{43}$/.test(url1.searchParams.get('code_challenge') || ''), 'Authorize URL carries a PKCE S256 challenge');
+    assert(url1.searchParams.get('scope') === 'openid profile email offline_access User.Read Calendars.Read', 'Exactly the Sprint 10A scopes are requested');
+    assert(!/Mail\.|Team|Calendars\.ReadWrite/i.test(url1.searchParams.get('scope') || '') && !/Mail\.|Team/i.test(SCOPES41.join(' ')), 'No Mail.Read, Mail.Send, Teams or calendar-write scope is requested in 10A');
+    assert(!/code_verifier|client_secret|secret-s10a/.test(auth1.authorizationUrl), 'Neither the PKCE verifier nor the client secret appears in the authorize URL');
+    const connectRes41 = keep41(await run41(MsCtl41.connect, reqAs40(userA41, { body: {} })));
+    assert(connectRes41.statusCode === 200 && Object.keys(connectRes41.body.data).join() === 'authorizationUrl' && connectRes41.body.data.authorizationUrl.startsWith('https://login.microsoftonline.com/'), 'Connect returns only the authorize URL');
+    MsId41.consumeAuthorization(auth2.state, userA41.id);
+    MsId41.consumeAuthorization(new URL(connectRes41.body.data.authorizationUrl).searchParams.get('state')!, userA41.id);
+
+    // --- 3. expiry, 4–5. binding and foreign state, 2. single use ---
+    const beforeExpired41 = tokenCalls41().length;
+    const expired41 = await fails41(() => MsSvc41.completeConnect(actorA41, { state: auth1.state, code: 'auth-code-expired' }, { now: Date.now() + TTL41 + 1 }));
+    assert(expired41?.status === 400 && expired41?.code === 'MICROSOFT_STATE_EXPIRED' && tokenCalls41().length === beforeExpired41, 'An expired state is rejected before any code exchange');
+    const forAuth41 = MsId41.beginAuthorization(userA41.id);
+    const foreign41 = await fails41(() => MsSvc41.completeConnect(actorB41, { state: forAuth41.state, code: 'auth-code-foreign' }));
+    assert(foreign41?.status === 403 && foreign41?.code === 'MICROSOFT_STATE_MISMATCH', 'State is bound to the requesting user; a foreign user is rejected');
+    const replayAfterForeign41 = await fails41(() => MsSvc41.completeConnect(actorA41, { state: forAuth41.state, code: 'auth-code-foreign' }));
+    assert(replayAfterForeign41?.status === 400 && replayAfterForeign41?.code === 'MICROSOFT_STATE_INVALID', 'A state is consumed even by a failed attempt and cannot be reused');
+    const unknown41 = await fails41(() => MsSvc41.completeConnect(actorA41, { state: 'made-up-state', code: 'x' }));
+    const missing41 = await fails41(() => MsSvc41.completeConnect(actorA41, { code: 'x' }));
+    assert(unknown41?.code === 'MICROSOFT_STATE_INVALID' && missing41?.code === 'MICROSOFT_STATE_INVALID' && tokenCalls41().length === beforeExpired41, 'Unknown and missing states are rejected without contacting Microsoft');
+
+    // --- 22. Microsoft OAuth errors ---
+    const errAuth41 = MsId41.beginAuthorization(userA41.id);
+    const oauthErrRes41 = keep41(await run41(MsCtl41.callback, reqAs40(userA41, { query: { state: errAuth41.state, error: 'access_denied', error_description: '<script>alert(1)</script>' } })));
+    assert(oauthErrRes41.statusCode === 400 && oauthErrRes41.contentType === 'html' && /access_denied/.test(oauthErrRes41.body) && !/<script>|error_description/.test(oauthErrRes41.body), 'A Microsoft OAuth error is answered safely and never echoes the query');
+    const afterErr41 = await fails41(() => MsSvc41.completeConnect(actorA41, { state: errAuth41.state, code: 'auth-code-late' }));
+    assert(afterErr41?.code === 'MICROSOFT_STATE_INVALID', 'The state of an errored authorization cannot be replayed');
+    const noSession41 = keep41(await run41(MsCtl41.callback, { ...reqAs40(null), query: { state: 'x', code: 'y' } }));
+    assert(noSession41.statusCode === 401 && oauthErrRes41.headers['cache-control'] === 'no-store', 'Callback without a portal session is refused and responses are not cached');
+
+    // --- successful connect through the callback; 7. verifier sent ---
+    const okAuth41 = MsId41.beginAuthorization(userA41.id);
+    const challenge41 = new URL(okAuth41.authorizationUrl).searchParams.get('code_challenge');
+    const okRes41 = keep41(await run41(MsCtl41.callback, reqAs40(userA41, { query: { state: okAuth41.state, code: 'auth-code-A' } })));
+    assert(okRes41.statusCode === 302 && okRes41.redirectedTo === '/PM-Portal/index.html?microsoft=connected', 'A valid callback connects the account and redirects to the portal');
+    const exchange41 = new URLSearchParams(tokenCalls41()[tokenCalls41().length - 1].body);
+    const verifier41 = exchange41.get('code_verifier') || '';
+    secrets41.push('auth-code-A', verifier41, okAuth41.state);
+    assert(exchange41.get('grant_type') === 'authorization_code' && exchange41.get('code') === 'auth-code-A' && crypto41.createHash('sha256').update(verifier41).digest('base64url') === challenge41, 'Code exchange sends the PKCE verifier that matches the challenge');
+    assert(exchange41.get('redirect_uri') === cfg41.microsoft.redirectUri && exchange41.get('scope') === SCOPES41.join(' '), 'Code exchange uses the configured redirect URI and 10A scopes');
+    const replay41 = await fails41(() => MsSvc41.completeConnect(actorA41, { state: okAuth41.state, code: 'auth-code-A' }));
+    assert(replay41?.code === 'MICROSOFT_STATE_INVALID', 'OAuth state is single-use after a successful connect');
+
+    // --- 10–11. encryption at rest ---
+    const storedA41 = (await MsRepo41.findByUserId(userA41.id))!;
+    const key41 = parseKey41(KEY41)!;
+    const accessA41 = dec41(storedA41.accessTokenEnc, key41);
+    const refreshA41 = dec41(storedA41.refreshTokenEnc!, key41);
+    assert(/^access-\d+$/.test(accessA41) && /^refresh-\d+$/.test(refreshA41), 'Stored tokens decrypt back to the issued tokens');
+    assert(storedA41.accessTokenEnc.startsWith('v1:') && !storedA41.accessTokenEnc.includes(accessA41) && !String(storedA41.refreshTokenEnc).includes(refreshA41), 'Tokens are encrypted before persistence');
+    // Flip a real ciphertext byte (swapping a base64 character can land on padding bits only).
+    const tamperParts41 = storedA41.accessTokenEnc.split(':');
+    const flipped41 = Buffer.from(tamperParts41[3], 'base64');
+    flipped41[0] ^= 0x01;
+    const tampered41 = [...tamperParts41.slice(0, 3), flipped41.toString('base64')].join(':');
+    assert(!!(await fails41(() => dec41(tampered41, key41))) && !!(await fails41(() => dec41(enc41('x', key41), crypto41.randomBytes(32)))), 'Tampered ciphertext and a wrong key are rejected');
+
+    // --- 15. identity association, profile untouched ---
+    const linkedA41 = (await UserRepo40.findById(userA41.id))!;
+    assert(linkedA41.msUserId === 'ms-graph-user-A' && linkedA41.msTenantId === 'tenant-contoso' && (await UserRepo40.findByMsUserId('ms-graph-user-A'))?.id === userA41.id, 'Microsoft identity is associated with the existing V2 user');
+    assert(linkedA41.firstName === 'Ada' && linkedA41.lastName === 'Outlook' && linkedA41.department === 'QA' && linkedA41.title === 'Tester' && linkedA41.role === 'team-member' && linkedA41.isActive === true && (await UserRepo40.findAll()).length === (await UserRepo40.findAll()).length, 'Profile fields, role and active status are not overwritten by Microsoft data');
+    const userRepoSrc41 = fs35.readFileSync('server/repositories/userRepository.ts', 'utf8');
+    const schemaSrc41 = fs35.readFileSync('server/db/schema.sql', 'utf8');
+    const connRepoSrc41 = fs35.readFileSync('server/repositories/microsoftConnectionRepository.ts', 'utf8');
+    assert(/UPDATE users SET ms_user_id = \$1, ms_tenant_id = \$2, updated_at = \$3 WHERE id = \$4/.test(userRepoSrc41) && /ms_user_id = \$9, ms_tenant_id = \$10 WHERE id = \$11/.test(userRepoSrc41) && /SELECT id FROM users WHERE ms_user_id = \$1/.test(userRepoSrc41) && /ms_user_id = NULL, ms_tenant_id = NULL/.test(userRepoSrc41), 'PostgreSQL writes, clears and looks up the Microsoft identity columns');
+    assert(/CREATE TABLE IF NOT EXISTS microsoft_connections \(/.test(schemaSrc41) && ['user_id VARCHAR(64) PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE', 'access_token_enc TEXT NOT NULL', 'refresh_token_enc TEXT', 'expires_at TIMESTAMP', 'scopes TEXT', 'account_email', 'ms_tenant_id', 'connected_at', 'updated_at'].every((c) => schemaSrc41.includes(c)) && /ON CONFLICT \(user_id\) DO UPDATE/.test(connRepoSrc41), 'Schema and repository define the microsoft_connections contract');
+
+    // --- 17. status ---
+    const statusA41 = keep41(await run41(MsCtl41.status, reqAs40(userA41)));
+    const sA41 = statusA41.body.data;
+    assert(statusA41.statusCode === 200 && sA41.configured && sA41.connected && sA41.accountEmail === 'ms-graph-user-A@contoso.com' && sA41.tenantId === 'tenant-contoso' && !!sA41.connectedAt && Object.keys(sA41).sort().join() === 'accountEmail,configured,connected,connectedAt,scopes,tenantId', 'Connection status returns only safe fields');
+
+    // --- 16. duplicate identity -> 409 ---
+    const dupAuth41 = MsId41.beginAuthorization(userB41.id);
+    const dupRes41 = keep41(await run41(MsCtl41.callback, reqAs40(userB41, { query: { state: dupAuth41.state, code: 'auth-code-B' } })));
+    secrets41.push('auth-code-B', dupAuth41.state);
+    assert(dupRes41.statusCode === 409 && /already connected to another portal user/.test(dupRes41.body), 'A Microsoft identity linked to another portal user returns 409');
+    assert((await MsRepo41.findByUserId(userB41.id)) === null && !(await UserRepo40.findById(userB41.id))!.msUserId, 'The refused user gets neither tokens nor an identity association');
+
+    // --- 19–20. calendar request and mapping ---
+    const calRes41 = keep41(await run41(MsCtl41.calendar, reqAs40(userA41, { query: { days: '7' } })));
+    const calCall41 = calls41.filter((c) => c.url.includes('/me/calendarView')).pop();
+    const calUrl41 = new URL(calCall41.url);
+    assert(calRes41.statusCode === 200 && calCall41.method === 'GET' && calCall41.headers.Authorization === `Bearer ${accessA41}` && calCall41.headers.Prefer === 'outlook.timezone="UTC"', 'Calendar reads Graph calendarView with the stored access token in UTC');
+    const span41 = Date.parse(calUrl41.searchParams.get('endDateTime')!) - Date.parse(calUrl41.searchParams.get('startDateTime')!);
+    assert(span41 === 7 * 86400000 && calUrl41.searchParams.get('$top') === '50' && calUrl41.searchParams.get('$orderby') === 'start/dateTime' && !/body/.test(calUrl41.searchParams.get('$select') || ''), 'Calendar requests a 7-day window, at most 50 events, without event bodies');
+    const cal41 = calRes41.body.data;
+    const [e1, e2] = cal41.events;
+    assert(cal41.range.days === 7 && cal41.truncated === true && cal41.events.length === 2 && e1.subject === 'Sprint review' && e1.start === '2030-01-07T10:00:00.000Z' && e1.end === '2030-01-07T11:00:00.000Z' && e1.location === 'Room 4' && e1.organizer === 'Pat Organizer' && e1.webLink === 'https://outlook.office365.com/owa/?itemid=evt-1' && e1.showAs === 'busy', 'Graph events map to the stable application shape');
+    assert(e2.subject === '(No subject)' && e2.isAllDay === true && e2.isCancelled === true && e2.location === null && e2.organizer === null && e2.webLink === null && !('bodyPreview' in e1), 'Missing fields map safely and only https Outlook links are kept');
+    const wide41 = keep41(await run41(MsCtl41.calendar, reqAs40(userA41, { query: { days: '90' } })));
+    const bad41 = keep41(await run41(MsCtl41.calendar, reqAs40(userA41, { query: { days: 'abc' } })));
+    assert(wide41.body.data.range.days === 31 && bad41.statusCode === 400 && bad41.body.error.code === 'VALIDATION_ERROR', 'Calendar days are capped at 31 and invalid values are rejected');
+    assert(map41({ webLink: 'https://outlook.office365.com.evil.example/x' }).webLink === null && map41({ webLink: 'http://outlook.office365.com/x' }).webLink === null && map41({}).subject === '(No subject)' &&map41({ start: { dateTime: '2030-01-01T09:00:00+02:00' } }).start === '2030-01-01T07:00:00.000Z', 'Mapping handles empty events and explicit offsets');
+
+    // --- 13–14. refresh and rotated refresh token ---
+    await MsRepo41.updateTokens(userA41.id, { accessTokenEnc: storedA41.accessTokenEnc, refreshTokenEnc: storedA41.refreshTokenEnc, expiresAt: new Date(Date.now() - 1000).toISOString() });
+    const beforeRefresh41 = tokenCalls41().length;
+    const refreshed41 = await MsSvc41.getCalendar(userA41.id, 7);
+    const refreshCall41 = new URLSearchParams(tokenCalls41()[tokenCalls41().length - 1].body);
+    const afterRefresh41 = (await MsRepo41.findByUserId(userA41.id))!;
+    const newAccess41 = dec41(afterRefresh41.accessTokenEnc, key41);
+    const newRefresh41 = dec41(afterRefresh41.refreshTokenEnc!, key41);
+    assert(tokenCalls41().length === beforeRefresh41 + 1 && refreshCall41.get('grant_type') === 'refresh_token' && refreshCall41.get('refresh_token') === refreshA41 && refreshed41.events.length === 2, 'An expired access token is refreshed with the stored refresh token');
+    assert(newRefresh41 !== refreshA41 && /^refresh-\d+$/.test(newRefresh41) && newAccess41 !== accessA41 && calls41.filter((c) => c.url.includes('/me/calendarView')).pop().headers.Authorization === `Bearer ${newAccess41}` && Date.parse(afterRefresh41.expiresAt) > Date.now(), 'The rotated refresh token and new access token are persisted and used');
+    calendarStatus41 = 401;
+    const beforeForced41 = tokenCalls41().length;
+    const graph401 = await fails41(() => MsSvc41.getCalendar(userA41.id, 7));
+    calendarStatus41 = 200;
+    assert(graph401?.status === 424 && graph401?.code === 'MICROSOFT_RECONNECT_REQUIRED' && tokenCalls41().length === beforeForced41 + 1, 'A Graph 401 triggers exactly one forced refresh, then asks the user to reconnect');
+    tokenFailure41 = { error: 'invalid_grant', error_description: 'AADSTS70008 expired' };
+    await MsRepo41.updateTokens(userA41.id, { accessTokenEnc: (await MsRepo41.findByUserId(userA41.id))!.accessTokenEnc, refreshTokenEnc: (await MsRepo41.findByUserId(userA41.id))!.refreshTokenEnc, expiresAt: new Date(Date.now() - 1000).toISOString() });
+    const revoked41 = await fails41(() => MsSvc41.getCalendar(userA41.id, 7));
+    tokenFailure41 = null;
+    assert(revoked41?.status === 424 && revoked41?.code === 'MICROSOFT_RECONNECT_REQUIRED' && !/AADSTS|expired/.test(revoked41?.message || ''), 'A rejected refresh token maps to reconnect-required without upstream detail');
+
+    // --- 11 (global). active-user enforcement on every authenticated API ---
+    const tokenA41 = gen41(userA41 as any);
+    const mwReq41 = (token: string) => ({ headers: { authorization: `Bearer ${token}` }, cookies: {} });
+    const activeRes41 = res41();
+    let activeNext41 = false;
+    const activeReq41: any = mwReq41(tokenA41);
+    await authMw41(activeReq41, activeRes41 as any, () => { activeNext41 = true; });
+    assert(activeNext41 && activeReq41.user?.userId === userA41.id, 'Active user is accepted by authenticateToken');
+    await UserRepo40.update(userA41.id, { isActive: false });
+    const inactiveRes41 = res41();
+    let inactiveNext41 = false;
+    await authMw41(mwReq41(tokenA41) as any, inactiveRes41 as any, () => { inactiveNext41 = true; });
+    assert(!inactiveNext41 && inactiveRes41.statusCode === 401 && inactiveRes41.body.error.code === 'ACCOUNT_INACTIVE', 'A deactivated user is rejected immediately despite a valid JWT');
+    const msLayers41 = (msRoutes41 as any).stack.filter((l: any) => l.route);
+    let msBlocked41 = 0;
+    for (const layer of msLayers41) {
+      const first = layer.route.stack[0];
+      const r = res41();
+      let passed = false;
+      await first.handle(mwReq41(tokenA41) as any, r as any, () => { passed = true; });
+      if (first.name === 'authenticateToken' && !passed && r.statusCode === 401 && r.body.error.code === 'ACCOUNT_INACTIVE') msBlocked41 += 1;
+    }
+    assert(msLayers41.length === 5 && msBlocked41 === 5, `All five Microsoft routes reject an inactive user (${msBlocked41}/5)`);
+    await UserRepo40.update(userA41.id, { isActive: true });
+    const ghostRes41 = res41();
+    await authMw41(mwReq41(gen41({ ...userA41, id: 'usr_does_not_exist' } as any)) as any, ghostRes41 as any, () => {});
+    assert(ghostRes41.statusCode === 401 && ghostRes41.body.error.code === 'INVALID_TOKEN', 'A token for a user that no longer exists is rejected');
+
+    // --- 18. disconnect ---
+    const discRes41 = keep41(await run41(MsCtl41.disconnect, reqAs40(userA41)));
+    assert(discRes41.statusCode === 200 && discRes41.body.data.connected === false && (await MsRepo41.findByUserId(userA41.id)) === null, 'Disconnect deletes the stored encrypted tokens');
+    assert(!(await UserRepo40.findById(userA41.id))!.msUserId && !(await UserRepo40.findById(userA41.id))!.msTenantId && (await UserRepo40.findByMsUserId('ms-graph-user-A')) === null, 'Disconnect clears the Microsoft identity association');
+    const afterDisc41 = keep41(await run41(MsCtl41.calendar, reqAs40(userA41)));
+    assert(afterDisc41.statusCode === 404 && afterDisc41.body.error.code === 'MICROSOFT_NOT_CONNECTED' && keep41(await run41(MsCtl41.status, reqAs40(userA41))).body.data.connected === false, 'After disconnect the calendar is unavailable and status is not connected');
+
+    // --- 12, 24. no secrets in any response or activity entry ---
+    const leaked41 = secrets41.filter((s) => s && responses41.some((r) => r.includes(s)));
+    assert(leaked41.length === 0 && !responses41.some((r) => /access_token|refresh_token|code_verifier|accessTokenEnc|refreshTokenEnc/.test(r)), `Plaintext tokens, codes, verifiers and state are never returned (${leaked41.join(',') || 'none'})`);
+    const acts41 = (await ActivityRepository.findRecent(200)).filter((a: any) => a.entityId === userA41.id && a.details?.integration === 'microsoft365');
+    const actText41 = JSON.stringify(acts41);
+    assert(acts41.some((a: any) => a.details.event === 'connected') && acts41.some((a: any) => a.details.event === 'disconnected'), 'Connect and disconnect are recorded in the activity log');
+    assert(!secrets41.some((s) => s && actText41.includes(s)) && !/token|verifier|code_challenge|secret-s10a/i.test(actText41.replace(/"integration":"microsoft365"/g, '')), 'Activity entries contain metadata only and no secrets');
+
+    // --- 23. fake Graph success is gone; nothing logs secrets ---
+    const msSources41 = ['server/integrations/microsoft365/microsoftIdentityService.ts', 'server/integrations/microsoft365/microsoftGraphClient.ts', 'server/integrations/microsoft365/tokenCrypto.ts', 'server/services/microsoftIntegrationService.ts', 'server/controllers/microsoftController.ts', 'server/repositories/microsoftConnectionRepository.ts'].map((f) => fs35.readFileSync(f, 'utf8')).join('\n');
+    assert(!/success: true/.test(msSources41.replace(/res\.json\(\{ success: true,/g, '')) && !/getGraphClientForUser|listCalendarEvents|sendMail/.test(msSources41) && !/surya_pm_ms_oauth/.test(msSources41), 'The fake Graph client and fixed OAuth state are gone');
+    assert(!/console\.(log|info|debug|warn|error)/.test(msSources41) && !/next\(err\)/.test((msSources41.match(/async callback\([\s\S]*?\n  \},/) || [''])[0]), 'Microsoft code never logs, and the callback never forwards errors to the URL-logging handler');
+
+    // --- browser surfaces ---
+    const msSvcJs41 = fs35.readFileSync('PM-Portal/js/services/microsoftService.js', 'utf8');
+    const settingsJs41 = fs35.readFileSync('PM-Portal/js/settings.js', 'utf8');
+    const myWorkJs41 = fs35.readFileSync('PM-Portal/js/myWork.js', 'utf8');
+    assert(/MICROSOFT_AUTHORIZE_ORIGIN = 'https:\/\/login\.microsoftonline\.com\/'/.test(msSvcJs41) && !/localStorage|sessionStorage/.test(msSvcJs41), 'Browser service only navigates to Microsoft and stores nothing');
+    assert(/not configured on this server/.test(settingsJs41) && /Connect Microsoft 365/.test(settingsJs41) && /Connected as/.test(settingsJs41) && /settings-btn-microsoft-disconnect/.test(settingsJs41) && /id="settings-microsoft-body"/.test(html36), 'Settings shows not-configured, not-connected and connected states');
+    assert(/my-work-outlook-panel/.test(html36) && /Loading Outlook events/.test(myWorkJs41) && /not configured on this server/.test(myWorkJs41) && /Connect your Microsoft 365 account/.test(myWorkJs41) && /No Outlook events in the next 7 days/.test(myWorkJs41) && /could not be loaded/.test(myWorkJs41) && /escapeOutlook\(e\.subject\)/.test(myWorkJs41), 'My Work panel covers loading, not configured, not connected, empty, error and escaped events');
+  } finally {
+    setFetch41(null);
+    Object.assign(cfg41.microsoft, savedMs41);
+    for (const u of [userA41, userB41]) {
+      await MsRepo41.deleteByUserId(u.id);
+      await UserRepo40.clearMicrosoftIdentity(u.id);
+      await UserRepo40.update(u.id, { isActive: false });
+    }
+  }
+  assert(cfg41.microsoft.clientId === savedMs41.clientId && cfg41.microsoft.tokenEncryptionKey === savedMs41.tokenEncryptionKey && MsId41.isConfigured() === Boolean(savedMs41.clientId && savedMs41.clientSecret && parseKey41(savedMs41.tokenEncryptionKey)), 'Microsoft configuration and transport are restored after §41');
+
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('========================================\n');

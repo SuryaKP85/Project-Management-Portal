@@ -7,6 +7,11 @@ import { MyWorkService } from './services/myWorkService.js';
 import { DeliveryService } from './services/deliveryService.js';
 import { StoryService } from './services/storyService.js';
 import { TaskService } from './services/taskService.js';
+import { MicrosoftService } from './services/microsoftService.js';
+
+const escapeOutlook = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+));
 
 export const MyWorkModule = {
   app: null,
@@ -16,9 +21,68 @@ export const MyWorkModule = {
 
   async init(appInstance) {
     this.app = appInstance;
+    // Sprint 10A: read-only Outlook panel, loaded independently of the work queue.
+    this.loadOutlookEvents();
     await this.loadData();
     this.setupEvents();
     this.render();
+  },
+
+  /**
+   * Loads the signed-in user's upcoming Outlook events (Sprint 10A). States:
+   * loading, not configured, not connected, error, no events, events.
+   */
+  async loadOutlookEvents() {
+    const panel = document.getElementById('my-work-outlook-panel');
+    if (!panel) return;
+    const message = (text, role = 'status', tone = 'text-muted') =>
+      `<p class="${tone} small mb-0" role="${role}">${text}</p>`;
+    panel.innerHTML = message('Loading Outlook events…');
+    try {
+      const status = await MicrosoftService.getStatus();
+      if (!status || !status.connected) {
+        panel.innerHTML = status && status.configured === false
+          ? message('Microsoft 365 integration is not configured on this server.')
+          : message('Connect your Microsoft 365 account in <a href="#" data-outlook-settings>Settings</a> to see upcoming Outlook events here.');
+        panel.querySelector('[data-outlook-settings]')?.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.app?.switchPage?.('settings');
+        });
+        return;
+      }
+      const calendar = await MicrosoftService.getCalendar(7);
+      this.renderOutlookEvents(calendar);
+    } catch (err) {
+      panel.innerHTML = message(`<i class="fa-solid fa-circle-exclamation me-1"></i>Outlook events could not be loaded: ${escapeOutlook((err && err.message) || 'server error')}`, 'alert', 'text-danger');
+    }
+  },
+
+  renderOutlookEvents(calendar) {
+    const panel = document.getElementById('my-work-outlook-panel');
+    if (!panel) return;
+    const events = (calendar && calendar.events) || [];
+    if (events.length === 0) {
+      panel.innerHTML = '<p class="text-muted small mb-0" role="status">No Outlook events in the next 7 days.</p>';
+      return;
+    }
+    const when = (e) => {
+      if (!e.start) return '—';
+      const start = new Date(e.start);
+      return e.isAllDay
+        ? `${start.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })} · All day`
+        : start.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+    };
+    const items = events.map((e) => `
+        <li class="list-group-item d-flex justify-content-between align-items-start gap-3 px-0">
+          <div>
+            <div class="fw-semibold small">${e.isCancelled ? '<span class="badge bg-light text-secondary border me-1">Cancelled</span>' : ''}${escapeOutlook(e.subject)}</div>
+            <div class="small text-muted">${escapeOutlook(when(e))}${e.location ? ` · ${escapeOutlook(e.location)}` : ''}${e.organizer ? ` · ${escapeOutlook(e.organizer)}` : ''}</div>
+          </div>
+          ${e.webLink ? `<a class="small text-nowrap" href="${escapeOutlook(e.webLink)}" target="_blank" rel="noopener noreferrer">Open in Outlook</a>` : ''}
+        </li>`).join('');
+    panel.innerHTML = `
+      <ul class="list-group list-group-flush">${items}</ul>
+      ${calendar.truncated ? '<p class="small text-muted mt-2 mb-0">Showing the first 50 events.</p>' : ''}`;
   },
 
   async loadData() {

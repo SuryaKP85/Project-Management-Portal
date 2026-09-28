@@ -1490,6 +1490,17 @@
         <div id="my-work-workspace">
           <!-- Rendered dynamically by MyWorkModule -->
         </div>
+
+        <!-- UPCOMING OUTLOOK EVENTS (Sprint 10A, read-only) -->
+        <div class="enterprise-card mt-4">
+          <div class="card-header-clean d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h2 class="card-title-clean fs-6 mb-0"><i class="fa-regular fa-calendar text-primary"></i> Upcoming Outlook events</h2>
+            <span class="small text-muted">Next 7 days</span>
+          </div>
+          <div class="p-3" id="my-work-outlook-panel" aria-live="polite">
+            <p class="text-muted small mb-0" role="status">Loading Outlook events…</p>
+          </div>
+        </div>
       </section>
 
       <!-- 3. CUSTOMERS PAGE -->
@@ -3920,6 +3931,16 @@
                 </li>
               </ul>
             </div>
+          </div>
+        </div>
+
+        <!-- MICROSOFT 365 INTEGRATION (Sprint 10A) -->
+        <div class="enterprise-card mb-4">
+          <div class="card-header-clean d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h3 class="card-title-clean"><i class="fa-brands fa-microsoft text-primary"></i> Microsoft 365 Integration</h3>
+          </div>
+          <div class="p-3" id="settings-microsoft-body" aria-live="polite">
+            <p class="text-muted small mb-0" role="status">Checking Microsoft 365 connection…</p>
           </div>
         </div>
 

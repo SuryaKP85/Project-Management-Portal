@@ -4,6 +4,7 @@ import { Storage } from './storage.js';
 import { Authentication } from './authentication.js';
 import { AuthService } from './services/authService.js';
 import { UserService } from './services/userService.js';
+import { MicrosoftService } from './services/microsoftService.js';
 
 /**
  * Sprint 12: the V2 server is the only user directory. This module lists,
@@ -54,9 +55,125 @@ export const SettingsModule = {
     this.loadCurrentUser();
     this.setupEventListeners();
     this.render();
+    this.announceMicrosoftResult();
     // Refresh from the authenticated V2 session. Deliberately not awaited: the
     // session record renders immediately and is replaced when the server responds.
     this.hydrateFromServer();
+  },
+
+  /**
+   * After a successful Microsoft callback the server redirects with
+   * ?microsoft=connected. Announce it once, strip it from the address bar and
+   * open Settings so the connected account is visible.
+   */
+  announceMicrosoftResult() {
+    let params;
+    try { params = new URLSearchParams(window.location.search); } catch (e) { return; }
+    if (params.get('microsoft') !== 'connected') return;
+    params.delete('microsoft');
+    const query = params.toString();
+    try {
+      window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
+    } catch (e) { /* history unavailable */ }
+    if (this.app) {
+      this.app.showToast('Microsoft 365 account connected.', 'success');
+      if (typeof this.app.switchPage === 'function') setTimeout(() => this.app.switchPage('settings'), 0);
+    }
+  },
+
+  /** Loads and renders the Microsoft 365 connection state for the signed-in user. */
+  async loadMicrosoftStatus() {
+    const body = document.getElementById('settings-microsoft-body');
+    if (!body) return;
+    try {
+      this.microsoftStatus = await MicrosoftService.getStatus();
+      this.microsoftError = null;
+    } catch (err) {
+      this.microsoftStatus = null;
+      this.microsoftError = (err && err.message) || 'The Microsoft 365 status could not be loaded.';
+    }
+    this.renderMicrosoft();
+  },
+
+  renderMicrosoft() {
+    const body = document.getElementById('settings-microsoft-body');
+    if (!body) return;
+    const s = this.microsoftStatus;
+    if (this.microsoftError) {
+      body.innerHTML = `<p class="text-danger small mb-0" role="alert"><i class="fa-solid fa-circle-exclamation me-1"></i>${esc(this.microsoftError)}</p>`;
+      return;
+    }
+    if (!s) {
+      body.innerHTML = '<p class="text-muted small mb-0" role="status">Checking Microsoft 365 connection…</p>';
+      return;
+    }
+    if (s.connected) {
+      const when = s.connectedAt ? new Date(s.connectedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+      body.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+          <div>
+            <div class="font-semibold"><i class="fa-solid fa-circle-check text-success me-1"></i>Connected as <span class="text-primary">${esc(s.accountEmail || 'your Microsoft account')}</span></div>
+            <div class="small text-muted">Connected ${esc(when)} · Read-only access to your Outlook calendar.</div>
+          </div>
+          <button type="button" id="settings-btn-microsoft-disconnect" class="btn-enterprise btn-enterprise-secondary text-danger">
+            <i class="fa-solid fa-link-slash me-1"></i> Disconnect
+          </button>
+        </div>`;
+      document.getElementById('settings-btn-microsoft-disconnect')?.addEventListener('click', () => this.disconnectMicrosoft());
+      return;
+    }
+    if (!s.configured) {
+      body.innerHTML = `
+        <p class="small mb-0" role="status"><i class="fa-solid fa-circle-info text-secondary me-1"></i>
+          Microsoft 365 integration is not configured on this server. An administrator must set the Microsoft application credentials and token encryption key before accounts can be connected.</p>`;
+      return;
+    }
+    body.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+        <div>
+          <div class="font-semibold">Not connected</div>
+          <div class="small text-muted">Connect your Microsoft 365 account to see upcoming Outlook events in My Work. The portal requests read-only calendar access; your portal sign-in does not change.</div>
+        </div>
+        <button type="button" id="settings-btn-microsoft-connect" class="btn-enterprise btn-enterprise-primary">
+          <i class="fa-solid fa-plug me-1"></i> Connect Microsoft 365
+        </button>
+      </div>`;
+    document.getElementById('settings-btn-microsoft-connect')?.addEventListener('click', () => this.connectMicrosoft());
+  },
+
+  async connectMicrosoft() {
+    const btn = document.getElementById('settings-btn-microsoft-connect');
+    if (btn) btn.disabled = true;
+    try {
+      await MicrosoftService.connect();
+    } catch (err) {
+      if (btn) btn.disabled = false;
+      if (this.app) this.app.showToast(`Could not start the Microsoft connection: ${(err && err.message) || 'server error'}`, 'warning');
+    }
+  },
+
+  disconnectMicrosoft() {
+    const run = async () => {
+      try {
+        this.microsoftStatus = await MicrosoftService.disconnect();
+        this.microsoftError = null;
+        this.renderMicrosoft();
+        if (this.app) this.app.showToast('Microsoft 365 account disconnected.', 'info');
+      } catch (err) {
+        if (this.app) this.app.showToast(`Could not disconnect: ${(err && err.message) || 'server error'}`, 'warning');
+      }
+    };
+    if (this.app && typeof this.app.confirmModal === 'function') {
+      this.app.confirmModal({
+        title: 'Disconnect Microsoft 365',
+        bodyHtml: '<div class="p-2"><p class="mb-0 small text-secondary">The portal will delete its stored access to your Microsoft 365 account. Outlook events will no longer appear in My Work until you connect again.</p></div>',
+        confirmText: 'Disconnect',
+        confirmClass: 'btn-enterprise-danger',
+        onConfirm: run,
+      });
+    } else {
+      run();
+    }
   },
 
   isAdmin() {
@@ -238,6 +355,7 @@ export const SettingsModule = {
     }
     await this.loadUsers();
     this.renderUsersTable();
+    await this.loadMicrosoftStatus();
   },
 
   /**

@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { verifyToken, JwtPayload } from '../auth/jwt';
 import { hasPermission } from '../auth/rbac';
 import { UserRole } from '../models/types';
+import { UserRepository } from '../repositories/userRepository';
 
 // Extend Express Request to include user
 declare global {
@@ -14,7 +15,13 @@ declare global {
 
 export type AuthRequest = Request;
 
-export function authenticateToken(req: Request, res: Response, next: NextFunction) {
+/**
+ * Verifies the session JWT, then re-reads the account so that a user who was
+ * deactivated (or removed) after signing in is refused immediately rather than
+ * when the token expires (Sprint 10A security correction to Sprint 12).
+ * The checks before the first await stay synchronous.
+ */
+export async function authenticateToken(req: Request, res: Response, next: NextFunction) {
   let token: string | undefined;
 
   // 1. Check HTTP-only cookie first
@@ -45,6 +52,31 @@ export function authenticateToken(req: Request, res: Response, next: NextFunctio
       error: {
         code: 'INVALID_TOKEN',
         message: 'Session token has expired or is invalid. Please log in again.',
+      },
+    });
+  }
+
+  let account;
+  try {
+    account = await UserRepository.findById(payload.userId);
+  } catch (err) {
+    return next(err);
+  }
+  if (!account) {
+    return res.status(401).json({
+      success: false,
+      error: {
+        code: 'INVALID_TOKEN',
+        message: 'This account no longer exists. Please log in again.',
+      },
+    });
+  }
+  if (!account.isActive) {
+    return res.status(401).json({
+      success: false,
+      error: {
+        code: 'ACCOUNT_INACTIVE',
+        message: 'This account has been deactivated. Please contact an administrator.',
       },
     });
   }

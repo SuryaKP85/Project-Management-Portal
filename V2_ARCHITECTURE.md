@@ -132,14 +132,20 @@ The full, current DDL (including later sprints' tables such as `roadmap_items`) 
 
 ---
 
-## 6. Microsoft 365 Readiness Abstraction
+## 6. Microsoft 365 / Outlook Integration (Sprint 10A)
 
-The architecture is prepared for future Microsoft 365 / Entra ID / Microsoft Graph integration:
-* `MicrosoftIdentityService` (`server/integrations/microsoft365/microsoftIdentityService.ts`):
-  * Manages OAuth2 authorization code flows with PKCE.
-  * Server-side token storage (never exposed to browser localStorage).
-  * Microsoft Graph API abstraction for Outlook Mail, Outlook Calendar, and Microsoft Teams.
-  * Association of Application Users with `ms_user_id` and `ms_tenant_id`.
+A signed-in portal user can connect their Microsoft 365 account so the server can read their Outlook calendar. This is **account integration, not a portal login**: the V2 email/password login remains the only way into the portal, and no portal user is ever created or modified from Microsoft profile data.
+
+* **Flow**: OAuth 2.0 authorization code with PKCE (S256), confidential client. `POST /api/v1/integrations/microsoft/connect` returns the authorize URL; Microsoft redirects to `GET /api/v1/auth/microsoft/callback`, which requires the portal session. The OAuth state is random, single-use, expires after 10 minutes and is bound to the requesting user; the PKCE verifier never leaves the server.
+* **Scopes**: exactly `openid profile email offline_access User.Read Calendars.Read`. Mail and Teams scopes are not requested.
+* **Token storage**: `microsoft_connections` (one row per user) holds AES-256-GCM ciphertext of the access and refresh tokens, keyed by `MICROSOFT_TOKEN_ENCRYPTION_KEY`. Without that key the integration reports not-configured and stores nothing. Tokens, codes and verifiers are never returned by any API or written to the activity log.
+* **Refresh**: access tokens are refreshed shortly before expiry; a rotated refresh token is always persisted.
+* **Identity association**: the Graph user id and tenant are stored on `users.ms_user_id` / `ms_tenant_id`. A Microsoft account already linked to another portal user is refused with 409. `DELETE /api/v1/integrations/microsoft/connection` deletes the stored tokens and clears the association.
+* **APIs**: `GET /api/v1/integrations/microsoft/status` (safe fields only) and `GET /api/v1/integrations/microsoft/calendar?days=7` (read-only upcoming events, at most 31 days and 50 events, times in UTC).
+* **Services**: `microsoftIdentityService.ts` (configuration, state, PKCE, token endpoint), `microsoftGraphClient.ts` (Node fetch with timeout, injectable for tests), `tokenCrypto.ts`, `microsoftConnectionRepository.ts` and `microsoftIntegrationService.ts`.
+* **Active users**: `authenticateToken` re-reads the account on every request, so deactivated users are refused on all APIs, including Microsoft.
+* **Configuration**: `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID`, `MICROSOFT_REDIRECT_URI` (must match the Entra app registration and the portal's host and port), `MICROSOFT_TOKEN_ENCRYPTION_KEY`, optional `MICROSOFT_GRAPH_TIMEOUT_MS`.
+* **Not yet implemented**: sending mail (planned for Sprint 10B with `Mail.Send`), mail reading, calendar writes, Microsoft sign-in, Teams.
 
 ---
 

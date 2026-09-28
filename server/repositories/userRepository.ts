@@ -256,7 +256,9 @@ export const UserRepository = {
 
     if (isDbConnected()) {
       await query(
-        `UPDATE users SET first_name = $1, last_name = $2, role = $3, department = $4, title = $5, avatar_url = $6, is_active = $7, updated_at = $8 WHERE id = $9`,
+        // Sprint 10A: ms_user_id / ms_tenant_id are written too, so a general
+        // update can never drop a Microsoft identity association in PostgreSQL.
+        `UPDATE users SET first_name = $1, last_name = $2, role = $3, department = $4, title = $5, avatar_url = $6, is_active = $7, updated_at = $8, ms_user_id = $9, ms_tenant_id = $10 WHERE id = $11`,
         [
           updated.firstName,
           updated.lastName,
@@ -266,6 +268,8 @@ export const UserRepository = {
           updated.avatarUrl || null,
           updated.isActive,
           updated.updatedAt,
+          updated.msUserId || null,
+          updated.msTenantId || null,
           id,
         ]
       );
@@ -289,5 +293,53 @@ export const UserRepository = {
     }
     memoryUsers.set(id, { ...existing, passwordHash, updatedAt });
     return true;
+  },
+
+  /** Sprint 10A: the portal user linked to a Microsoft Graph user id, if any. */
+  async findByMsUserId(msUserId: string): Promise<SafeUser | null> {
+    await seedReady;
+    if (!msUserId) return null;
+    if (isDbConnected()) {
+      const res = await query('SELECT id FROM users WHERE ms_user_id = $1', [msUserId]);
+      if (res.rows.length === 0) return null;
+      const user = await this.findById(res.rows[0].id);
+      return user ? sanitizeUser(user) : null;
+    }
+    for (const user of memoryUsers.values()) {
+      if (user.msUserId === msUserId) return sanitizeUser(user);
+    }
+    return null;
+  },
+
+  /**
+   * Sprint 10A: records the Microsoft identity association only. Profile
+   * fields, role and active status are never touched by the integration.
+   */
+  async setMicrosoftIdentity(id: string, msUserId: string, msTenantId?: string): Promise<SafeUser | null> {
+    await seedReady;
+    const existing = await this.findById(id);
+    if (!existing) return null;
+    const updatedAt = new Date().toISOString();
+    if (isDbConnected()) {
+      await query('UPDATE users SET ms_user_id = $1, ms_tenant_id = $2, updated_at = $3 WHERE id = $4', [msUserId, msTenantId || null, updatedAt, id]);
+    }
+    const updated: User = { ...existing, msUserId, msTenantId: msTenantId || undefined, updatedAt };
+    memoryUsers.set(id, updated);
+    return sanitizeUser(updated);
+  },
+
+  /** Sprint 10A: removes the Microsoft identity association (disconnect). */
+  async clearMicrosoftIdentity(id: string): Promise<SafeUser | null> {
+    await seedReady;
+    const existing = await this.findById(id);
+    if (!existing) return null;
+    const updatedAt = new Date().toISOString();
+    if (isDbConnected()) {
+      await query('UPDATE users SET ms_user_id = NULL, ms_tenant_id = NULL, updated_at = $1 WHERE id = $2', [updatedAt, id]);
+    }
+    const { msUserId: _drop, msTenantId: _dropTenant, ...rest } = existing;
+    const updated: User = { ...rest, updatedAt };
+    memoryUsers.set(id, updated);
+    return sanitizeUser(updated);
   },
 };

@@ -30,5 +30,9 @@ export const config = {
     clientSecret: process.env.MICROSOFT_CLIENT_SECRET || '',
     tenantId: process.env.MICROSOFT_TENANT_ID || 'common',
     redirectUri: process.env.MICROSOFT_REDIRECT_URI || 'http://localhost:3000/api/v1/auth/microsoft/callback',
+    // Sprint 10A: 32-byte AES-256-GCM key for stored OAuth tokens. No default:
+    // without it the integration reports not-configured and stores nothing.
+    tokenEncryptionKey: process.env.MICROSOFT_TOKEN_ENCRYPTION_KEY || '',
+    graphTimeoutMs: parseInt(process.env.MICROSOFT_GRAPH_TIMEOUT_MS || '10000', 10),
   },
 };

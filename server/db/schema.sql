@@ -590,4 +590,21 @@ CREATE INDEX IF NOT EXISTS idx_roadmap_sequence ON roadmap_items(sequence, creat
 -- example one supplied explicitly or inserted directly); it never lowers it.
 CREATE SEQUENCE IF NOT EXISTS roadmap_code_seq START WITH 104 INCREMENT BY 1;
 
+-- Microsoft 365 connections (Sprint 10A). One per portal user. Account
+-- integration only (Outlook calendar), not a portal login. Token columns hold
+-- AES-256-GCM ciphertext written by the server; plaintext is never stored.
+-- The identity association itself stays on users.ms_user_id / ms_tenant_id.
+CREATE TABLE IF NOT EXISTS microsoft_connections (
+  user_id VARCHAR(64) PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  ms_user_id VARCHAR(128) NOT NULL,
+  ms_tenant_id VARCHAR(128),
+  account_email VARCHAR(255),
+  scopes TEXT NOT NULL DEFAULT '',
+  access_token_enc TEXT NOT NULL,
+  refresh_token_enc TEXT,
+  expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  connected_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 

@@ -27,7 +27,7 @@ export const HealthController = {
           },
           microsoft365: {
             configured: MicrosoftIdentityService.isConfigured(),
-            readiness: 'Sprint 1 Abstracted',
+            readiness: 'Sprint 10A: account connection and Outlook calendar (read-only)',
           },
         },
       },
