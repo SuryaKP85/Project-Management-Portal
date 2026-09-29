@@ -4907,6 +4907,329 @@ async function runTests() {
   }
   assert((await ProjRepo24.findById(projA43)) === null && (await MsRepo41.findByUserId(pm43.id)) === null, 'Sprint 13 fixtures and the Gemini stub are removed after §43');
 
+  // 44. Meetings, Action Items, Waiting For & Follow-ups (Sprint 14)
+  // First-class V2 follow-through records: project scoping on every read and
+  // write, RBAC, validation, the meeting → action item relationship, related
+  // references, activity, notifications, schema contract (the embedded store is
+  // exercised here; PostgreSQL is not available in this run), the browser page,
+  // and the project-detail delivery breakdown fix.
+  console.log('\n--- 44. Meetings, Action Items, Waiting For & Follow-ups (Sprint 14) ---');
+  const { MeetingController: MtgCtl44, ActionItemController: ActCtl44, WaitingForController: WfrCtl44, FollowUpController: FupCtl44 } = await import('../server/controllers/followThroughController');
+  const { followThroughRoutes: ftRoutes44 } = await import('../server/routes/followThroughRoutes');
+  const { v1ApiRouter: v1Router44 } = await import('../server/routes/index');
+  const { MeetingRepository: MtgRepo44 } = await import('../server/repositories/meetingRepository');
+  const { ActionItemRepository: ActRepo44 } = await import('../server/repositories/actionItemRepository');
+  const { WaitingForRepository: WfrRepo44 } = await import('../server/repositories/waitingForRepository');
+  const { FollowUpRepository: FupRepo44 } = await import('../server/repositories/followUpRepository');
+  const { NotificationRepository: NotifRepo44 } = await import('../server/repositories/notificationRepository');
+  const { RiskRepository: RiskRepo44 } = await import('../server/repositories/riskRepository');
+  const { TeamRepository: TeamRepo44 } = await import('../server/repositories/teamRepository');
+  const { TaskRepository: TaskRepo44 } = await import('../server/repositories/taskRepository');
+  const { DeliveryController: DeliveryCtl44 } = await import('../server/controllers/deliveryController');
+  const { ProjectAccessService: Access44 } = await import('../server/services/followThroughSupport');
+
+  const stamp44 = Date.now();
+  const mkUser44 = (key: string, role: any, first: string) => Auth40.register({ email: `s14.${key}.${stamp44}@company.com`, password: 'Sprint14@12345', firstName: first, lastName: 'S14', role }, login40.user);
+  const pmA44 = await mkUser44('pma', 'project-manager', 'Pam');
+  const pmB44 = await mkUser44('pmb', 'project-manager', 'Ben');
+  const memberA44 = await mkUser44('membera', 'team-member', 'Mia');
+  const memberA244 = await mkUser44('membera2', 'team-member', 'Max');
+  const viewerA44 = await mkUser44('viewera', 'viewer', 'Val');
+  const outsider44 = await mkUser44('outsider', 'team-member', 'Oli');
+  const inactive44 = await mkUser44('inactive', 'team-member', 'Ina');
+  const projA44 = `PRJ-S14-A-${stamp44}`;
+  const projB44 = `PRJ-S14-B-${stamp44}`;
+  const member44 = (u: any, role: string) => ({ userId: u.id, name: `${u.firstName} S14`, role });
+  await ProjRepo24.create({ id: projA44, code: projA44, name: 'Sprint 14 Project A', client: 'Client A', status: 'in-progress', risk: 'Medium', progress: 30, budget: 100, managerId: pmA44.id, members: [member44(memberA44, 'Developer'), member44(memberA244, 'QA'), member44(viewerA44, 'Stakeholder'), member44(inactive44, 'Developer')] } as any);
+  await ProjRepo24.create({ id: projB44, code: projB44, name: 'Sprint 14 Project B', client: 'Client B', status: 'planning', risk: 'Low', progress: 0, budget: 100, managerId: pmB44.id, members: [] } as any);
+  await UserRepo40.update(inactive44.id, { isActive: false });
+
+  const c44 = (handler: any, user: any, over: any = {}) => run41(handler, reqAs40(user, { url: '/api/v1/sprint-14', ...over }));
+  const code44 = (r: any) => r.body?.error?.code;
+  const notifs44 = async (u: any) => NotifRepo44.findByUserId(u.id);
+  const acts44 = async (type: string, id: string) => (await ActivityRepository.findByEntity(type, id)).map((a: any) => a.action);
+  const created44: { meetings: string[]; actions: string[]; waiting: string[]; followUps: string[]; risks: string[] } = { meetings: [], actions: [], waiting: [], followUps: [], risks: [] };
+  const soon44 = new Date(Date.now() + 3 * 86400000).toISOString();
+  const apiClientModule44: any = await import('../PM-Portal/js/services/apiClient.js');
+  const originalGet44 = apiClientModule44.apiClient.get;
+
+  try {
+    // --- A0. routes, authentication, roles ---
+    const layers44 = (ftRoutes44 as any).stack.filter((l: any) => l.route).map((l: any) => ({ path: l.route.path, method: Object.keys(l.route.methods)[0], stack: l.route.stack }));
+    assert(layers44.length === 23 && layers44.every((l: any) => l.stack[0].name === 'authenticateToken'), `All 23 follow-through routes run authenticateToken first (${layers44.length})`);
+    assert((v1Router44 as any).stack.some((l: any) => l.handle === ftRoutes44), 'The follow-through routes are mounted on the V1 API router');
+    const passes44 = (l: any, role: string) => { const r = res41(); let ok = false; l.stack[1].handle({ user: { userId: 'x', role } } as any, r as any, () => { ok = true; }); return ok; };
+    const byKind44 = (pred: (l: any) => boolean) => layers44.filter(pred);
+    const writes44 = byKind44((l) => (l.method === 'post' || l.method === 'patch') && !l.path.endsWith('/status'));
+    const deletes44 = byKind44((l) => l.method === 'delete');
+    const statuses44 = byKind44((l) => l.path.endsWith('/status'));
+    const reads44 = byKind44((l) => l.method === 'get');
+    assert(writes44.length === 8 && writes44.every((l) => ['admin', 'project-manager', 'product-manager'].every((r) => passes44(l, r)) && !passes44(l, 'team-member') && !passes44(l, 'viewer')), 'Create/edit routes admit only admin, project manager and product manager');
+    assert(deletes44.length === 4 && deletes44.every((l) => ['admin', 'project-manager', 'product-manager'].every((r) => passes44(l, r)) && !passes44(l, 'team-member') && !passes44(l, 'viewer')), 'Delete routes admit the write roles only (hierarchical requireRoles, as for risks)');
+    assert(statuses44.length === 3 && statuses44.every((l) => passes44(l, 'team-member') && !passes44(l, 'viewer')), 'Status routes admit team members (owner check in the service) but never viewers');
+    assert(reads44.length === 8 && reads44.every((l) => l.stack.length === 2), 'Read routes need only authentication; scope is applied in the service');
+    const anonRes44 = res41(); let anonNext44 = false;
+    await layers44[0].stack[0].handle({ headers: {}, cookies: {} } as any, anonRes44 as any, () => { anonNext44 = true; });
+    const inactiveRes44 = res41(); let inactiveNext44 = false;
+    await layers44[0].stack[0].handle({ headers: { authorization: `Bearer ${gen41(inactive44 as any)}` }, cookies: {} } as any, inactiveRes44 as any, () => { inactiveNext44 = true; });
+    assert(!anonNext44 && anonRes44.statusCode === 401 && !inactiveNext44 && inactiveRes44.body?.error?.code === 'ACCOUNT_INACTIVE', 'Unauthenticated callers get 401 and deactivated accounts get ACCOUNT_INACTIVE');
+    const noUser44 = await c44(MtgCtl44.list, null);
+    assert(noUser44.statusCode === 401, 'A controller reached without a verified user answers 401');
+
+    // --- A. Meetings ---
+    const mtgRes44 = await c44(MtgCtl44.create, pmA44, { body: {
+      projectId: projA44, title: '  Weekly sync <b>A</b>  ', scheduledAt: soon44, agenda: 'Review risks', participantIds: [memberA44.id, memberA44.id, memberA244.id],
+      meetingLink: 'https://teams.example.com/meet/abc', id: 'forged-id', createdBy: outsider44.id, createdAt: '2000-01-01T00:00:00Z',
+    } });
+    const mtg44 = mtgRes44.body?.data?.meeting;
+    if (mtg44) created44.meetings.push(mtg44.id);
+    assert(mtgRes44.statusCode === 201 && mtg44.title === 'Weekly sync <b>A</b>' && mtg44.status === 'Scheduled' && mtg44.durationMinutes === 30 && mtg44.organizerId === pmA44.id, 'A project manager creates a meeting; title trimmed, status Scheduled, 30 minutes and organizer defaulted');
+    assert(mtg44.id !== 'forged-id' && mtg44.createdBy === pmA44.id && mtg44.createdAt !== '2000-01-01T00:00:00Z' && JSON.stringify(mtg44.participantIds) === JSON.stringify([memberA44.id, memberA244.id]), 'Client-supplied id, createdBy and createdAt are ignored; participants are de-duplicated');
+    const bad44 = async (body: any) => c44(MtgCtl44.create, pmA44, { body: { projectId: projA44, title: 'x', scheduledAt: soon44, ...body } });
+    const mtgBad44 = await Promise.all([
+      bad44({ title: '   ' }), bad44({ scheduledAt: 'tomorrow' }), bad44({ durationMinutes: 2 }), bad44({ meetingLink: 'javascript:alert(1)' }),
+      bad44({ status: 'Done' }), bad44({ participantIds: [outsider44.id] }), bad44({ participantIds: [inactive44.id] }), bad44({ participantIds: ['usr_nope'] }),
+      bad44({ participantIds: 'not-an-array' }), bad44({ organizerId: outsider44.id }),
+    ]);
+    assert(mtgBad44.every((r) => r.statusCode === 400 && code44(r) === 'VALIDATION_ERROR'), `Meeting validation rejects blank title, bad date-time, duration, non-http link, unknown status, outsiders, deactivated and unknown users (${mtgBad44.map((r) => r.statusCode).join(',')})`);
+    const mtgNoProject44 = await c44(MtgCtl44.create, pmB44, { body: { projectId: projA44, title: 'Intrude', scheduledAt: soon44 } });
+    const mtgViewer44 = await c44(MtgCtl44.create, viewerA44, { body: { projectId: projA44, title: 'Viewer', scheduledAt: soon44 } });
+    assert(mtgNoProject44.statusCode === 404 && mtgViewer44.statusCode === 403, 'Creating in another manager’s project returns 404; a viewer is refused with 403 by the service as well');
+    const getAs44 = async (u: any) => c44(MtgCtl44.get, u, { params: { id: mtg44.id } });
+    const [gMember44, gViewer44, gPmB44, gOutsider44, gAdmin44] = await Promise.all([getAs44(memberA44), getAs44(viewerA44), getAs44(pmB44), getAs44(outsider44), getAs44(adminUser40)]);
+    const gMissing44 = await c44(MtgCtl44.get, pmA44, { params: { id: 'mtg_missing' } });
+    assert(gMember44.statusCode === 200 && gViewer44.statusCode === 200 && gAdmin44.statusCode === 200, 'Project members, a viewer on the project and an admin can read the meeting');
+    assert(gPmB44.statusCode === 404 && gOutsider44.statusCode === 404 && gMissing44.statusCode === 404 && gPmB44.body.error.message === gMissing44.body.error.message, 'Other projects’ users get the same 404 as for a missing meeting');
+    const mtg2Res44 = await c44(MtgCtl44.create, pmA44, { body: { projectId: projA44, title: 'Retro', scheduledAt: new Date(Date.now() + 10 * 86400000).toISOString(), status: 'Completed', durationMinutes: 60 } });
+    const mtg3Res44 = await c44(MtgCtl44.create, pmA44, { body: { projectId: projA44, title: 'Planning', scheduledAt: new Date(Date.now() + 20 * 86400000).toISOString(), participantIds: [memberA244.id] } });
+    created44.meetings.push(mtg2Res44.body.data.meeting.id, mtg3Res44.body.data.meeting.id);
+    const listA44 = await c44(MtgCtl44.list, memberA44, { query: { projectId: projA44 } });
+    const page244 = await c44(MtgCtl44.list, pmA44, { query: { projectId: projA44, limit: '2', page: '2' } });
+    const doneOnly44 = await c44(MtgCtl44.list, pmA44, { query: { projectId: projA44, status: 'Completed' } });
+    const withMax44 = await c44(MtgCtl44.list, pmA44, { query: { projectId: projA44, participantId: memberA244.id } });
+    const window44 = await c44(MtgCtl44.list, pmA44, { query: { projectId: projA44, from: new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10), to: new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10) } });
+    assert(listA44.body.data.total === 3 && page244.body.data.meetings.length === 1 && page244.body.data.total === 3 && page244.body.data.page === 2 && page244.body.data.limit === 2, 'Meeting lists paginate with total, page and limit');
+    assert(doneOnly44.body.data.total === 1 && withMax44.body.data.total === 2 && window44.body.data.total === 1 && window44.body.data.meetings[0].title === 'Retro', 'Meeting lists filter by status, participant and date window');
+    const bList44 = await c44(MtgCtl44.list, pmB44, {});
+    const bProbe44 = await c44(MtgCtl44.list, pmB44, { query: { projectId: projA44 } });
+    const adminList44 = await c44(MtgCtl44.list, adminUser40, { query: { projectId: projA44 } });
+    assert(!JSON.stringify(bList44.body).includes(projA44) && bProbe44.statusCode === 404 && adminList44.body.data.total === 3, 'Another manager’s listing never contains project A, filtering by it returns 404, and admins see everything');
+    const mtgUpd44 = await c44(MtgCtl44.update, pmA44, { params: { id: mtg44.id }, body: { status: 'Completed', notes: 'Decisions captured', durationMinutes: 45 } });
+    const mtgMove44 = await c44(MtgCtl44.update, pmA44, { params: { id: mtg44.id }, body: { projectId: projB44 } });
+    const mtgUpdB44 = await c44(MtgCtl44.update, pmB44, { params: { id: mtg44.id }, body: { title: 'Hijack' } });
+    const mtgUpdMember44 = await c44(MtgCtl44.update, memberA44, { params: { id: mtg44.id }, body: { title: 'Member edit' } });
+    assert(mtgUpd44.statusCode === 200 && mtgUpd44.body.data.meeting.status === 'Completed' && mtgUpd44.body.data.meeting.durationMinutes === 45 && mtgUpd44.body.data.meeting.projectId === projA44, 'A project manager updates the meeting');
+    assert(mtgMove44.statusCode === 400 && mtgUpdB44.statusCode === 404 && mtgUpdMember44.statusCode === 403, 'Meetings cannot move project; other managers get 404; team members get 403');
+    const mtgActs44 = await acts44('meeting', mtg44.id);
+    assert(mtgActs44.includes('create') && mtgActs44.includes('status_change') && mtgActs44.includes('update'), 'Meeting create, status change and field updates are recorded in the activity log');
+
+    // --- B. Action items ---
+    const pmNotifsBefore44 = (await notifs44(pmA44)).length;
+    const actRes44 = await c44(ActCtl44.create, pmA44, { body: { projectId: projA44, meetingId: mtg44.id, title: 'Send the revised plan', ownerId: memberA44.id, dueDate: '2026-10-15', priority: 'High', completedAt: '1999-01-01T00:00:00Z' } });
+    const act44 = actRes44.body?.data?.actionItem;
+    if (act44) created44.actions.push(act44.id);
+    assert(actRes44.statusCode === 201 && act44.meetingId === mtg44.id && act44.status === 'Open' && act44.priority === 'High' && act44.completedAt === undefined, 'An action item is raised from a meeting with an owner, due date and priority; a client completedAt is ignored');
+    const memberNotif44 = (await notifs44(memberA44)).find((n: any) => n.type === 'work_assigned' && n.message.includes('Send the revised plan'));
+    assert(!!memberNotif44 && memberNotif44.link === '/PM-Portal/index.html?page=meetings&tab=action-items', 'The owner is notified of the assignment through the existing notifications');
+    const selfAct44 = await c44(ActCtl44.create, pmA44, { body: { projectId: projA44, title: 'My own action' } });
+    created44.actions.push(selfAct44.body.data.actionItem.id);
+    assert(selfAct44.body.data.actionItem.ownerId === pmA44.id && (await notifs44(pmA44)).length === pmNotifsBefore44, 'The owner defaults to the creator, and nobody is notified about their own action');
+    const actBad44 = await Promise.all([
+      c44(ActCtl44.create, pmA44, { body: { projectId: projA44, title: 'x', ownerId: outsider44.id } }),
+      c44(ActCtl44.create, pmA44, { body: { projectId: projA44, title: 'x', ownerId: inactive44.id } }),
+      c44(ActCtl44.create, pmA44, { body: { projectId: projA44, title: 'x', dueDate: '2026-02-30' } }),
+      c44(ActCtl44.create, pmA44, { body: { projectId: projA44, title: 'x', status: 'Done' } }),
+      c44(ActCtl44.create, pmA44, { body: { projectId: projA44, title: 'x', priority: 'Critical' } }),
+      c44(ActCtl44.create, pmA44, { body: { projectId: projA44, title: '' } }),
+    ]);
+    assert(actBad44.every((r) => r.statusCode === 400), `Action item validation rejects outsiders, deactivated owners, impossible dates, unknown status/priority and blank titles (${actBad44.map((r) => r.statusCode).join(',')})`);
+    const mtgB44 = await c44(MtgCtl44.create, pmB44, { body: { projectId: projB44, title: 'B meeting', scheduledAt: soon44 } });
+    created44.meetings.push(mtgB44.body.data.meeting.id);
+    const crossMeeting44 = await c44(ActCtl44.create, pmA44, { body: { projectId: projA44, title: 'Cross', meetingId: mtgB44.body.data.meeting.id } });
+    assert(crossMeeting44.statusCode === 400 && /not found in this project/.test(crossMeeting44.body.error.message), 'An action item cannot be linked to another project’s meeting');
+    const fromMeeting44 = await c44(ActCtl44.list, memberA44, { query: { meetingId: mtg44.id } });
+    assert(fromMeeting44.body.data.total === 1 && fromMeeting44.body.data.actionItems[0].id === act44.id, 'Meeting → action items: listing by meeting returns its action items');
+    const setStatus44 = (u: any, status: string, id = act44.id) => c44(ActCtl44.updateStatus, u, { params: { id }, body: { status } });
+    const inProgress44 = await setStatus44(memberA44, 'In Progress');
+    const blocked44 = await setStatus44(memberA44, 'Blocked');
+    const blockedNotif44 = (await notifs44(pmA44)).find((n: any) => n.type === 'work_blocked' && n.message.includes('Send the revised plan'));
+    const completed44 = await setStatus44(memberA44, 'Completed');
+    const completedNotif44 = (await notifs44(pmA44)).find((n: any) => n.type === 'work_completed' && n.message.includes('Send the revised plan'));
+    assert(inProgress44.statusCode === 200 && blocked44.body.data.actionItem.status === 'Blocked' && !!blockedNotif44, 'The owning team member moves the item through In Progress to Blocked, and the creator is told it is blocked');
+    assert(completed44.body.data.actionItem.status === 'Completed' && !!completed44.body.data.actionItem.completedAt && !!completedNotif44, 'Completion stamps completedAt and notifies the creator');
+    const reopened44 = await setStatus44(pmA44, 'Open');
+    assert(reopened44.body.data.actionItem.completedAt === undefined, 'Reopening clears completedAt');
+    const [viewerStatus44, otherMember44, pmBStatus44, badStatus44] = await Promise.all([setStatus44(viewerA44, 'Completed'), setStatus44(memberA244, 'Completed'), setStatus44(pmB44, 'Completed'), setStatus44(memberA44, 'Finished')]);
+    assert(viewerStatus44.statusCode === 403 && otherMember44.statusCode === 403 && pmBStatus44.statusCode === 404 && badStatus44.statusCode === 400, 'Viewers and non-owning team members cannot change status; other managers get 404; unknown statuses are 400');
+    const reassign44 = await c44(ActCtl44.update, pmA44, { params: { id: act44.id }, body: { ownerId: memberA244.id, title: 'Send the revised plan v2' } });
+    const reassignNotif44 = (await notifs44(memberA244)).find((n: any) => n.type === 'work_reassigned');
+    assert(reassign44.statusCode === 200 && reassign44.body.data.actionItem.ownerId === memberA244.id && !!reassignNotif44, 'Reassignment updates the owner and notifies the new owner');
+    const actActs44 = await acts44('action_item', act44.id);
+    assert(['create', 'status_change', 'block', 'complete', 'reassign', 'update'].every((a) => actActs44.includes(a)), `Action item create, status, block, complete, reassign and update are all in the activity log (${actActs44.join(',')})`);
+    const overdueRes44 = await c44(ActCtl44.create, pmA44, { body: { projectId: projA44, title: 'Late one', dueDate: '2020-01-01' } });
+    created44.actions.push(overdueRes44.body.data.actionItem.id);
+    const overdueList44 = await c44(ActCtl44.list, pmA44, { query: { projectId: projA44, overdue: 'true' } });
+    assert(overdueList44.body.data.total === 1 && overdueList44.body.data.actionItems[0].title === 'Late one', 'The overdue filter returns only open items past their due date');
+    const actDeleteMember44 = await c44(ActCtl44.remove, memberA44, { params: { id: overdueRes44.body.data.actionItem.id } });
+    assert(actDeleteMember44.statusCode === 403, 'A team member cannot delete an action item');
+    assert(!(await TaskRepo44.findAll()).some((t: any) => t.id === act44.id || t.title === 'Send the revised plan v2'), 'Action items are not delivery tasks and never enter the task hierarchy');
+
+    // --- C. Waiting For ---
+    const team44 = (await TeamRepo44.findAll())[0];
+    const wfrRes44 = await c44(WfrCtl44.create, pmA44, { body: { projectId: projA44, title: 'Security sign-off', waitingOnUserId: memberA244.id, expectedDate: '2026-10-20', relatedType: 'action_item', relatedId: act44.id } });
+    const wfr44 = wfrRes44.body?.data?.waitingFor;
+    if (wfr44) created44.waiting.push(wfr44.id);
+    const waitNotif44 = (await notifs44(memberA244)).find((n: any) => n.type === 'approval_request' && n.message.includes('Security sign-off'));
+    assert(wfrRes44.statusCode === 201 && wfr44.status === 'Waiting' && wfr44.ownerId === pmA44.id && wfr44.relatedType === 'action_item' && !!waitNotif44, 'A waiting-for item is created against a portal user, linked to an action item, and the user is told the project is waiting on them');
+    const teamWait44 = await c44(WfrCtl44.create, pmA44, { body: { projectId: projA44, title: 'Vendor quote', waitingOnTeamId: team44.id, waitingOnName: 'Acme procurement' } });
+    created44.waiting.push(teamWait44.body.data.waitingFor.id);
+    assert(teamWait44.statusCode === 201 && teamWait44.body.data.waitingFor.waitingOnTeamId === team44.id, 'Waiting on a team and a named external party is supported');
+    const riskB44 = await RiskRepo44.create({ projectId: projB44, title: 'B-only risk', probability: 2, impact: 2 });
+    created44.risks.push(riskB44.id);
+    const wfrBad44 = await Promise.all([
+      c44(WfrCtl44.create, pmA44, { body: { projectId: projA44, title: 'Nobody' } }),
+      c44(WfrCtl44.create, pmA44, { body: { projectId: projA44, title: 'x', waitingOnTeamId: 'team_nope' } }),
+      c44(WfrCtl44.create, pmA44, { body: { projectId: projA44, title: 'x', waitingOnUserId: outsider44.id } }),
+      c44(WfrCtl44.create, pmA44, { body: { projectId: projA44, title: 'x', waitingOnName: 'Legal', relatedType: 'risk', relatedId: riskB44.id } }),
+      c44(WfrCtl44.create, pmA44, { body: { projectId: projA44, title: 'x', waitingOnName: 'Legal', relatedType: 'risk' } }),
+      c44(WfrCtl44.create, pmA44, { body: { projectId: projA44, title: 'x', waitingOnName: 'Legal', relatedType: 'goal', relatedId: 'g1' } }),
+      c44(WfrCtl44.create, pmA44, { body: { projectId: projA44, title: 'x', waitingOnName: 'Legal', expectedDate: '20-10-2026' } }),
+    ]);
+    assert(wfrBad44.every((r) => r.statusCode === 400), `Waiting-for validation needs someone to wait on, known teams, project users, same-project references and valid dates (${wfrBad44.map((r) => r.statusCode).join(',')})`);
+    const wfrForeign44 = await c44(WfrCtl44.get, pmB44, { params: { id: wfr44.id } });
+    const wfrNotOwner44 = await c44(WfrCtl44.updateStatus, memberA44, { params: { id: wfr44.id }, body: { status: 'Resolved' } });
+    assert(wfrForeign44.statusCode === 404 && wfrNotOwner44.statusCode === 403, 'Other managers cannot see it and a non-owner team member cannot resolve it');
+    const followUpNeeded44 = await c44(WfrCtl44.updateStatus, pmA44, { params: { id: wfr44.id }, body: { status: 'Follow-up Needed' } });
+    const resolved44 = await c44(WfrCtl44.updateStatus, adminUser40, { params: { id: wfr44.id }, body: { status: 'Resolved' } });
+    const resolvedNotif44 = (await notifs44(pmA44)).find((n: any) => n.type === 'work_completed' && n.message.includes('Security sign-off'));
+    assert(followUpNeeded44.body.data.waitingFor.status === 'Follow-up Needed' && resolved44.body.data.waitingFor.status === 'Resolved' && !!resolved44.body.data.waitingFor.resolvedAt && !!resolvedNotif44, 'Status moves to Follow-up Needed, then Resolved (resolvedAt set) and the tracking owner is notified');
+    const openWaiting44 = await c44(WfrCtl44.list, pmA44, { query: { projectId: projA44, open: 'true' } });
+    assert(openWaiting44.body.data.total === 1 && openWaiting44.body.data.waitingFor[0].title === 'Vendor quote', 'The open filter lists only items still waiting');
+    const wfrActs44 = await acts44('waiting_for', wfr44.id);
+    assert(wfrActs44.includes('create') && wfrActs44.includes('status_change') && wfrActs44.includes('resolve'), 'Waiting-for create, status change and resolution are in the activity log');
+
+    // --- D. Follow-ups ---
+    const fupRes44 = await c44(FupCtl44.create, pmA44, { body: { projectId: projA44, title: 'Chase the vendor', ownerId: memberA44.id, dueDate: '2026-10-25', relatedType: 'waiting_for', relatedId: teamWait44.body.data.waitingFor.id } });
+    const fup44 = fupRes44.body?.data?.followUp;
+    if (fup44) created44.followUps.push(fup44.id);
+    const fupNotif44 = (await notifs44(memberA44)).find((n: any) => n.type === 'work_assigned' && n.message.includes('Chase the vendor'));
+    assert(fupRes44.statusCode === 201 && fup44.status === 'Open' && fup44.relatedType === 'waiting_for' && !!fupNotif44, 'A follow-up about a waiting-for item is created and its owner notified');
+    const fupMeeting44 = await c44(FupCtl44.create, pmA44, { body: { projectId: projA44, title: 'Circulate minutes', relatedType: 'meeting', relatedId: mtg44.id } });
+    created44.followUps.push(fupMeeting44.body.data.followUp.id);
+    const riskA44 = await RiskRepo44.create({ projectId: projA44, title: 'A risk', probability: 3, impact: 3 });
+    created44.risks.push(riskA44.id);
+    const fupRisk44 = await c44(FupCtl44.create, pmA44, { body: { projectId: projA44, title: 'Review mitigation', relatedType: 'risk', relatedId: riskA44.id } });
+    created44.followUps.push(fupRisk44.body.data.followUp.id);
+    const fupBad44 = await Promise.all([
+      c44(FupCtl44.create, pmA44, { body: { projectId: projA44, title: 'x', relatedType: 'risk', relatedId: riskB44.id } }),
+      c44(FupCtl44.create, pmA44, { body: { projectId: projA44, title: 'x', relatedType: 'risk', relatedId: 'rsk_1' } }),
+      c44(FupCtl44.create, pmA44, { body: { projectId: projA44, title: 'x', status: 'Done' } }),
+      c44(FupCtl44.create, pmA44, { body: { projectId: projA44 } }),
+    ]);
+    assert(fupMeeting44.statusCode === 201 && fupRisk44.statusCode === 201 && fupBad44.every((r) => r.statusCode === 400), 'Follow-ups reference same-project meetings and risks; other projects’ records, unknown statuses and missing titles are rejected');
+    const fupEdit44 = await c44(FupCtl44.update, pmA44, { params: { id: fup44.id }, body: { title: 'Chase the vendor again', dueDate: '' } });
+    assert(fupEdit44.statusCode === 200 && fupEdit44.body.data.followUp.title === 'Chase the vendor again' && fupEdit44.body.data.followUp.dueDate === undefined, 'A follow-up is updated, and an empty date clears it');
+    const fupDone44 = await c44(FupCtl44.updateStatus, memberA44, { params: { id: fup44.id }, body: { status: 'Completed' } });
+    const fupDoneNotif44 = (await notifs44(pmA44)).find((n: any) => n.type === 'work_completed' && n.message.includes('Chase the vendor again'));
+    assert(fupDone44.statusCode === 200 && !!fupDone44.body.data.followUp.completedAt && !!fupDoneNotif44, 'The owner completes the follow-up; completedAt is set and the creator notified');
+    const fupViewer44 = await c44(FupCtl44.update, viewerA44, { params: { id: fup44.id }, body: { title: 'Viewer' } });
+    const fupForeign44 = await c44(FupCtl44.updateStatus, pmB44, { params: { id: fup44.id }, body: { status: 'Open' } });
+    assert(fupViewer44.statusCode === 403 && fupForeign44.statusCode === 404, 'Viewers cannot edit follow-ups and other projects’ managers get 404');
+    const fupActs44 = await acts44('follow_up', fup44.id);
+    assert(fupActs44.includes('create') && fupActs44.includes('update') && fupActs44.includes('complete'), 'Follow-up create, update and completion are in the activity log');
+
+    // --- E. Relationships and project isolation ---
+    for (const [ctl, key] of [[ActCtl44, 'actionItems'], [WfrCtl44, 'waitingFor'], [FupCtl44, 'followUps']] as Array<[any, string]>) {
+      const b = await c44(ctl.list, pmB44, {});
+      const outsiderList = await c44(ctl.list, outsider44, {});
+      const probe = await c44(ctl.list, memberA44, { query: { projectId: projB44 } });
+      assert(!JSON.stringify(b.body).includes(projA44) && outsiderList.body.data.total === 0 && probe.statusCode === 404, `${key}: other projects' users see none of project A's records and cannot filter into project B`);
+    }
+    const act2Res44 = await c44(ActCtl44.create, pmA44, { body: { projectId: projA44, meetingId: mtg44.id, title: 'Second outcome' } });
+    created44.actions.push(act2Res44.body.data.actionItem.id);
+    const mtgDelete44 = await c44(MtgCtl44.remove, pmA44, { params: { id: mtg44.id } });
+    const orphan44 = await ActRepo44.findById(act2Res44.body.data.actionItem.id);
+    const fupAfter44 = await FupRepo44.findById(fupMeeting44.body.data.followUp.id);
+    assert(mtgDelete44.statusCode === 200 && !!orphan44 && orphan44.meetingId === undefined && fupAfter44!.relatedId === undefined && fupAfter44!.relatedType === undefined, 'Deleting a meeting keeps its action items (unlinked) and clears follow-up references to it');
+    assert((await acts44('meeting', mtg44.id)).includes('delete'), 'Meeting deletion is recorded in the activity log');
+    const actDelete44 = await c44(ActCtl44.remove, pmA44, { params: { id: act44.id } });
+    assert(actDelete44.statusCode === 200 && (await WfrRepo44.findById(wfr44.id))!.relatedId === undefined, 'Deleting an action item clears waiting-for references to it');
+    assert(await Access44.canAccess({ userId: memberA44.id, role: 'team-member' }, projA44) && !(await Access44.canAccess({ userId: memberA44.id, role: 'team-member' }, projB44)) && (await Access44.canAccess({ userId: adminUser40.id, role: 'admin' }, projB44)), 'Project access follows the AI-context rule: members see their project, not others; admins see all');
+
+    // --- F/G. Activity and notification hygiene ---
+    const allActs44 = (await ActivityRepository.findRecent(1000)).filter((a: any) => ['meeting', 'action_item', 'waiting_for', 'follow_up'].includes(a.entityType) && a.details?.projectId === projA44);
+    assert(allActs44.length > 0 && allActs44.every((a: any) => !('description' in a.details) && !('agenda' in a.details) && !('notes' in a.details)), 'Follow-through activity records carry metadata only, never descriptions, agendas or notes');
+    const viewerNotifs44 = await notifs44(viewerA44);
+    assert(viewerNotifs44.length === 0, 'People not involved in a record receive no notifications (no broadcast spam)');
+
+    // --- Schema contract (PostgreSQL itself is not available in this run) ---
+    const schema44 = fs35.readFileSync('server/db/schema.sql', 'utf8');
+    const tableCols44 = (table: string) => {
+      const m = new RegExp(`CREATE TABLE IF NOT EXISTS ${table} \\(([\\s\\S]*?)\\n\\);`).exec(schema44);
+      return m ? new Set(m[1].split('\n').map((l: string) => l.trim().split(/\s+/)[0]).filter(Boolean)) : new Set<string>();
+    };
+    const repoCols44 = (file: string) => {
+      const src = fs35.readFileSync(file, 'utf8');
+      const insert = /const COLUMNS = `([\s\S]*?)`/.exec(src)![1].split(',').map((c: string) => c.trim()).filter(Boolean);
+      const updates = Array.from(src.matchAll(/(\w+) = \$\d+/g)).map((m: any) => m[1]).filter((c: string) => c !== 'id');
+      return [...insert, ...updates];
+    };
+    const contract44 = [
+      ['meetings', 'server/repositories/meetingRepository.ts'],
+      ['action_items', 'server/repositories/actionItemRepository.ts'],
+      ['waiting_for_items', 'server/repositories/waitingForRepository.ts'],
+      ['follow_ups', 'server/repositories/followUpRepository.ts'],
+    ].map(([table, file]) => { const cols = tableCols44(table); return { table, missing: repoCols44(file).filter((c) => !cols.has(c)), size: cols.size }; });
+    assert(contract44.every((c) => c.size > 0 && c.missing.length === 0), `Every column the repositories read or write exists in schema.sql (${JSON.stringify(contract44.filter((c) => c.missing.length || !c.size))})`);
+    assert(/meeting_id VARCHAR\(64\) REFERENCES meetings\(id\) ON DELETE SET NULL/.test(schema44) && (schema44.match(/project_id VARCHAR\(64\) NOT NULL REFERENCES projects\(id\) ON DELETE CASCADE/g) || []).length >= 4, 'Schema: all four tables are project-owned (cascade) and action items keep their meeting link as SET NULL');
+
+    // --- UI integration and escaping ---
+    const indexHtml44 = fs35.readFileSync('PM-Portal/index.html', 'utf8');
+    const appJs44 = fs35.readFileSync('PM-Portal/js/app.js', 'utf8');
+    const meetingsJs44 = fs35.readFileSync('PM-Portal/js/meetings.js', 'utf8');
+    assert(/data-page="meetings"/.test(indexHtml44) && /id="page-meetings"/.test(indexHtml44) && /id="meetings-workspace"/.test(indexHtml44), 'The sidebar and page container for Meetings & Follow-through exist');
+    assert(/import \{ MeetingsModule \} from '\.\/meetings\.js'/.test(appJs44) && /pageId === 'meetings'\) \{\s*MeetingsModule\.init\(this\)/.test(appJs44), 'The app router loads the Meetings module');
+    assert(!/localStorage|sessionStorage|Storage\./.test(meetingsJs44) && ['MeetingService', 'ActionItemService', 'WaitingForService', 'FollowUpService'].every((s) => meetingsJs44.includes(`from './services/${s.charAt(0).toLowerCase() + s.slice(1)}.js'`)), 'The page uses only the V2 services, never browser storage');
+    assert(['esc(m.title)', 'esc(a.title)', 'esc(w.title)', 'esc(f.title)', 'esc(meeting.agenda)', 'esc(meeting.notes)', 'esc(a.description)'].every((s) => meetingsJs44.includes(s)) && /toast\(message, type = 'info'\) \{ this\.app\?\.showToast\(esc\(message\), type\)/.test(meetingsJs44), 'User-authored text and toast messages are escaped before rendering');
+    assert(/\/\^https\?:\\\/\\\/\/i\.test\(meeting\.meetingLink\)/.test(meetingsJs44) && /rel="noopener noreferrer"/.test(meetingsJs44), 'Meeting links render only for http(s) URLs, opened with noopener');
+    const svc44: any = await import('../PM-Portal/js/services/meetingService.js');
+    let svcThrew44 = false;
+    try { await svc44.MeetingService.listMeetings('PRJ-101'); } catch (e: any) { svcThrew44 = e instanceof TypeError; }
+    assert(svcThrew44, 'The new browser services refuse a bare id where a filter object is expected');
+
+    // --- I. Project-detail delivery breakdown (prerequisite fix) ---
+    const projectsJs44 = fs35.readFileSync('PM-Portal/js/projects.js', 'utf8');
+    assert(['EpicService.getEpics', 'FeatureService.getFeatures', 'StoryService.getStories', 'TaskService.getTasks'].every((call) => projectsJs44.includes(`${call}({ projectId })`) && !projectsJs44.includes(`${call}(projectId)`)), 'Project detail requests epics, features, stories and tasks with a { projectId } filter');
+    const requested44: string[] = [];
+    apiClientModule44.apiClient.get = async (url: string) => { requested44.push(url); return { epics: [], features: [], stories: [], tasks: [] }; };
+    const { EpicService: EpicSvc44 } = await import('../PM-Portal/js/services/epicService.js');
+    const { FeatureService: FeatureSvc44 } = await import('../PM-Portal/js/services/featureService.js');
+    const { StoryService: StorySvc44 } = await import('../PM-Portal/js/services/storyService.js');
+    const { TaskService: TaskSvc44 } = await import('../PM-Portal/js/services/taskService.js');
+    await EpicSvc44.getEpics('PRJ-101' as any);
+    const legacyUrl44 = requested44.pop()!;
+    await Promise.all([EpicSvc44.getEpics({ projectId: 'PRJ-101' }), FeatureSvc44.getFeatures({ projectId: 'PRJ-101' }), StorySvc44.getStories({ projectId: 'PRJ-101' }), TaskSvc44.getTasks({ projectId: 'PRJ-101' })]);
+    apiClientModule44.apiClient.get = originalGet44;
+    assert(legacyUrl44 === '/epics?0=P&1=R&2=J&3=-&4=1&5=0&6=1' && JSON.stringify(requested44) === JSON.stringify(['/epics?projectId=PRJ-101', '/features?projectId=PRJ-101', '/stories?projectId=PRJ-101', '/tasks?projectId=PRJ-101']), 'The old call produced ?0=P&1=R…; the fixed call sends ?projectId=PRJ-101 for all four levels');
+    const levels44: Array<[any, string]> = [[DeliveryCtl44.listEpics, 'epics'], [DeliveryCtl44.listFeatures, 'features'], [DeliveryCtl44.listStories, 'stories'], [DeliveryCtl44.listTasks, 'tasks']];
+    for (const [handler, key] of levels44) {
+      const scoped = await c44(handler, memberA44, { query: Object.fromEntries(new URLSearchParams(`projectId=PRJ-101`)) });
+      const unscoped = await c44(handler, memberA44, { query: Object.fromEntries(new URLSearchParams(legacyUrl44.split('?')[1])) });
+      const items = scoped.body.data[key];
+      assert(items.length > 0 && items.every((i: any) => i.projectId === 'PRJ-101') && unscoped.body.data[key].some((i: any) => i.projectId === 'PRJ-102'), `Project detail ${key}: only PRJ-101 items are returned, while the old query leaked PRJ-102 items`);
+    }
+  } finally {
+    apiClientModule44.apiClient.get = originalGet44;
+    for (const id of created44.followUps) await FupRepo44.delete(id);
+    for (const id of created44.waiting) await WfrRepo44.delete(id);
+    for (const id of created44.actions) await ActRepo44.delete(id);
+    for (const id of created44.meetings) await MtgRepo44.delete(id);
+    for (const id of created44.risks) await RiskRepo44.delete(id);
+    for (const id of [projA44, projB44]) await ProjRepo24.delete(id);
+    for (const u of [pmA44, pmB44, memberA44, memberA244, viewerA44, outsider44, inactive44]) await UserRepo40.update(u.id, { isActive: false });
+  }
+  assert((await MtgRepo44.findAll({ projectId: projA44 })).length === 0 && (await ActRepo44.findAll({ projectId: projA44 })).length === 0 && (await ProjRepo24.findById(projA44)) === null, 'Sprint 14 fixtures are removed after §44');
+
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('========================================\n');

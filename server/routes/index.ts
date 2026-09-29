@@ -24,6 +24,7 @@ import { milestoneRoutes } from './milestoneRoutes';
 import { releaseRoutes } from './releaseRoutes';
 import { governanceRoutes } from './governanceRoutes';
 import { microsoftRoutes } from './microsoftRoutes';
+import { followThroughRoutes } from './followThroughRoutes';
 
 export const v1ApiRouter = Router();
 
@@ -52,4 +53,5 @@ v1ApiRouter.use(activityRoutes);
 v1ApiRouter.use(notificationRoutes);
 v1ApiRouter.use(aiRoutes);
 v1ApiRouter.use(microsoftRoutes);
+v1ApiRouter.use(followThroughRoutes);
 

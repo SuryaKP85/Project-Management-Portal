@@ -491,6 +491,10 @@ export type ActivityEntityType =
   | 'roadmap'
   | 'auth'
   | 'ai'
+  | 'meeting'
+  | 'action_item'
+  | 'waiting_for'
+  | 'follow_up'
   | 'system';
 
 export type ActivityAction =
@@ -1323,6 +1327,112 @@ export interface GovernanceSummary {
   atRiskReleases: number;
   releasedCount: number;
   heatmapMatrix: RiskHeatmapCell[];
+}
+
+// ====================================================================
+// Sprint 14 — Meetings, Action Items, Waiting For & Follow-ups
+// ====================================================================
+// Project-scoped follow-through records. Every record belongs to exactly one
+// project, and people are referenced by server-side user ids only. Action
+// items are meeting/follow-through commitments, deliberately separate from
+// delivery Tasks in the Epic → Feature → Story → Task hierarchy.
+
+export type MeetingStatus = 'Scheduled' | 'Completed' | 'Cancelled';
+
+export interface Meeting {
+  id: string;
+  projectId: string;
+  title: string;
+  agenda?: string;
+  notes?: string;
+  /** ISO 8601 date-time of the start. */
+  scheduledAt: string;
+  durationMinutes: number;
+  location?: string;
+  /** http(s) link to an online meeting; validated on the server. */
+  meetingLink?: string;
+  organizerId: string;
+  participantIds: string[];
+  status: MeetingStatus;
+  createdBy: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ActionItemStatus = 'Open' | 'In Progress' | 'Blocked' | 'Completed' | 'Cancelled';
+/** Same vocabulary as issue priority. */
+export type ActionItemPriority = IssuePriority;
+
+export interface ActionItem {
+  id: string;
+  projectId: string;
+  /** The meeting that produced the action, when there was one (same project). */
+  meetingId?: string;
+  title: string;
+  description?: string;
+  ownerId: string;
+  /** YYYY-MM-DD */
+  dueDate?: string;
+  status: ActionItemStatus;
+  priority: ActionItemPriority;
+  completedAt?: string;
+  createdBy: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * The records a Waiting For or Follow-up may point at. One explicit reference
+ * (type + id), validated on write to exist in the same project — not a
+ * general-purpose linking framework.
+ */
+export type FollowThroughRelatedType = 'meeting' | 'action_item' | 'waiting_for' | 'issue' | 'risk' | 'dependency';
+
+export type WaitingForStatus = 'Waiting' | 'Follow-up Needed' | 'Resolved' | 'Cancelled';
+
+export interface WaitingForItem {
+  id: string;
+  projectId: string;
+  title: string;
+  description?: string;
+  /** The person tracking the item (usually the PM). */
+  ownerId: string;
+  /** Who is expected to act: a portal user, a team, and/or a named external party. */
+  waitingOnUserId?: string;
+  waitingOnTeamId?: string;
+  waitingOnName?: string;
+  /** YYYY-MM-DD the response is expected by. */
+  expectedDate?: string;
+  status: WaitingForStatus;
+  relatedType?: FollowThroughRelatedType;
+  relatedId?: string;
+  resolvedAt?: string;
+  createdBy: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type FollowUpStatus = 'Open' | 'Completed' | 'Cancelled';
+
+export interface FollowUp {
+  id: string;
+  projectId: string;
+  title: string;
+  description?: string;
+  ownerId: string;
+  /** YYYY-MM-DD */
+  dueDate?: string;
+  status: FollowUpStatus;
+  relatedType?: FollowThroughRelatedType;
+  relatedId?: string;
+  completedAt?: string;
+  createdBy: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 

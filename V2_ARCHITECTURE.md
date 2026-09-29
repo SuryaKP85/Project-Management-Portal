@@ -96,6 +96,17 @@ All V2 APIs are structured under `/api/v1/`:
 * `POST /api/v1/ai/draft-email` — Drafts a stakeholder email (`{ projectId, templateKey }`). Admin, project manager and product manager; facts come from the server, never the client. Drafting never sends — sending remains `POST /integrations/microsoft/mail/send` with explicit confirmation.
 * Insights, report, draft-email and the assistant share the per-user AI quota (20 requests per minute). Every provider call goes through the prompt guard and falls back to the LocalRule provider on failure; activity entries record the operation only.
 
+### 3.7 Meetings, Action Items, Waiting For & Follow-ups (Sprint 14)
+* `GET|POST /api/v1/meetings`, `GET|PATCH|DELETE /api/v1/meetings/:id`
+* `GET|POST /api/v1/action-items`, `GET|PATCH|DELETE /api/v1/action-items/:id`, `PATCH /api/v1/action-items/:id/status`
+* `GET|POST /api/v1/waiting-for`, `GET|PATCH|DELETE /api/v1/waiting-for/:id`, `PATCH /api/v1/waiting-for/:id/status`
+* `GET|POST /api/v1/follow-ups`, `GET|PATCH|DELETE /api/v1/follow-ups/:id`, `PATCH /api/v1/follow-ups/:id/status`
+* Every record belongs to one project. Access follows the AI-context rule: admins reach every project; others the projects they manage, belong to or have assigned work in. Records outside that scope answer 404, exactly like missing ones.
+* Reads: any authenticated role. Create, edit and delete: admin, project manager, product manager. Status endpoints: those roles, or a team member who owns the record. Viewers never write.
+* Lists take `page`/`limit` (default 25, max 100) and filters (`projectId`, `status`, owner/participant, dates, `search`); responses carry `total`, `page` and `limit`.
+* Owners, organizers, participants and waiting-on users must be active users with access to the project. Waiting For and Follow-ups may reference one related record (`relatedType` + `relatedId`) that must be in the same project.
+* Activity is logged for create, update, assignment, status change, completion/resolution and delete; assignment and meaningful status changes notify the person concerned (never the actor). Tables: `meetings`, `action_items`, `waiting_for_items`, `follow_ups`.
+
 ---
 
 ## 4. Authentication, Security, and RBAC

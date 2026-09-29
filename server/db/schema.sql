@@ -607,4 +607,103 @@ CREATE TABLE IF NOT EXISTS microsoft_connections (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- ====================================================================
+-- Sprint 14: Meetings, Action Items, Waiting For & Follow-ups
+-- ====================================================================
+-- Every record belongs to exactly one project and is removed with it. People
+-- are portal user ids. related_type/related_id is a single validated reference
+-- (checked by the service to exist in the same project), so it carries no FK.
+
+CREATE TABLE IF NOT EXISTS meetings (
+  id VARCHAR(64) PRIMARY KEY,
+  project_id VARCHAR(64) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  title VARCHAR(255) NOT NULL,
+  agenda TEXT,
+  notes TEXT,
+  scheduled_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  duration_minutes INTEGER NOT NULL DEFAULT 30,
+  location VARCHAR(255),
+  meeting_link VARCHAR(2048),
+  organizer_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+  participant_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+  status VARCHAR(30) NOT NULL DEFAULT 'Scheduled',
+  created_by VARCHAR(64),
+  updated_by VARCHAR(64),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS action_items (
+  id VARCHAR(64) PRIMARY KEY,
+  project_id VARCHAR(64) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  meeting_id VARCHAR(64) REFERENCES meetings(id) ON DELETE SET NULL,
+  title VARCHAR(255) NOT NULL,
+  description TEXT,
+  owner_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+  due_date DATE,
+  status VARCHAR(30) NOT NULL DEFAULT 'Open',
+  priority VARCHAR(30) NOT NULL DEFAULT 'Medium',
+  completed_at TIMESTAMP WITH TIME ZONE,
+  created_by VARCHAR(64),
+  updated_by VARCHAR(64),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS waiting_for_items (
+  id VARCHAR(64) PRIMARY KEY,
+  project_id VARCHAR(64) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  title VARCHAR(255) NOT NULL,
+  description TEXT,
+  owner_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+  waiting_on_user_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+  waiting_on_team_id VARCHAR(64) REFERENCES teams(id) ON DELETE SET NULL,
+  waiting_on_name VARCHAR(255),
+  expected_date DATE,
+  status VARCHAR(30) NOT NULL DEFAULT 'Waiting',
+  related_type VARCHAR(30),
+  related_id VARCHAR(64),
+  resolved_at TIMESTAMP WITH TIME ZONE,
+  created_by VARCHAR(64),
+  updated_by VARCHAR(64),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS follow_ups (
+  id VARCHAR(64) PRIMARY KEY,
+  project_id VARCHAR(64) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  title VARCHAR(255) NOT NULL,
+  description TEXT,
+  owner_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+  due_date DATE,
+  status VARCHAR(30) NOT NULL DEFAULT 'Open',
+  related_type VARCHAR(30),
+  related_id VARCHAR(64),
+  completed_at TIMESTAMP WITH TIME ZONE,
+  created_by VARCHAR(64),
+  updated_by VARCHAR(64),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Sprint 14 Indices
+CREATE INDEX IF NOT EXISTS idx_meetings_project ON meetings(project_id);
+CREATE INDEX IF NOT EXISTS idx_meetings_scheduled ON meetings(scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_meetings_organizer ON meetings(organizer_id);
+CREATE INDEX IF NOT EXISTS idx_meetings_status ON meetings(status);
+CREATE INDEX IF NOT EXISTS idx_action_items_project ON action_items(project_id);
+CREATE INDEX IF NOT EXISTS idx_action_items_meeting ON action_items(meeting_id);
+CREATE INDEX IF NOT EXISTS idx_action_items_owner ON action_items(owner_id);
+CREATE INDEX IF NOT EXISTS idx_action_items_status ON action_items(status);
+CREATE INDEX IF NOT EXISTS idx_waiting_for_project ON waiting_for_items(project_id);
+CREATE INDEX IF NOT EXISTS idx_waiting_for_owner ON waiting_for_items(owner_id);
+CREATE INDEX IF NOT EXISTS idx_waiting_for_on_user ON waiting_for_items(waiting_on_user_id);
+CREATE INDEX IF NOT EXISTS idx_waiting_for_status ON waiting_for_items(status);
+CREATE INDEX IF NOT EXISTS idx_waiting_for_related ON waiting_for_items(related_id, related_type);
+CREATE INDEX IF NOT EXISTS idx_follow_ups_project ON follow_ups(project_id);
+CREATE INDEX IF NOT EXISTS idx_follow_ups_owner ON follow_ups(owner_id);
+CREATE INDEX IF NOT EXISTS idx_follow_ups_status ON follow_ups(status);
+CREATE INDEX IF NOT EXISTS idx_follow_ups_related ON follow_ups(related_id, related_type);
+
 

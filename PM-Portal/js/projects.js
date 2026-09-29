@@ -1450,11 +1450,13 @@ export const ProjectsModule = {
     `;
 
     try {
+      // Sprint 14: the services take a filter object; a bare id was serialised
+      // as ?0=P&1=R… and ignored, so every project's items were listed here.
       const [epics, features, stories, tasks] = await Promise.all([
-        EpicService.getEpics(projectId).catch(() => []),
-        FeatureService.getFeatures(projectId).catch(() => []),
-        StoryService.getStories(projectId).catch(() => []),
-        TaskService.getTasks(projectId).catch(() => []),
+        EpicService.getEpics({ projectId }).catch(() => []),
+        FeatureService.getFeatures({ projectId }).catch(() => []),
+        StoryService.getStories({ projectId }).catch(() => []),
+        TaskService.getTasks({ projectId }).catch(() => []),
       ]);
 
       if (!epics || epics.length === 0) {

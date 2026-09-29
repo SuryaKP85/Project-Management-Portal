@@ -28,6 +28,7 @@ import { DeliveryModule } from './delivery.js';
 import { AgileBoardModule } from './agileBoard.js';
 import { SprintPlanningModule } from './sprintPlanning.js';
 import { MyWorkModule } from './myWork.js';
+import { MeetingsModule } from './meetings.js';
 import { GovernanceModule } from './governance.js';
 import { NotificationService } from './services/notificationService.js';
 import { Authentication } from './authentication.js';
@@ -326,6 +327,7 @@ class EnterprisePortalApp {
         'agile-board': 'Agile Execution Board',
         'sprint-planning': 'Sprint Planning & Backlog',
         'my-work': 'My Personal Work Queue',
+        'meetings': 'Meetings & Follow-through',
         'customers': 'Customers Registry',
         'resources': 'Human Resources',
         'resource-planner': 'Resource Allocation Planner',
@@ -368,6 +370,8 @@ class EnterprisePortalApp {
       SprintPlanningModule.init(this);
     } else if (pageId === 'my-work') {
       MyWorkModule.init(this);
+    } else if (pageId === 'meetings') {
+      MeetingsModule.init(this);
     } else if (pageId === 'customers') {
       CustomersModule.init(this);
     } else if (pageId === 'resources') {
