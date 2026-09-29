@@ -14,6 +14,7 @@ export interface MicrosoftFetchResponse {
   ok: boolean;
   status: number;
   json(): Promise<any>;
+  headers?: { get(name: string): string | null };
 }
 export type MicrosoftFetch = (url: string, init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal }) => Promise<MicrosoftFetchResponse>;
 
@@ -45,7 +46,7 @@ export async function microsoftRequest(
   url: string,
   init: { method: string; headers: Record<string, string>; body?: string },
   timeoutMs: number = config.microsoft.graphTimeoutMs
-): Promise<{ ok: boolean; status: number; body: any }> {
+): Promise<{ ok: boolean; status: number; body: any; retryAfter?: string | null }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -54,9 +55,16 @@ export async function microsoftRequest(
     try {
       body = await response.json();
     } catch {
+      // Empty bodies are normal (for example Graph sendMail answers 202 with none).
       body = {};
     }
-    return { ok: response.ok, status: response.status, body: body ?? {} };
+    let retryAfter: string | null = null;
+    try {
+      retryAfter = response.headers?.get?.('retry-after') ?? null;
+    } catch {
+      retryAfter = null;
+    }
+    return { ok: response.ok, status: response.status, body: body ?? {}, retryAfter };
   } catch (err: any) {
     if (err && err.name === 'AbortError') {
       throw microsoftError(504, 'MICROSOFT_TIMEOUT', `Microsoft did not respond within ${timeoutMs}ms.`);
@@ -65,6 +73,24 @@ export async function microsoftRequest(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * POST a JSON payload to Microsoft Graph with a delegated access token
+ * (Sprint 10B). Returns the raw status so the caller maps failures for its
+ * operation; transport failures still throw MICROSOFT_TIMEOUT / UNREACHABLE.
+ * Nothing is retried here.
+ */
+export async function graphPost(
+  accessToken: string,
+  path: string,
+  payload: unknown
+): Promise<{ ok: boolean; status: number; body: any; retryAfter?: string | null }> {
+  return microsoftRequest(`${GRAPH_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(payload),
+  });
 }
 
 /** GET against Microsoft Graph with a delegated access token. */

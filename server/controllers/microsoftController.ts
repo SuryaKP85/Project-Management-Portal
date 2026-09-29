@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { MicrosoftIntegrationService, MicrosoftActor, CALENDAR_DEFAULT_DAYS } from '../services/microsoftIntegrationService';
+import { MicrosoftIntegrationService, MicrosoftActor, CALENDAR_DEFAULT_DAYS, validateSendRequest } from '../services/microsoftIntegrationService';
 
 /**
  * Sprint 10A — Microsoft 365 account connection and Outlook calendar.
@@ -87,6 +87,29 @@ export const MicrosoftController = {
       const actor = actorFrom(req);
       if (!actor) return unauthenticated(res);
       res.json({ success: true, data: await MicrosoftIntegrationService.disconnect(actor) });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  /**
+   * POST /integrations/microsoft/mail/send — Sprint 10B. Sends as the signed-in
+   * user only; the body can never name another identity. Responds with safe
+   * fields only, never Graph data or message content.
+   */
+  async sendMail(req: Request, res: Response, next: NextFunction) {
+    try {
+      const actor = actorFrom(req);
+      if (!actor) return unauthenticated(res);
+      res.setHeader('Cache-Control', 'no-store');
+      const checked = validateSendRequest(req.body);
+      if ('errors' in checked) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: 'Invalid request parameters.', details: checked.errors },
+        });
+      }
+      res.json({ success: true, data: await MicrosoftIntegrationService.sendMail(actor, checked.value) });
     } catch (err) {
       next(err);
     }

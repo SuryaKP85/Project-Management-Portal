@@ -1,6 +1,31 @@
 /* aiEmailGenerator.js - Automated Business Email Generator & Template Engine */
 
 import { Storage } from './storage.js';
+import { MicrosoftService } from './services/microsoftService.js';
+
+/** Sprint 10B: HTML-escapes the values interpolated into the composer markup. */
+const escapeComposerHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+));
+
+/** Sprint 10B: splits the To field on commas or semicolons. */
+const parseRecipients = (value) => String(value || '').split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+
+/** Builds the mailto: link for the email-client option, including any To recipients. */
+const buildMailto = (to, subject, body) =>
+  `mailto:${to.map(encodeURIComponent).join(',')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+const OUTLOOK_TIMEOUT_MESSAGE = 'Microsoft did not respond in time. The email may have been sent. Check your Outlook Sent Items before trying again.';
+
+/** Turns a send failure into the message shown in the composer. */
+const describeOutlookError = (err) => {
+  const code = err && err.code;
+  if (code === 'TIMEOUT' || code === 'MICROSOFT_TIMEOUT') return OUTLOOK_TIMEOUT_MESSAGE;
+  if (code === 'MICROSOFT_PERMISSION_REQUIRED') return 'Reconnect Microsoft 365 in Settings to enable Outlook sending.';
+  if (code === 'MICROSOFT_RECONNECT_REQUIRED') return 'Reconnect Microsoft 365 in Settings, then try again.';
+  if (code === 'VALIDATION_ERROR' && Array.isArray(err.details) && err.details.length) return err.details.join(' ');
+  return (err && err.message) || 'The email could not be sent.';
+};
 
 export const AIEmailGeneratorModule = {
   /**
@@ -138,21 +163,28 @@ Delivery Lead`
           <label class="form-label font-bold text-xs text-secondary">Select Email Template</label>
           <select id="email-template-select" class="form-select form-select-sm">
             ${Object.keys(this.templates).map(k => `
-              <option value="${k}" ${k === templateKey ? 'selected' : ''}>${this.templates[k].name}</option>
+              <option value="${escapeComposerHtml(k)}" ${k === templateKey ? 'selected' : ''}>${escapeComposerHtml(this.templates[k].name)}</option>
             `).join('')}
           </select>
+        </div>
+
+        <!-- Recipients (Sprint 10B) -->
+        <div class="mb-3">
+          <label class="form-label font-bold text-xs text-secondary" for="email-to-input">To</label>
+          <input type="text" id="email-to-input" class="form-control form-control-sm" placeholder="name@company.com; second@company.com" autocomplete="off" />
+          <div class="text-muted mt-1" style="font-size: 0.72rem;">Separate addresses with commas or semicolons (Outlook sending accepts up to 10).</div>
         </div>
 
         <!-- Subject Line Field -->
         <div class="mb-3">
           <label class="form-label font-bold text-xs text-secondary">Subject Line</label>
-          <input type="text" id="email-subject-input" class="form-control form-control-sm font-semibold" value="${subject}" />
+          <input type="text" id="email-subject-input" class="form-control form-control-sm font-semibold" value="${escapeComposerHtml(subject)}" />
         </div>
 
         <!-- Body Text Editor Area -->
         <div class="mb-3">
           <label class="form-label font-bold text-xs text-secondary">Email Message Body (Editable)</label>
-          <textarea id="email-body-input" class="form-control font-mono text-xs" rows="10" style="line-height: 1.5; resize: vertical;">${body}</textarea>
+          <textarea id="email-body-input" class="form-control font-mono text-xs" rows="10" style="line-height: 1.5; resize: vertical;">${escapeComposerHtml(body)}</textarea>
         </div>
 
         <!-- Action Buttons -->
@@ -161,9 +193,24 @@ Delivery Lead`
             <i class="fa-regular fa-copy me-1"></i> Copy to Clipboard
           </button>
 
-          <a id="send-mailto-btn" href="mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}" class="btn btn-sm btn-primary py-1 px-3">
-            <i class="fa-solid fa-paper-plane me-1"></i> Send via Email Client
-          </a>
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <a id="send-mailto-btn" href="${escapeComposerHtml(buildMailto([], subject, body))}" class="btn btn-sm btn-primary py-1 px-3">
+              <i class="fa-solid fa-paper-plane me-1"></i> Send via Email Client
+            </a>
+            <button type="button" id="send-outlook-btn" class="btn btn-sm btn-outline-primary py-1 px-3" disabled>
+              <i class="fa-brands fa-microsoft me-1"></i> Send via Outlook
+            </button>
+          </div>
+        </div>
+
+        <!-- Outlook sending state and inline confirmation (Sprint 10B) -->
+        <div id="outlook-send-status" class="small mt-2 text-muted" role="status">Checking Microsoft 365…</div>
+        <div id="outlook-confirm-panel" class="alert alert-warning py-2 px-3 mt-2 mb-0 d-none">
+          <div id="outlook-confirm-text" class="font-semibold mb-2"></div>
+          <div class="d-flex gap-2">
+            <button type="button" id="outlook-confirm-btn" class="btn btn-sm btn-primary py-1 px-3">Confirm send</button>
+            <button type="button" id="outlook-back-btn" class="btn btn-sm btn-outline-secondary py-1 px-3">Back</button>
+          </div>
         </div>
 
       </div>
@@ -176,6 +223,7 @@ Delivery Lead`
     // Attach dynamic handlers
     setTimeout(() => {
       const select = document.getElementById('email-template-select');
+      const toInput = document.getElementById('email-to-input');
       const subjectInput = document.getElementById('email-subject-input');
       const bodyInput = document.getElementById('email-body-input');
       const copyBtn = document.getElementById('copy-email-btn');
@@ -194,10 +242,11 @@ Delivery Lead`
 
       const updateMailto = () => {
         if (sendBtn) {
-          sendBtn.href = `mailto:?subject=${encodeURIComponent(subjectInput.value)}&body=${encodeURIComponent(bodyInput.value)}`;
+          sendBtn.href = buildMailto(parseRecipients(toInput?.value), subjectInput.value, bodyInput.value);
         }
       };
 
+      if (toInput) toInput.addEventListener('input', updateMailto);
       if (subjectInput) subjectInput.addEventListener('input', updateMailto);
       if (bodyInput) bodyInput.addEventListener('input', updateMailto);
 
@@ -207,6 +256,90 @@ Delivery Lead`
           navigator.clipboard.writeText(textToCopy).then(() => {
             appInstance.showToast('Email text copied to clipboard', 'success');
           });
+        });
+      }
+
+      // Sprint 10B: Outlook sending through the connected Microsoft 365 account.
+      // The Outlook button only opens the inline confirmation; only Confirm send
+      // calls the API, and it stays disabled while the request is in flight.
+      const outlookBtn = document.getElementById('send-outlook-btn');
+      const outlookStatus = document.getElementById('outlook-send-status');
+      const confirmPanel = document.getElementById('outlook-confirm-panel');
+      const confirmText = document.getElementById('outlook-confirm-text');
+      const confirmBtn = document.getElementById('outlook-confirm-btn');
+      const backBtn = document.getElementById('outlook-back-btn');
+      let outlookAccount = null;
+      const setOutlookStatus = (text, tone = 'text-muted') => {
+        if (!outlookStatus) return;
+        outlookStatus.className = `small mt-2 ${tone}`;
+        outlookStatus.textContent = text;
+      };
+      const hideConfirm = () => { if (confirmPanel) confirmPanel.classList.add('d-none'); };
+
+      MicrosoftService.getStatus().then((status) => {
+        if (!status || !status.configured) {
+          if (outlookBtn) outlookBtn.classList.add('d-none');
+          setOutlookStatus('Outlook sending is unavailable on this server. Send via Email Client still works.');
+          return;
+        }
+        if (!status.connected) {
+          setOutlookStatus('Connect Microsoft 365 in Settings to send from Outlook.');
+          return;
+        }
+        if (!status.canSendMail) {
+          setOutlookStatus('Reconnect Microsoft 365 in Settings to enable Outlook sending.');
+          return;
+        }
+        outlookAccount = status.accountEmail || 'your Microsoft 365 account';
+        if (outlookBtn) outlookBtn.disabled = false;
+        setOutlookStatus(`Outlook sending is available from ${outlookAccount}.`);
+      }).catch(() => setOutlookStatus('Outlook status could not be loaded. Send via Email Client still works.'));
+
+      if (outlookBtn) {
+        outlookBtn.addEventListener('click', () => {
+          const to = parseRecipients(toInput?.value);
+          if (to.length === 0) return setOutlookStatus('Add at least one recipient in the To field.', 'text-danger');
+          if (to.length > 10) return setOutlookStatus('Outlook sending accepts up to 10 recipients.', 'text-danger');
+          if (!subjectInput.value.trim() || !bodyInput.value.trim()) return setOutlookStatus('A subject and message body are required.', 'text-danger');
+          if (confirmText) confirmText.textContent = `Send to ${to.length} recipient${to.length === 1 ? '' : 's'} from ${outlookAccount}?`;
+          if (confirmPanel) confirmPanel.classList.remove('d-none');
+          outlookBtn.disabled = true;
+        });
+      }
+
+      if (backBtn) {
+        backBtn.addEventListener('click', () => {
+          hideConfirm();
+          if (outlookBtn && outlookAccount) outlookBtn.disabled = false;
+        });
+      }
+
+      if (confirmBtn) {
+        confirmBtn.addEventListener('click', async () => {
+          if (confirmBtn.disabled) return;
+          const label = confirmBtn.textContent;
+          confirmBtn.disabled = true;
+          if (backBtn) backBtn.disabled = true;
+          confirmBtn.textContent = 'Sending…';
+          try {
+            const result = await MicrosoftService.sendMail({
+              to: parseRecipients(toInput?.value),
+              subject: subjectInput.value,
+              body: bodyInput.value,
+            });
+            hideConfirm();
+            const count = result && result.recipientCount;
+            appInstance.showToast(`Email sent from ${outlookAccount} to ${count} recipient${count === 1 ? '' : 's'}.`, 'success');
+            document.getElementById('global-modal-overlay')?.classList.remove('show');
+          } catch (err) {
+            hideConfirm();
+            setOutlookStatus(describeOutlookError(err), 'text-danger');
+          } finally {
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = label;
+            if (backBtn) backBtn.disabled = false;
+            if (outlookBtn && outlookAccount) outlookBtn.disabled = false;
+          }
         });
       }
     }, 100);

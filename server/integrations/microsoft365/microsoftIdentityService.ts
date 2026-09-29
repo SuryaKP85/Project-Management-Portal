@@ -12,8 +12,55 @@ import { microsoftError, microsoftRequest, safeUpstreamCode } from './microsoftG
  * here creates a session or a portal user.
  */
 
-/** Exactly the Sprint 10A scopes. Mail and Teams scopes are deliberately absent. */
-export const MICROSOFT_SCOPES = ['openid', 'profile', 'email', 'offline_access', 'User.Read', 'Calendars.Read'] as const;
+/** The Sprint 10A scopes: sign-in claims, profile and read-only calendar. */
+export const MICROSOFT_BASE_SCOPES = ['openid', 'profile', 'email', 'offline_access', 'User.Read', 'Calendars.Read'] as const;
+
+/**
+ * Scopes requested for a new or reconnected account: the 10A set plus
+ * Mail.Send (Sprint 10B). Mail.Read, Mail.ReadWrite, Teams and calendar-write
+ * scopes are deliberately absent.
+ */
+export const MICROSOFT_SCOPES = [...MICROSOFT_BASE_SCOPES, 'Mail.Send'] as const;
+
+const GRAPH_SCOPE_PREFIX = /^https:\/\/graph\.microsoft\.com\//i;
+
+/**
+ * Canonical scope list: Graph resource prefixes stripped, blanks dropped,
+ * duplicates removed case-insensitively (first spelling kept).
+ */
+export function normalizeScopes(scopes: readonly string[] | string | null | undefined): string[] {
+  const raw = Array.isArray(scopes) ? scopes : String(scopes ?? '').split(/\s+/);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const entry of raw) {
+    const scope = String(entry ?? '').trim().replace(GRAPH_SCOPE_PREFIX, '');
+    if (!scope || seen.has(scope.toLowerCase())) continue;
+    seen.add(scope.toLowerCase());
+    out.push(scope);
+  }
+  return out;
+}
+
+/** True when the (normalized) scope list contains `scope`, ignoring case and Graph prefixes. */
+export function hasScope(scopes: readonly string[] | string | null | undefined, scope: string): boolean {
+  const wanted = scope.toLowerCase();
+  return normalizeScopes(scopes).some((s) => s.toLowerCase() === wanted);
+}
+
+/**
+ * The scopes to request when refreshing a connection: only what that
+ * connection was actually granted (limited to scopes this app knows), so a
+ * 10A connection without Mail.Send keeps refreshing. Falls back to the 10A set
+ * when nothing usable was stored.
+ */
+export function refreshScopesFor(grantedScopes: readonly string[] | string | null | undefined): string[] {
+  const known = new Map<string, string>(MICROSOFT_SCOPES.map((s) => [s.toLowerCase(), s] as [string, string]));
+  const granted = normalizeScopes(grantedScopes)
+    .map((s) => known.get(s.toLowerCase()))
+    .filter((s): s is string => !!s);
+  const base = granted.length > 0 ? granted : [...MICROSOFT_BASE_SCOPES];
+  return normalizeScopes(['openid', 'profile', 'email', 'offline_access', ...base]);
+}
 
 /** How long an authorization request may take before its state is refused. */
 export const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
@@ -137,11 +184,16 @@ export const MicrosoftIdentityService = {
     }, 'MICROSOFT_TOKEN_EXCHANGE_FAILED');
   },
 
-  async refresh(refreshToken: string): Promise<MicrosoftTokenSet> {
+  /**
+   * Refreshes with the scopes the connection was granted (Sprint 10B). Asking
+   * for a scope that was never consented, such as Mail.Send on a 10A
+   * connection, would make Microsoft refuse the refresh.
+   */
+  async refresh(refreshToken: string, grantedScopes?: readonly string[] | string | null): Promise<MicrosoftTokenSet> {
     return this.tokenRequest({
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
-      scope: MICROSOFT_SCOPES.join(' '),
+      scope: refreshScopesFor(grantedScopes).join(' '),
     }, 'MICROSOFT_REFRESH_FAILED');
   },
 

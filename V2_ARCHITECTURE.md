@@ -132,20 +132,22 @@ The full, current DDL (including later sprints' tables such as `roadmap_items`) 
 
 ---
 
-## 6. Microsoft 365 / Outlook Integration (Sprint 10A)
+## 6. Microsoft 365 / Outlook Integration (Sprints 10A–10B)
 
-A signed-in portal user can connect their Microsoft 365 account so the server can read their Outlook calendar. This is **account integration, not a portal login**: the V2 email/password login remains the only way into the portal, and no portal user is ever created or modified from Microsoft profile data.
+A signed-in portal user can connect their Microsoft 365 account so the server can read their Outlook calendar and send email they explicitly confirm. This is **account integration, not a portal login**: the V2 email/password login remains the only way into the portal, and no portal user is ever created or modified from Microsoft profile data.
 
 * **Flow**: OAuth 2.0 authorization code with PKCE (S256), confidential client. `POST /api/v1/integrations/microsoft/connect` returns the authorize URL; Microsoft redirects to `GET /api/v1/auth/microsoft/callback`, which requires the portal session. The OAuth state is random, single-use, expires after 10 minutes and is bound to the requesting user; the PKCE verifier never leaves the server.
-* **Scopes**: exactly `openid profile email offline_access User.Read Calendars.Read`. Mail and Teams scopes are not requested.
+* **Scopes**: new or reconnected accounts request exactly `openid profile email offline_access User.Read Calendars.Read Mail.Send`. `Mail.Read`, `Mail.ReadWrite`, Teams and calendar-write scopes are not requested. Stored scopes are normalized (Graph resource prefixes removed).
 * **Token storage**: `microsoft_connections` (one row per user) holds AES-256-GCM ciphertext of the access and refresh tokens, keyed by `MICROSOFT_TOKEN_ENCRYPTION_KEY`. Without that key the integration reports not-configured and stores nothing. Tokens, codes and verifiers are never returned by any API or written to the activity log.
-* **Refresh**: access tokens are refreshed shortly before expiry; a rotated refresh token is always persisted.
+* **Refresh**: access tokens are refreshed shortly before expiry; a rotated refresh token is always persisted. A refresh requests only the scopes the connection was actually granted, so a connection made before Sprint 10B (without `Mail.Send`) keeps refreshing and reading the calendar.
+* **Outlook sending (Sprint 10B)**: `POST /api/v1/integrations/microsoft/mail/send` sends a plain-text message to 1–10 `to` recipients (subject up to 255 characters, body up to 20,000) through Graph `/me/sendMail` with `saveToSentItems: true`. The sender is always the signed-in user's own connection; the request carries no identity, CC, BCC, HTML or attachments, and requires `confirmed: true`, which the composer sends only from its inline confirmation step. The server checks the stored scopes first and answers 424 `MICROSOFT_PERMISSION_REQUIRED` without calling Graph when `Mail.Send` is missing. The only automatic retry is one forced token refresh after a Graph 401; 400/403/429/5xx and timeouts are never retried, and a timeout (504) tells the user the email may have been sent and to check Sent Items. No request id, recipient, subject or body is stored; the activity log records `event: 'mail_sent'` with counts, lengths and the sending account only.
+* **Reconnect for sending**: connections made before Sprint 10B report `canSendMail: false` in the status response. The user reconnects from Settings to grant `Mail.Send`; calendar access keeps working until then.
 * **Identity association**: the Graph user id and tenant are stored on `users.ms_user_id` / `ms_tenant_id`. A Microsoft account already linked to another portal user is refused with 409. `DELETE /api/v1/integrations/microsoft/connection` deletes the stored tokens and clears the association.
-* **APIs**: `GET /api/v1/integrations/microsoft/status` (safe fields only) and `GET /api/v1/integrations/microsoft/calendar?days=7` (read-only upcoming events, at most 31 days and 50 events, times in UTC).
+* **APIs**: `GET /api/v1/integrations/microsoft/status` (safe fields only, including `canSendMail`), `POST /api/v1/integrations/microsoft/mail/send` and `GET /api/v1/integrations/microsoft/calendar?days=7` (read-only upcoming events, at most 31 days and 50 events, times in UTC).
 * **Services**: `microsoftIdentityService.ts` (configuration, state, PKCE, token endpoint), `microsoftGraphClient.ts` (Node fetch with timeout, injectable for tests), `tokenCrypto.ts`, `microsoftConnectionRepository.ts` and `microsoftIntegrationService.ts`.
 * **Active users**: `authenticateToken` re-reads the account on every request, so deactivated users are refused on all APIs, including Microsoft.
 * **Configuration**: `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID`, `MICROSOFT_REDIRECT_URI` (must match the Entra app registration and the portal's host and port), `MICROSOFT_TOKEN_ENCRYPTION_KEY`, optional `MICROSOFT_GRAPH_TIMEOUT_MS`.
-* **Not yet implemented**: sending mail (planned for Sprint 10B with `Mail.Send`), mail reading, calendar writes, Microsoft sign-in, Teams.
+* **Not implemented**: mail reading, CC/BCC, HTML bodies and attachments, calendar writes, Microsoft sign-in, Teams.
 
 ---
 

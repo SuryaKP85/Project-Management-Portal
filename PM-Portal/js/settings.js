@@ -113,13 +113,22 @@ export const SettingsModule = {
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
           <div>
             <div class="font-semibold"><i class="fa-solid fa-circle-check text-success me-1"></i>Connected as <span class="text-primary">${esc(s.accountEmail || 'your Microsoft account')}</span></div>
-            <div class="small text-muted">Connected ${esc(when)} · Read-only access to your Outlook calendar.</div>
+            <div class="small text-muted">Connected ${esc(when)} · ${s.canSendMail ? 'Outlook calendar (read) and sending email you confirm.' : 'Outlook calendar (read-only).'}</div>
           </div>
           <button type="button" id="settings-btn-microsoft-disconnect" class="btn-enterprise btn-enterprise-secondary text-danger">
             <i class="fa-solid fa-link-slash me-1"></i> Disconnect
           </button>
-        </div>`;
+        </div>
+        ${s.canSendMail ? '' : `
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 border-top pt-3 mt-3">
+          <div class="small">Outlook sending is not enabled for this connection. Reconnecting asks Microsoft for permission to send email you confirm.</div>
+          <button type="button" id="settings-btn-microsoft-reconnect" class="btn-enterprise btn-enterprise-primary">
+            <i class="fa-solid fa-rotate me-1"></i> Reconnect to enable Outlook sending
+          </button>
+        </div>`}`;
       document.getElementById('settings-btn-microsoft-disconnect')?.addEventListener('click', () => this.disconnectMicrosoft());
+      const reconnectBtn = document.getElementById('settings-btn-microsoft-reconnect');
+      reconnectBtn?.addEventListener('click', () => this.connectMicrosoft(reconnectBtn));
       return;
     }
     if (!s.configured) {
@@ -132,7 +141,7 @@ export const SettingsModule = {
       <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
         <div>
           <div class="font-semibold">Not connected</div>
-          <div class="small text-muted">Connect your Microsoft 365 account to see upcoming Outlook events in My Work. The portal requests read-only calendar access; your portal sign-in does not change.</div>
+          <div class="small text-muted">Connect your Microsoft 365 account to see upcoming Outlook events in My Work and send email you confirm from the email composer. The portal requests calendar read access and permission to send mail; your portal sign-in does not change.</div>
         </div>
         <button type="button" id="settings-btn-microsoft-connect" class="btn-enterprise btn-enterprise-primary">
           <i class="fa-solid fa-plug me-1"></i> Connect Microsoft 365
@@ -141,8 +150,7 @@ export const SettingsModule = {
     document.getElementById('settings-btn-microsoft-connect')?.addEventListener('click', () => this.connectMicrosoft());
   },
 
-  async connectMicrosoft() {
-    const btn = document.getElementById('settings-btn-microsoft-connect');
+  async connectMicrosoft(btn = document.getElementById('settings-btn-microsoft-connect')) {
     if (btn) btn.disabled = true;
     try {
       await MicrosoftService.connect();

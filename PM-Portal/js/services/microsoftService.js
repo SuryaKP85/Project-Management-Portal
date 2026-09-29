@@ -25,6 +25,15 @@ export class MicrosoftService {
     return apiClient.delete('/integrations/microsoft/connection');
   }
 
+  /**
+   * Sprint 10B: sends a plain-text email through the signed-in user's own
+   * connected account. Call only after the user has explicitly confirmed.
+   * The server identifies the sender from the session; no identity is sent.
+   */
+  static async sendMail({ to, subject, body }) {
+    return apiClient.post('/integrations/microsoft/mail/send', { to, subject, body, confirmed: true });
+  }
+
   /** Upcoming Outlook events for the signed-in user (read-only). */
   static async getCalendar(days = 7) {
     return apiClient.get(`/integrations/microsoft/calendar?days=${encodeURIComponent(days)}`);

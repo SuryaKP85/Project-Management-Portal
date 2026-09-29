@@ -1,6 +1,6 @@
 import crypto from 'crypto';
-import { MicrosoftIdentityService, MICROSOFT_SCOPES } from '../integrations/microsoft365/microsoftIdentityService';
-import { graphGet, microsoftError } from '../integrations/microsoft365/microsoftGraphClient';
+import { MicrosoftIdentityService, MICROSOFT_SCOPES, normalizeScopes, hasScope } from '../integrations/microsoft365/microsoftIdentityService';
+import { graphGet, graphPost, microsoftError } from '../integrations/microsoft365/microsoftGraphClient';
 import { encryptToken, decryptToken } from '../integrations/microsoft365/tokenCrypto';
 import { MicrosoftConnectionRepository } from '../repositories/microsoftConnectionRepository';
 import { UserRepository } from '../repositories/userRepository';
@@ -27,10 +27,161 @@ export interface MicrosoftActor {
 export interface MicrosoftStatus {
   configured: boolean;
   connected: boolean;
+  /** Sprint 10B: true only when the stored connection was granted Mail.Send. */
+  canSendMail: boolean;
   accountEmail?: string;
   tenantId?: string;
   connectedAt?: string;
   scopes?: string[];
+}
+
+/** Sprint 10B send limits. */
+export const SEND_MAX_RECIPIENTS = 10;
+export const SEND_MAX_SUBJECT = 255;
+export const SEND_MAX_BODY = 20000;
+/** Bounds work on hostile input before de-duplication. */
+const SEND_MAX_RAW_RECIPIENTS = 50;
+const SEND_ALLOWED_FIELDS = new Set(['to', 'subject', 'body', 'confirmed']);
+
+export interface OutlookSendRequest {
+  to: string[];
+  subject: string;
+  body: string;
+}
+
+export interface OutlookSendResult {
+  sent: true;
+  recipientCount: number;
+  sentAt: string;
+}
+
+/** Subject, recipients: no C0 controls or DEL. */
+const CONTROL_CHARS = /[\u0000-\u001F\u007F]/;
+const FORBIDDEN_ADDRESS_CHARS = /[<>(),;:"\[\]\\]/;
+const LOCAL_PART = /^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*$/;
+const DOMAIN_PART = /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+
+function validateAddress(raw: unknown, index: number, errors: string[]): string | null {
+  if (typeof raw !== 'string') {
+    errors.push(`Recipient ${index + 1} must be a string.`);
+    return null;
+  }
+  const address = raw.trim().toLowerCase();
+  if (!address) {
+    errors.push(`Recipient ${index + 1} is empty.`);
+    return null;
+  }
+  if (/\s/.test(address) || CONTROL_CHARS.test(address)) {
+    errors.push(`Recipient ${index + 1} must not contain spaces or control characters (display names are not supported).`);
+    return null;
+  }
+  if (FORBIDDEN_ADDRESS_CHARS.test(address)) {
+    errors.push(`Recipient ${index + 1} contains characters that are not allowed in an address.`);
+    return null;
+  }
+  if (address.length > 254) {
+    errors.push(`Recipient ${index + 1} exceeds 254 characters.`);
+    return null;
+  }
+  const at = address.lastIndexOf('@');
+  const local = at > 0 ? address.slice(0, at) : '';
+  const domain = at > 0 ? address.slice(at + 1) : '';
+  if (at <= 0 || address.indexOf('@') !== at || !domain) {
+    errors.push(`Recipient ${index + 1} is not a valid email address.`);
+    return null;
+  }
+  if (local.length > 64) {
+    errors.push(`Recipient ${index + 1} has a local part longer than 64 characters.`);
+    return null;
+  }
+  if (!LOCAL_PART.test(local) || !DOMAIN_PART.test(domain)) {
+    errors.push(`Recipient ${index + 1} is not a valid email address.`);
+    return null;
+  }
+  return address;
+}
+
+/**
+ * Validates a send request. Returns the normalized request, or the list of
+ * problems. The request can never carry an identity: the sender is always the
+ * signed-in user's own connection.
+ */
+export function validateSendRequest(input: unknown): { ok: true; value: OutlookSendRequest } | { ok: false; errors: string[] } {
+  const errors: string[] = [];
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return { ok: false, errors: ['Request body must be a JSON object.'] };
+  }
+  const body = input as Record<string, unknown>;
+  const unsupported = Object.keys(body).filter((k) => !SEND_ALLOWED_FIELDS.has(k));
+  if (unsupported.length) {
+    errors.push(`Unsupported field(s): ${unsupported.map((k) => k.replace(/[^A-Za-z0-9_]/g, '').slice(0, 40)).join(', ')}.`);
+  }
+  if (body.confirmed !== true) {
+    errors.push("Field 'confirmed' must be true to send.");
+  }
+
+  let to: string[] = [];
+  if (!Array.isArray(body.to)) {
+    errors.push("Field 'to' must be an array of email addresses.");
+  } else if (body.to.length === 0) {
+    errors.push("Field 'to' needs at least one recipient.");
+  } else if (body.to.length > SEND_MAX_RAW_RECIPIENTS) {
+    errors.push(`Field 'to' accepts at most ${SEND_MAX_RECIPIENTS} recipients.`);
+  } else {
+    const seen = new Set<string>();
+    body.to.forEach((raw, i) => {
+      const address = validateAddress(raw, i, errors);
+      if (address && !seen.has(address)) {
+        seen.add(address);
+        to.push(address);
+      }
+    });
+    if (to.length > SEND_MAX_RECIPIENTS) {
+      errors.push(`Field 'to' accepts at most ${SEND_MAX_RECIPIENTS} recipients.`);
+    }
+  }
+
+  let subject = '';
+  if (typeof body.subject !== 'string') {
+    errors.push("Field 'subject' is required.");
+  } else {
+    subject = body.subject.trim();
+    if (!subject) errors.push("Field 'subject' cannot be empty.");
+    else if (subject.length > SEND_MAX_SUBJECT) errors.push(`Field 'subject' cannot exceed ${SEND_MAX_SUBJECT} characters.`);
+    else if (CONTROL_CHARS.test(subject)) errors.push("Field 'subject' must not contain control characters or line breaks.");
+  }
+
+  let text = '';
+  if (typeof body.body !== 'string') {
+    errors.push("Field 'body' is required.");
+  } else {
+    text = body.body;
+    if (!text.trim()) errors.push("Field 'body' cannot be empty.");
+    else if (text.length > SEND_MAX_BODY) errors.push(`Field 'body' cannot exceed ${SEND_MAX_BODY} characters.`);
+    else if (text.includes('\u0000')) errors.push("Field 'body' must not contain NUL characters.");
+  }
+
+  if (errors.length) return { ok: false, errors };
+  return { ok: true, value: { to, subject, body: text } };
+}
+
+/** Wording shared by every outcome where Microsoft may have accepted the message. */
+const SENT_ITEMS_HINT = 'Check your Outlook Sent Items before trying again.';
+
+/** Maps a non-accepted Graph sendMail answer. Upstream codes and messages are never surfaced. */
+function mapSendFailure(status: number, retryAfter?: string | null): Error {
+  if (status === 403) {
+    return microsoftError(424, 'MICROSOFT_PERMISSION_REQUIRED', 'Microsoft 365 did not allow sending from this account. Reconnect Microsoft 365 in Settings to grant permission, or ask your administrator.');
+  }
+  if (status === 429) {
+    const seconds = Number.parseInt(String(retryAfter ?? ''), 10);
+    const wait = Number.isFinite(seconds) && seconds > 0 && seconds <= 3600 ? ` Try again in ${seconds} seconds.` : ' Try again later.';
+    return microsoftError(429, 'MICROSOFT_RATE_LIMITED', `Microsoft is limiting requests right now; the email was not sent.${wait}`);
+  }
+  if (status === 400 || status === 413) {
+    return microsoftError(422, 'MICROSOFT_MAIL_REJECTED', 'Microsoft rejected the message; it was not sent. Check the recipients and content.');
+  }
+  return microsoftError(502, 'MICROSOFT_GRAPH_ERROR', `Microsoft reported an error and the email was not confirmed as sent. ${SENT_ITEMS_HINT}`);
 }
 
 export interface OutlookCalendarEvent {
@@ -57,13 +208,16 @@ function actorName(actor: MicrosoftActor): string {
   return `${actor.firstName || ''} ${actor.lastName || ''}`.trim() || actor.id;
 }
 
-/** Audit entry with metadata only: never tokens, codes, verifiers or state. */
-async function audit(actor: MicrosoftActor, event: 'connected' | 'disconnected', details: Record<string, unknown>): Promise<void> {
+/**
+ * Audit entry with metadata only: never tokens, codes, verifiers, state, or
+ * (for mail) recipients, subject or body. Uses the existing action vocabulary.
+ */
+async function audit(actor: MicrosoftActor, event: 'connected' | 'disconnected' | 'mail_sent', details: Record<string, unknown>): Promise<void> {
   await ActivityRepository.create({
     id: `act_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
     entityType: 'user',
     entityId: actor.id,
-    action: 'update',
+    action: event === 'mail_sent' ? 'create' : 'update',
     actorId: actor.id,
     actorName: actorName(actor),
     details: { integration: 'microsoft365', event, ...details },
@@ -117,14 +271,16 @@ export const MicrosoftIntegrationService = {
   async getStatus(userId: string): Promise<MicrosoftStatus> {
     const configured = MicrosoftIdentityService.isConfigured();
     const connection = await MicrosoftConnectionRepository.findByUserId(userId);
-    if (!connection) return { configured, connected: false };
+    if (!connection) return { configured, connected: false, canSendMail: false };
+    const scopes = normalizeScopes(connection.scopes);
     return {
       configured,
       connected: true,
+      canSendMail: configured && hasScope(scopes, 'Mail.Send'),
       accountEmail: connection.accountEmail,
       tenantId: connection.msTenantId,
       connectedAt: connection.connectedAt,
-      scopes: connection.scopes,
+      scopes,
     };
   },
 
@@ -184,7 +340,7 @@ export const MicrosoftIntegrationService = {
     }
 
     const at = new Date(now).toISOString();
-    const scopes = tokens.scope ? tokens.scope.split(' ').filter(Boolean) : [...MICROSOFT_SCOPES];
+    const scopes = tokens.scope ? normalizeScopes(tokens.scope) : [...MICROSOFT_SCOPES];
     await MicrosoftConnectionRepository.upsert({
       userId: actor.id,
       msUserId,
@@ -209,7 +365,7 @@ export const MicrosoftIntegrationService = {
     if (existing) {
       await audit(actor, 'disconnected', { accountEmail: existing.accountEmail, tenantId: existing.msTenantId });
     }
-    return { configured: MicrosoftIdentityService.isConfigured(), connected: false };
+    return { configured: MicrosoftIdentityService.isConfigured(), connected: false, canSendMail: false };
   },
 
   /**
@@ -230,13 +386,14 @@ export const MicrosoftIntegrationService = {
     if (!connection.refreshTokenEnc) {
       throw microsoftError(424, 'MICROSOFT_RECONNECT_REQUIRED', 'The Microsoft authorization expired. Please reconnect your Microsoft 365 account.');
     }
-    const refreshed = await MicrosoftIdentityService.refresh(decryptToken(connection.refreshTokenEnc, key));
+    // Refresh with the scopes this connection was granted (a 10A connection has no Mail.Send).
+    const refreshed = await MicrosoftIdentityService.refresh(decryptToken(connection.refreshTokenEnc, key), connection.scopes);
     await MicrosoftConnectionRepository.updateTokens(userId, {
       accessTokenEnc: encryptToken(refreshed.accessToken, key),
       // Microsoft may rotate the refresh token; keep the previous one only if none was returned.
       refreshTokenEnc: refreshed.refreshToken ? encryptToken(refreshed.refreshToken, key) : connection.refreshTokenEnc,
       expiresAt: new Date(now + refreshed.expiresInSeconds * 1000).toISOString(),
-      scopes: refreshed.scope ? refreshed.scope.split(' ').filter(Boolean) : undefined,
+      scopes: refreshed.scope ? normalizeScopes(refreshed.scope) : undefined,
     });
     return refreshed.accessToken;
   },
@@ -272,5 +429,67 @@ export const MicrosoftIntegrationService = {
       events: raw.slice(0, CALENDAR_MAX_EVENTS).map(mapCalendarEvent),
       truncated: Boolean(body?.['@odata.nextLink']) || raw.length > CALENDAR_MAX_EVENTS,
     };
+  },
+
+  /**
+   * Sprint 10B — sends a plain-text email through the caller's own connected
+   * account (Graph /me/sendMail). The request must already be validated.
+   *
+   * No request data is kept after the attempt. The only automatic retry is a
+   * single forced token refresh when Graph answers 401 (Graph did not accept
+   * the message); every other failure, including a timeout, is returned as-is.
+   */
+  async sendMail(actor: MicrosoftActor, request: OutlookSendRequest, options: { now?: number } = {}): Promise<OutlookSendResult> {
+    MicrosoftIdentityService.assertConfigured();
+    const now = options.now ?? Date.now();
+    const connection = await MicrosoftConnectionRepository.findByUserId(actor.id);
+    if (!connection) {
+      throw microsoftError(404, 'MICROSOFT_NOT_CONNECTED', 'No Microsoft 365 account is connected.');
+    }
+    if (!hasScope(connection.scopes, 'Mail.Send')) {
+      throw microsoftError(424, 'MICROSOFT_PERMISSION_REQUIRED', 'Outlook sending is not enabled for this connection. Reconnect Microsoft 365 in Settings to grant permission to send email.');
+    }
+
+    const payload = {
+      message: {
+        subject: request.subject,
+        body: { contentType: 'Text', content: request.body },
+        toRecipients: request.to.map((address) => ({ emailAddress: { address } })),
+      },
+      saveToSentItems: true,
+    };
+
+    const post = async (accessToken: string) => {
+      try {
+        return await graphPost(accessToken, '/me/sendMail', payload);
+      } catch (err: any) {
+        if (err?.code === 'MICROSOFT_TIMEOUT') {
+          throw microsoftError(504, 'MICROSOFT_TIMEOUT', `Microsoft did not respond in time. The email may have been sent. ${SENT_ITEMS_HINT}`);
+        }
+        if (err?.code === 'MICROSOFT_UNREACHABLE') {
+          throw microsoftError(502, 'MICROSOFT_UNREACHABLE', `Microsoft services could not be reached and the email was not confirmed as sent. ${SENT_ITEMS_HINT}`);
+        }
+        throw err;
+      }
+    };
+
+    let result = await post(await this.getAccessToken(actor.id, { now }));
+    if (result.status === 401) {
+      // Graph refused the token, so the message was not accepted: one forced refresh, one retry.
+      result = await post(await this.getAccessToken(actor.id, { now, force: true }));
+      if (result.status === 401) {
+        throw microsoftError(424, 'MICROSOFT_RECONNECT_REQUIRED', 'Microsoft rejected the stored authorization. Please reconnect your Microsoft 365 account.');
+      }
+    }
+    if (!result.ok) throw mapSendFailure(result.status, result.retryAfter);
+
+    const sentAt = new Date(now).toISOString();
+    await audit(actor, 'mail_sent', {
+      recipientCount: request.to.length,
+      subjectLength: request.subject.length,
+      bodyLength: request.body.length,
+      accountEmail: connection.accountEmail,
+    });
+    return { sent: true, recipientCount: request.to.length, sentAt };
   },
 };

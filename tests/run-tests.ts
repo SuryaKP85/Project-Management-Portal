@@ -4194,8 +4194,8 @@ async function runTests() {
     const url1 = new URL(auth1.authorizationUrl);
     assert(auth1.state !== auth2.state && /^[A-Za-z0-9_-]{43}$/.test(auth1.state) && auth1.state !== 'surya_pm_ms_oauth' && url1.searchParams.get('state') === auth1.state, 'OAuth state is cryptographically random and unique per request');
     assert(url1.origin === 'https://login.microsoftonline.com' && url1.pathname === '/organizations/oauth2/v2.0/authorize' && url1.searchParams.get('code_challenge_method') === 'S256' && /^[A-Za-z0-9_-]{43}$/.test(url1.searchParams.get('code_challenge') || ''), 'Authorize URL carries a PKCE S256 challenge');
-    assert(url1.searchParams.get('scope') === 'openid profile email offline_access User.Read Calendars.Read', 'Exactly the Sprint 10A scopes are requested');
-    assert(!/Mail\.|Team|Calendars\.ReadWrite/i.test(url1.searchParams.get('scope') || '') && !/Mail\.|Team/i.test(SCOPES41.join(' ')), 'No Mail.Read, Mail.Send, Teams or calendar-write scope is requested in 10A');
+    assert(url1.searchParams.get('scope') === 'openid profile email offline_access User.Read Calendars.Read Mail.Send', 'Exactly the 10A scopes plus Mail.Send (Sprint 10B) are requested');
+    assert(!/Mail\.Read|Mail\.ReadWrite|Team|Calendars\.ReadWrite/i.test(url1.searchParams.get('scope') || '') && !/Mail\.Read|Team/i.test(SCOPES41.join(' ')), 'No Mail.Read, Mail.ReadWrite, Teams or calendar-write scope is requested');
     assert(!/code_verifier|client_secret|secret-s10a/.test(auth1.authorizationUrl), 'Neither the PKCE verifier nor the client secret appears in the authorize URL');
     const connectRes41 = keep41(await run41(MsCtl41.connect, reqAs40(userA41, { body: {} })));
     assert(connectRes41.statusCode === 200 && Object.keys(connectRes41.body.data).join() === 'authorizationUrl' && connectRes41.body.data.authorizationUrl.startsWith('https://login.microsoftonline.com/'), 'Connect returns only the authorize URL');
@@ -4264,7 +4264,7 @@ async function runTests() {
     // --- 17. status ---
     const statusA41 = keep41(await run41(MsCtl41.status, reqAs40(userA41)));
     const sA41 = statusA41.body.data;
-    assert(statusA41.statusCode === 200 && sA41.configured && sA41.connected && sA41.accountEmail === 'ms-graph-user-A@contoso.com' && sA41.tenantId === 'tenant-contoso' && !!sA41.connectedAt && Object.keys(sA41).sort().join() === 'accountEmail,configured,connected,connectedAt,scopes,tenantId', 'Connection status returns only safe fields');
+    assert(statusA41.statusCode === 200 && sA41.configured && sA41.connected && sA41.accountEmail === 'ms-graph-user-A@contoso.com' && sA41.tenantId === 'tenant-contoso' && !!sA41.connectedAt && sA41.canSendMail === true && Object.keys(sA41).sort().join() === 'accountEmail,canSendMail,configured,connected,connectedAt,scopes,tenantId', 'Connection status returns only safe fields');
 
     // --- 16. duplicate identity -> 409 ---
     const dupAuth41 = MsId41.beginAuthorization(userB41.id);
@@ -4332,7 +4332,7 @@ async function runTests() {
       await first.handle(mwReq41(tokenA41) as any, r as any, () => { passed = true; });
       if (first.name === 'authenticateToken' && !passed && r.statusCode === 401 && r.body.error.code === 'ACCOUNT_INACTIVE') msBlocked41 += 1;
     }
-    assert(msLayers41.length === 5 && msBlocked41 === 5, `All five Microsoft routes reject an inactive user (${msBlocked41}/5)`);
+    assert(msLayers41.length === 6 && msBlocked41 === 6, `All six Microsoft routes reject an inactive user (${msBlocked41}/6)`);
     await UserRepo40.update(userA41.id, { isActive: true });
     const ghostRes41 = res41();
     await authMw41(mwReq41(gen41({ ...userA41, id: 'usr_does_not_exist' } as any)) as any, ghostRes41 as any, () => {});
@@ -4355,7 +4355,7 @@ async function runTests() {
 
     // --- 23. fake Graph success is gone; nothing logs secrets ---
     const msSources41 = ['server/integrations/microsoft365/microsoftIdentityService.ts', 'server/integrations/microsoft365/microsoftGraphClient.ts', 'server/integrations/microsoft365/tokenCrypto.ts', 'server/services/microsoftIntegrationService.ts', 'server/controllers/microsoftController.ts', 'server/repositories/microsoftConnectionRepository.ts'].map((f) => fs35.readFileSync(f, 'utf8')).join('\n');
-    assert(!/success: true/.test(msSources41.replace(/res\.json\(\{ success: true,/g, '')) && !/getGraphClientForUser|listCalendarEvents|sendMail/.test(msSources41) && !/surya_pm_ms_oauth/.test(msSources41), 'The fake Graph client and fixed OAuth state are gone');
+    assert(!/success: true/.test(msSources41.replace(/res\.json\(\{ success: true,/g, '')) && !/getGraphClientForUser|listCalendarEvents|sendMail\(_subject/.test(msSources41) && !/surya_pm_ms_oauth/.test(msSources41), 'The fake Graph client and fixed OAuth state are gone');
     assert(!/console\.(log|info|debug|warn|error)/.test(msSources41) && !/next\(err\)/.test((msSources41.match(/async callback\([\s\S]*?\n  \},/) || [''])[0]), 'Microsoft code never logs, and the callback never forwards errors to the URL-logging handler');
 
     // --- browser surfaces ---
@@ -4375,6 +4375,315 @@ async function runTests() {
     }
   }
   assert(cfg41.microsoft.clientId === savedMs41.clientId && cfg41.microsoft.tokenEncryptionKey === savedMs41.tokenEncryptionKey && MsId41.isConfigured() === Boolean(savedMs41.clientId && savedMs41.clientSecret && parseKey41(savedMs41.tokenEncryptionKey)), 'Microsoft configuration and transport are restored after §41');
+
+  // 42. Outlook email sending (Sprint 10B)
+  // Mail.Send through the caller's own connection, granted-scope refresh for
+  // pre-10B connections, and the composer. Graph is the §41 injected fake.
+  console.log('\n--- 42. Outlook Email Sending (Sprint 10B) ---');
+  const { validateSendRequest: validate42, SEND_MAX_RECIPIENTS: MAXR42, SEND_MAX_SUBJECT: MAXS42, SEND_MAX_BODY: MAXB42 } = await import('../server/services/microsoftIntegrationService');
+  const { normalizeScopes: norm42, hasScope: hasScope42, refreshScopesFor: refreshFor42, MICROSOFT_BASE_SCOPES: BASE42 } = await import('../server/integrations/microsoft365/microsoftIdentityService');
+
+  const savedMs42 = { ...cfg41.microsoft };
+  const KEY42 = crypto41.randomBytes(32).toString('hex');
+  const SEND_URL42 = 'https://graph.microsoft.com/v1.0/me/sendMail';
+  const UPSTREAM42 = { error: { code: 'ErrorInvalidRecipients', message: 'upstream-secret-detail AADSTS50000' } };
+  const calls42: any[] = [];
+  const secrets42: string[] = [];
+  const responses42: string[] = [];
+  let sendQueue42: any[] = [];
+  let tokenFail42: any = null;
+  let tokenN42 = 0;
+  let meId42 = 'ms-graph-user-sender';
+  setFetch41(async (url: string, init: any) => {
+    calls42.push({ url, method: init.method, headers: { ...init.headers }, body: init.body });
+    const reply = (status: number, body: any, headers: Record<string, string> = {}) => ({
+      ok: status >= 200 && status < 300,
+      status,
+      headers: { get: (n: string) => headers[n.toLowerCase()] ?? null },
+      json: async () => { if (body === undefined) throw new SyntaxError('Unexpected end of JSON input'); return body; },
+    });
+    if (url.includes('/oauth2/v2.0/token')) {
+      if (tokenFail42) return reply(400, tokenFail42);
+      const form = new URLSearchParams(init.body || '');
+      tokenN42 += 1;
+      const access = `s42-access-${tokenN42}`;
+      const refresh = `s42-refresh-${tokenN42}`;
+      secrets42.push(access, refresh);
+      // Microsoft answers with the scopes it granted; the fake grants what was requested.
+      return reply(200, { access_token: access, refresh_token: refresh, expires_in: 3600, scope: form.get('scope'), id_token: idToken41 });
+    }
+    if (url === SEND_URL42) {
+      const next = sendQueue42.shift() || { status: 202 };
+      if (next.throw === 'abort') { const e: any = new Error('The operation was aborted'); e.name = 'AbortError'; throw e; }
+      if (next.throw === 'network') throw new TypeError('fetch failed');
+      return reply(next.status, next.body, next.headers || {});
+    }
+    if (url.startsWith('https://graph.microsoft.com/v1.0/me/calendarView')) return reply(200, { value: [] });
+    if (url.startsWith('https://graph.microsoft.com/v1.0/me')) return reply(200, { id: meId42, mail: `${meId42}@contoso.com` });
+    return reply(404, {});
+  });
+  const sendCalls42 = () => calls42.filter((c) => c.url === SEND_URL42);
+  const tokenCalls42 = () => calls42.filter((c) => c.url.includes('/oauth2/v2.0/token'));
+  const keep42 = (r: any) => { responses42.push(typeof r.body === 'string' ? r.body : JSON.stringify(r.body)); return r; };
+  const send42 = async (user: any, body: any) => keep42(await run41(MsCtl41.sendMail, reqAs40(user, { method: 'POST', url: '/api/v1/integrations/microsoft/mail/send', body })));
+  const status42 = async (user: any) => keep42(await run41(MsCtl41.status, reqAs40(user))).body.data;
+  const valid42 = (over: any = {}) => ({ to: ['recipient.one@example.com'], subject: 'Weekly status', body: 'Hello team,\nAll milestones are on track.', confirmed: true, ...over });
+  const connect42 = async (actor: any) => {
+    const a = MsId41.beginAuthorization(actor.id);
+    secrets42.push(a.state, `code-${actor.id}`);
+    await MsSvc41.completeConnect(actor, { state: a.state, code: `code-${actor.id}` });
+  };
+  const expire42 = async (userId: string) => {
+    const c = (await MsRepo41.findByUserId(userId))!;
+    await MsRepo41.updateTokens(userId, { accessTokenEnc: c.accessTokenEnc, refreshTokenEnc: c.refreshTokenEnc, expiresAt: new Date(Date.now() - 60000).toISOString() });
+  };
+
+  const stamp42 = Date.now();
+  const sender42 = await Auth40.register({ email: `s42.sender.${stamp42}@company.com`, password: 'MsUser@12345', firstName: 'Sam', lastName: 'Sender', role: 'viewer' }, login40.user);
+  const legacy42 = await Auth40.register({ email: `s42.legacy.${stamp42}@company.com`, password: 'MsUser@12345', firstName: 'Lee', lastName: 'Legacy', role: 'team-member' }, login40.user);
+  const idle42 = await Auth40.register({ email: `s42.idle.${stamp42}@company.com`, password: 'MsUser@12345', firstName: 'Ida', lastName: 'Idle', role: 'team-member' }, login40.user);
+  const senderActor42 = { id: sender42.id, firstName: 'Sam', lastName: 'Sender' };
+  const legacyActor42 = { id: legacy42.id, firstName: 'Lee', lastName: 'Legacy' };
+  try {
+    Object.assign(cfg41.microsoft, { clientId: 'client-s10b', clientSecret: 'secret-s10b', tenantId: 'organizations', redirectUri: 'http://localhost:5173/api/v1/auth/microsoft/callback', tokenEncryptionKey: KEY42 });
+    const key42 = parseKey41(KEY42)!;
+
+    // --- 40. scopes for new or reconnected accounts ---
+    assert(JSON.stringify([...SCOPES41]) === JSON.stringify(['openid', 'profile', 'email', 'offline_access', 'User.Read', 'Calendars.Read', 'Mail.Send']) && JSON.stringify([...BASE42]) === JSON.stringify(['openid', 'profile', 'email', 'offline_access', 'User.Read', 'Calendars.Read']), 'New/reconnected accounts request the 10A scopes plus exactly Mail.Send');
+    assert(!/Mail\.Read|Mail\.ReadWrite|Team|Calendars\.ReadWrite/i.test(new URL(MsId41.beginAuthorization(idle42.id).authorizationUrl).searchParams.get('scope') || ''), 'No Mail.Read, Mail.ReadWrite, Teams or calendar-write scope is ever requested');
+    assert(JSON.stringify(norm42(['https://graph.microsoft.com/Mail.Send', 'mail.send', ' User.Read ', '', 'openid'])) === JSON.stringify(['Mail.Send', 'User.Read', 'openid']) && hasScope42('openid https://graph.microsoft.com/MAIL.SEND', 'Mail.Send') && !hasScope42(['Calendars.Read'], 'Mail.Send'), 'Scopes are normalized: Graph prefixes stripped, duplicates removed case-insensitively');
+    assert(refreshFor42(['https://graph.microsoft.com/Calendars.Read', 'User.Read', 'Directory.ReadWrite.All']).join(' ') === 'openid profile email offline_access Calendars.Read User.Read' && refreshFor42([]).join(' ') === BASE42.join(' '), 'Refresh scopes come from the granted set, limited to known scopes, falling back to the 10A set');
+
+    // --- 38–39. a pre-10B connection keeps refreshing with its own scopes ---
+    await UserRepo40.setMicrosoftIdentity(legacy42.id, 'ms-graph-user-legacy', 'tenant-contoso');
+    secrets42.push('legacy-access-0', 'legacy-refresh-0');
+    await MsRepo41.upsert({
+      userId: legacy42.id, msUserId: 'ms-graph-user-legacy', msTenantId: 'tenant-contoso', accountEmail: 'legacy@contoso.com',
+      scopes: ['openid', 'profile', 'email', 'offline_access', 'https://graph.microsoft.com/User.Read', 'https://graph.microsoft.com/Calendars.Read'],
+      accessTokenEnc: enc41('legacy-access-0', key42), refreshTokenEnc: enc41('legacy-refresh-0', key42),
+      expiresAt: new Date(Date.now() - 60000).toISOString(), connectedAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    const legacyStatus42 = await status42(legacy42);
+    assert(legacyStatus42.configured === true && legacyStatus42.connected === true && legacyStatus42.canSendMail === false, 'A pre-10B connection reports configured, connected and canSendMail=false');
+    const legacyCal42 = keep42(await run41(MsCtl41.calendar, reqAs40(legacy42, { query: { days: '7' } })));
+    const legacyRefresh42 = new URLSearchParams(tokenCalls42()[tokenCalls42().length - 1].body);
+    assert(legacyRefresh42.get('grant_type') === 'refresh_token' && legacyRefresh42.get('refresh_token') === 'legacy-refresh-0' && legacyRefresh42.get('scope') === 'openid profile email offline_access User.Read Calendars.Read', 'The old connection refreshes with its own granted scopes, without Mail.Send');
+    assert(legacyCal42.statusCode === 200 && Array.isArray(legacyCal42.body.data.events), 'The old connection calendar still works after the refresh');
+    const legacyAfter42 = (await MsRepo41.findByUserId(legacy42.id))!;
+    assert(!hasScope42(legacyAfter42.scopes, 'Mail.Send') && dec41(legacyAfter42.refreshTokenEnc!, key42) !== 'legacy-refresh-0' && (await status42(legacy42)).canSendMail === false, 'After refresh the old connection stores normalized scopes and a rotated refresh token, still without Mail.Send');
+    const beforeLocal42 = sendCalls42().length;
+    const legacySend42 = await send42(legacy42, valid42());
+    assert(legacySend42.statusCode === 424 && legacySend42.body.error.code === 'MICROSOFT_PERMISSION_REQUIRED' && sendCalls42().length === beforeLocal42, 'Without Mail.Send the server answers 424 MICROSOFT_PERMISSION_REQUIRED and does not call Graph');
+
+    // --- reconnect grants Mail.Send ---
+    meId42 = 'ms-graph-user-legacy';
+    await connect42(legacyActor42);
+    const reconnectExchange42 = new URLSearchParams(tokenCalls42()[tokenCalls42().length - 1].body);
+    assert(/Mail\.Send/.test(reconnectExchange42.get('scope') || '') && hasScope42((await MsRepo41.findByUserId(legacy42.id))!.scopes, 'Mail.Send') && (await status42(legacy42)).canSendMail === true, 'An explicit reconnect grants Mail.Send and canSendMail becomes true');
+
+    // --- 4. connected sender (a viewer: no role gate) ---
+    meId42 = 'ms-graph-user-sender';
+    await connect42(senderActor42);
+    const senderStatus42 = await status42(sender42);
+    assert(senderStatus42.connected && senderStatus42.canSendMail === true && sender42.role === 'viewer', 'A newly connected viewer can send: canSendMail=true and no role gate applies');
+
+    // --- 1–2. authentication and inactive users on the send route ---
+    const sendLayer42 = (msRoutes41 as any).stack.find((l: any) => l.route && l.route.path === '/integrations/microsoft/mail/send' && l.route.methods.post);
+    assert(!!sendLayer42 && sendLayer42.route.stack[0].name === 'authenticateToken' && sendLayer42.route.stack.length === 2, 'POST /integrations/microsoft/mail/send is registered behind authenticateToken');
+    const anonRes42 = res41();
+    let anonNext42 = false;
+    await sendLayer42.route.stack[0].handle({ headers: {}, cookies: {} } as any, anonRes42 as any, () => { anonNext42 = true; });
+    assert(!anonNext42 && anonRes42.statusCode === 401 && anonRes42.body.error.code === 'UNAUTHORIZED', 'Unauthenticated send is rejected with 401');
+    await UserRepo40.update(sender42.id, { isActive: false });
+    const inactiveRes42 = res41();
+    let inactiveNext42 = false;
+    await sendLayer42.route.stack[0].handle({ headers: { authorization: `Bearer ${gen41(sender42 as any)}` }, cookies: {} } as any, inactiveRes42 as any, () => { inactiveNext42 = true; });
+    await UserRepo40.update(sender42.id, { isActive: true });
+    assert(!inactiveNext42 && inactiveRes42.statusCode === 401 && inactiveRes42.body.error.code === 'ACCOUNT_INACTIVE', 'An inactive user is rejected by the global middleware before sending');
+
+    // --- 3. no connection; not configured ---
+    const before3 = sendCalls42().length;
+    const idleRes42 = await send42(idle42, valid42());
+    assert(idleRes42.statusCode === 404 && idleRes42.body.error.code === 'MICROSOFT_NOT_CONNECTED' && sendCalls42().length === before3, 'A user without a Microsoft connection gets 404 MICROSOFT_NOT_CONNECTED');
+    cfg41.microsoft.tokenEncryptionKey = '';
+    const notCfg42 = await send42(sender42, valid42());
+    cfg41.microsoft.tokenEncryptionKey = KEY42;
+    assert(notCfg42.statusCode === 503 && notCfg42.body.error.code === 'MICROSOFT_NOT_CONFIGURED' && sendCalls42().length === before3, 'Sending while Microsoft is not configured returns 503');
+
+    // --- 5–15, 41. validation (none of these reach Graph) ---
+    const beforeValidation42 = sendCalls42().length;
+    const badCases42: Array<[string, any]> = [
+      ['missing to', valid42({ to: undefined })],
+      ['to not an array', valid42({ to: 'a@example.com' })],
+      ['empty to', valid42({ to: [] })],
+      ['malformed recipient', valid42({ to: ['not-an-email'] })],
+      ['missing domain dot', valid42({ to: ['a@example'] })],
+      ['double at', valid42({ to: ['a@b@example.com'] })],
+      ['display name', valid42({ to: ['Jane Doe <jane@example.com>'] })],
+      ['whitespace in address', valid42({ to: ['ja ne@example.com'] })],
+      ['control character in address', valid42({ to: ['jane\n@example.com'] })],
+      ['comma in address', valid42({ to: ['a,b@example.com'] })],
+      ['semicolon in address', valid42({ to: ['a;b@example.com'] })],
+      ['parentheses in address', valid42({ to: ['a(b)@example.com'] })],
+      ['colon in address', valid42({ to: ['a:b@example.com'] })],
+      ['quote in address', valid42({ to: ['"a"@example.com'] })],
+      ['brackets in address', valid42({ to: ['a[b]@example.com'] })],
+      ['backslash in address', valid42({ to: ['a\\b@example.com'] })],
+      ['local part over 64', valid42({ to: [`${'a'.repeat(65)}@example.com`] })],
+      ['address over 254', valid42({ to: [`a@${'b'.repeat(62)}.${'c'.repeat(62)}.${'d'.repeat(62)}.${'e'.repeat(62)}.com`] })],
+      ['non-string recipient', valid42({ to: [42] })],
+      ['more than 10 recipients', valid42({ to: Array.from({ length: 11 }, (_, i) => `r${i}@example.com`) })],
+      ['missing subject', valid42({ subject: undefined })],
+      ['blank subject', valid42({ subject: '   ' })],
+      ['subject over 255', valid42({ subject: 's'.repeat(MAXS42 + 1) })],
+      ['subject with CRLF header injection', valid42({ subject: 'Hello\r\nBcc: attacker@example.com' })],
+      ['subject with NUL', valid42({ subject: 'Hello\u0000World' })],
+      ['subject with tab', valid42({ subject: 'Hello\tWorld' })],
+      ['missing body', valid42({ body: undefined })],
+      ['blank body', valid42({ body: ' \n\t ' })],
+      ['body over 20000', valid42({ body: 'b'.repeat(MAXB42 + 1) })],
+      ['body with NUL', valid42({ body: 'Hello\u0000World' })],
+      ['non-string body', valid42({ body: { html: '<b>x</b>' } })],
+      ['confirmed missing', valid42({ confirmed: undefined })],
+      ['confirmed false', valid42({ confirmed: false })],
+      ['confirmed string', valid42({ confirmed: 'true' })],
+      ['confirmed number', valid42({ confirmed: 1 })],
+      ...['cc', 'bcc', 'html', 'contentType', 'attachments', 'userId', 'msUserId', 'connectionId', 'from', 'sender', 'priority'].map(
+        (field) => [`unsupported field ${field}`, valid42({ [field]: field === 'attachments' ? [] : 'x@example.com' })] as [string, any]
+      ),
+    ];
+    const badResults42: string[] = [];
+    for (const [label, body] of badCases42) {
+      const r = await send42(sender42, JSON.parse(JSON.stringify(body)));
+      if (!(r.statusCode === 400 && r.body.error.code === 'VALIDATION_ERROR' && Array.isArray(r.body.error.details) && r.body.error.details.length > 0)) badResults42.push(label);
+    }
+    const arrayBody42 = await send42(sender42, [valid42()]);
+    assert(badResults42.length === 0 && arrayBody42.statusCode === 400, `Every invalid request is rejected with 400 VALIDATION_ERROR (${badCases42.length + 1} cases; failures: ${badResults42.join(', ') || 'none'})`);
+    assert(sendCalls42().length === beforeValidation42, 'No invalid request reaches Microsoft Graph');
+    const identityErr42 = validate42(valid42({ userId: sender42.id, from: 'boss@example.com' }));
+    assert('errors' in identityErr42 && identityErr42.errors.some((e: string) => /Unsupported field\(s\): userId, from/.test(e)), 'Identity selectors (userId, msUserId, connectionId, from, sender) are rejected as unsupported');
+    assert(MAXR42 === 10 && MAXS42 === 255 && MAXB42 === 20000, 'Send limits are 10 recipients, 255-character subject and 20,000-character body');
+
+    // --- 9, 11, 16–21. successful send and exact Graph request ---
+    const accessBeforeSend42 = dec41((await MsRepo41.findByUserId(sender42.id))!.accessTokenEnc, key42);
+    const beforeOk42 = sendCalls42().length;
+    const okRes42 = await send42(sender42, valid42({ to: [' Recipient.One@Example.com ', 'recipient.one@example.com', 'RECIPIENT.ONE@EXAMPLE.COM'], subject: '  Weekly status  ' }));
+    const okCall42 = sendCalls42()[sendCalls42().length - 1];
+    const okPayload42 = JSON.parse(okCall42.body);
+    assert(okRes42.statusCode === 200 && Object.keys(okRes42.body.data).sort().join() === 'recipientCount,sent,sentAt' && okRes42.body.data.sent === true && okRes42.body.data.recipientCount === 1 && !isNaN(Date.parse(okRes42.body.data.sentAt)), 'A connected user sends and receives only { sent, recipientCount, sentAt }');
+    assert(sendCalls42().length === beforeOk42 + 1 && okCall42.url === SEND_URL42 && okCall42.method === 'POST', 'Graph is called once with POST https://graph.microsoft.com/v1.0/me/sendMail');
+    assert(okCall42.headers.Authorization === `Bearer ${accessBeforeSend42}` && okCall42.headers['Content-Type'] === 'application/json', 'The request carries the stored bearer token and a JSON content type');
+    assert(JSON.stringify(okPayload42) === JSON.stringify({ message: { subject: 'Weekly status', body: { contentType: 'Text', content: 'Hello team,\nAll milestones are on track.' }, toRecipients: [{ emailAddress: { address: 'recipient.one@example.com' } }] }, saveToSentItems: true }), 'The Graph payload matches exactly: trimmed subject, Text body, de-duplicated lowercase recipients, saveToSentItems');
+    const boundary42 = await send42(sender42, valid42({ to: Array.from({ length: 10 }, (_, i) => `r${i}@example.com`), subject: 's'.repeat(MAXS42), body: 'b'.repeat(MAXB42) }));
+    assert(boundary42.statusCode === 200 && boundary42.body.data.recipientCount === 10 && JSON.parse(sendCalls42()[sendCalls42().length - 1].body).message.toRecipients.length === 10, 'Exactly 10 recipients, a 255-character subject and a 20,000-character body are accepted');
+
+    // --- 22–23, 43. Graph 401: one forced refresh, one retry ---
+    const refreshBefore401 = dec41((await MsRepo41.findByUserId(sender42.id))!.refreshTokenEnc!, key42);
+    const tokensBefore401 = tokenCalls42().length;
+    const sendsBefore401 = sendCalls42().length;
+    sendQueue42 = [{ status: 401, body: { error: { code: 'InvalidAuthenticationToken', message: 'upstream-secret-detail' } } }, { status: 202 }];
+    const retry401 = await send42(sender42, valid42());
+    const afterRetry42 = (await MsRepo41.findByUserId(sender42.id))!;
+    const newAccess42 = dec41(afterRetry42.accessTokenEnc, key42);
+    assert(retry401.statusCode === 200 && sendCalls42().length === sendsBefore401 + 2 && tokenCalls42().length === tokensBefore401 + 1 && new URLSearchParams(tokenCalls42()[tokenCalls42().length - 1].body).get('grant_type') === 'refresh_token', 'Graph 401 triggers exactly one forced refresh and exactly one retry');
+    assert(sendCalls42()[sendCalls42().length - 1].headers.Authorization === `Bearer ${newAccess42}` && dec41(afterRetry42.refreshTokenEnc!, key42) !== refreshBefore401, 'The retry uses the new access token and the rotated refresh token is persisted');
+    sendQueue42 = [{ status: 401, body: UPSTREAM42 }, { status: 401, body: UPSTREAM42 }];
+    const sendsBefore401x2 = sendCalls42().length;
+    const twice401 = await send42(sender42, valid42());
+    assert(twice401.statusCode === 424 && twice401.body.error.code === 'MICROSOFT_RECONNECT_REQUIRED' && sendCalls42().length === sendsBefore401x2 + 2, 'A second 401 after the retry returns MICROSOFT_RECONNECT_REQUIRED with no further attempts');
+
+    // --- 24. refresh failure ---
+    await expire42(sender42.id);
+    tokenFail42 = { error: 'invalid_grant', error_description: 'AADSTS70008 upstream-secret-detail' };
+    const sendsBeforeRefreshFail = sendCalls42().length;
+    const refreshFail42 = await send42(sender42, valid42());
+    tokenFail42 = null;
+    assert(refreshFail42.statusCode === 424 && refreshFail42.body.error.code === 'MICROSOFT_RECONNECT_REQUIRED' && sendCalls42().length === sendsBeforeRefreshFail, 'A failed refresh returns MICROSOFT_RECONNECT_REQUIRED and nothing is sent');
+
+    // --- 25–30, 42. mapped failures, each attempted exactly once ---
+    const failures42: Array<[string, any, number, string]> = [
+      ['Graph 403', { status: 403, body: UPSTREAM42 }, 424, 'MICROSOFT_PERMISSION_REQUIRED'],
+      ['Graph 429', { status: 429, body: UPSTREAM42, headers: { 'retry-after': '30' } }, 429, 'MICROSOFT_RATE_LIMITED'],
+      ['Graph 400', { status: 400, body: UPSTREAM42 }, 422, 'MICROSOFT_MAIL_REJECTED'],
+      ['Graph 413', { status: 413, body: UPSTREAM42 }, 422, 'MICROSOFT_MAIL_REJECTED'],
+      ['Graph 500', { status: 500, body: UPSTREAM42 }, 502, 'MICROSOFT_GRAPH_ERROR'],
+      ['Graph 503', { status: 503, body: UPSTREAM42 }, 502, 'MICROSOFT_GRAPH_ERROR'],
+      ['timeout', { throw: 'abort' }, 504, 'MICROSOFT_TIMEOUT'],
+      ['network failure', { throw: 'network' }, 502, 'MICROSOFT_UNREACHABLE'],
+    ];
+    const failureProblems42: string[] = [];
+    const failureBodies42: Record<string, any> = {};
+    for (const [label, outcome, status, code] of failures42) {
+      sendQueue42 = [outcome, { status: 202 }];
+      const before = sendCalls42().length;
+      const r = await send42(sender42, valid42());
+      failureBodies42[label] = r.body;
+      if (!(r.statusCode === status && r.body.error.code === code && sendCalls42().length === before + 1)) failureProblems42.push(`${label}:${r.statusCode}/${r.body?.error?.code}/${sendCalls42().length - before}`);
+    }
+    sendQueue42 = [];
+    assert(failureProblems42.length === 0, `403, 429, 400, 413, 5xx, timeout and network failures map correctly and are never retried (${failureProblems42.join(', ') || 'all ok'})`);
+    assert(/Try again in 30 seconds/.test(failureBodies42['Graph 429'].error.message), 'The rate-limit response carries the Retry-After wait');
+    const timeoutMsg42 = failureBodies42.timeout.error.message;
+    assert(/did not respond in time/.test(timeoutMsg42) && /may have been sent/.test(timeoutMsg42) && /Check your Outlook Sent Items before trying again/.test(timeoutMsg42), 'The timeout says the email may have been sent and to check Sent Items first');
+
+    // --- 31. no upstream leakage; 37. no tokens to the browser ---
+    const leakedUpstream42 = responses42.filter((r) => /upstream-secret-detail|AADSTS|ErrorInvalidRecipients|InvalidAuthenticationToken|invalid_grant/.test(r));
+    assert(leakedUpstream42.length === 0, `No response leaks upstream Microsoft codes or messages (${leakedUpstream42.length})`);
+    const leakedSecrets42 = secrets42.filter((s) => s && responses42.some((r) => r.includes(s)));
+    assert(leakedSecrets42.length === 0 && !responses42.some((r) => /access_token|refresh_token|accessTokenEnc|refreshTokenEnc|code_verifier/.test(r)), `No token, code or state reaches the browser (${leakedSecrets42.join(',') || 'none'})`);
+
+    // --- 32–36. activity: metadata only ---
+    const mailActs42 = (await ActivityRepository.findRecent(300)).filter((a: any) => a.entityId === sender42.id && a.details?.event === 'mail_sent');
+    const lastAct42 = mailActs42[0];
+    assert(mailActs42.length === 3 && lastAct42.action === 'create' && lastAct42.entityType === 'user' && lastAct42.details.integration === 'microsoft365', `Each successful send records one 'create' activity with event mail_sent (${mailActs42.length})`);
+    assert(Object.keys(lastAct42.details).sort().join() === 'accountEmail,bodyLength,event,integration,recipientCount,subjectLength' && lastAct42.details.recipientCount === 1 && lastAct42.details.accountEmail === 'ms-graph-user-sender@contoso.com', 'Activity metadata is exactly integration, event, recipientCount, subjectLength, bodyLength and accountEmail');
+    const actText42 = JSON.stringify(mailActs42);
+    assert(!/All milestones are on track/.test(actText42) && !/"bbbb/.test(actText42), 'Activity never contains the email body');
+    assert(!/Weekly status/.test(actText42) && !/"ssss/.test(actText42), 'Activity never contains the subject');
+    assert(!/recipient\.one@example\.com|r\d@example\.com/i.test(actText42), 'Activity never contains recipient addresses');
+    assert(!secrets42.some((s) => s && actText42.includes(s)) && !/token|verifier|secret-s10b/i.test(actText42), 'Activity never contains tokens, codes or secrets');
+    const typesSrc42 = fs35.readFileSync('server/models/types.ts', 'utf8');
+    assert(!/'send'/.test((typesSrc42.match(/export type ActivityAction =[\s\S]*?;/) || [''])[0]), 'No new ActivityAction was introduced');
+
+    // --- 45. no idempotency or send tracking; nothing retained ---
+    const svcSrc42 = fs35.readFileSync('server/services/microsoftIntegrationService.ts', 'utf8');
+    const sendSources42 = [svcSrc42, fs35.readFileSync('server/controllers/microsoftController.ts', 'utf8'), fs35.readFileSync('server/integrations/microsoft365/microsoftGraphClient.ts', 'utf8'), fs35.readFileSync('server/routes/microsoftRoutes.ts', 'utf8'), fs35.readFileSync('PM-Portal/js/services/microsoftService.js', 'utf8'), fs35.readFileSync('PM-Portal/js/aiEmailGenerator.js', 'utf8')].join('\n');
+    assert(`a@${'b'.repeat(62)}.${'c'.repeat(62)}.${'d'.repeat(62)}.${'e'.repeat(62)}.com`.length === 257 && !/clientRequestId|idempotency|DUPLICATE_SEND|requestId/i.test(sendSources42), 'No clientRequestId, idempotency key or DUPLICATE_SEND exists');
+    const sendFn42 = (svcSrc42.match(/async sendMail\([\s\S]*?\n  \},/) || [''])[0];
+    assert(sendFn42.length > 0 && !/^(let|const) \w+ = new (Map|Set)\(\)/m.test(svcSrc42) && !/\.(set|push)\(|Repository\.(upsert|update|create|updateTokens)/.test(sendFn42.replace(/await audit\(/, '')), 'The send path keeps no module-level store and writes nothing but the metadata audit entry');
+    assert(!/storage|localStorage|sessionStorage/i.test(fs35.readFileSync('PM-Portal/js/services/microsoftService.js', 'utf8')), 'The browser service stores nothing');
+
+    // --- 46–52. composer ---
+    const composer42 = fs35.readFileSync('PM-Portal/js/aiEmailGenerator.js', 'utf8');
+    assert(['customer_update', 'executive_status', 'risk_escalation', 'delay_notification', 'resource_request', 'weekend_approval'].every((k) => composer42.includes(`${k}: {`)) && /window\.openEmailModal = /.test(composer42), 'All six existing templates and the window.openEmailModal entry point are retained');
+    assert(/id="copy-email-btn"/.test(composer42) && /navigator\.clipboard\.writeText/.test(composer42), 'Copy to Clipboard is retained');
+    assert(/id="send-mailto-btn"/.test(composer42) && /Send via Email Client/.test(composer42) && /sendBtn\.href = buildMailto\(parseRecipients\(toInput\?\.value\)/.test(composer42) && /`mailto:\$\{to\.map\(encodeURIComponent\)\.join\(','\)\}\?subject=/.test(composer42), 'The mailto fallback is retained and now includes the To recipients');
+    assert(/id="email-to-input"/.test(composer42) && /split\(\/\[,;\]\/\)/.test(composer42), 'A To field accepts comma- or semicolon-separated addresses');
+    assert(/id="send-outlook-btn"/.test(composer42) && /Send via Outlook/.test(composer42), 'A Send via Outlook button is present');
+    const outlookClick42 = (composer42.match(/outlookBtn\.addEventListener\('click'[\s\S]*?\n        \}\);/) || [''])[0];
+    assert(/Confirm send/.test(composer42) && /id="outlook-back-btn"/.test(composer42) && /id="outlook-confirm-panel"/.test(composer42) && !/confirmModal/.test(composer42) && outlookClick42.length > 0 && !/sendMail/.test(outlookClick42) && (composer42.match(/MicrosoftService\.sendMail\(/g) || []).length === 1 && composer42.indexOf('MicrosoftService.sendMail(') > composer42.indexOf("confirmBtn.addEventListener('click'"), 'Confirmation is inline; the Outlook button never calls the API, only Confirm send does');
+    assert(/confirmBtn\.disabled = true;/.test(composer42) && /finally \{\s*confirmBtn\.disabled = false;/.test(composer42) && /if \(confirmBtn\.disabled\) return;/.test(composer42), 'The Send button is disabled while the request is in flight and re-enabled afterwards');
+    assert(/value="\$\{escapeComposerHtml\(subject\)\}"/.test(composer42) && /\$\{escapeComposerHtml\(body\)\}<\/textarea>/.test(composer42) && /\$\{escapeComposerHtml\(this\.templates\[k\]\.name\)\}/.test(composer42) && !/value="\$\{subject\}"/.test(composer42) && !/>\$\{body\}<\/textarea>/.test(composer42), 'Subject, body and template names are HTML-escaped in the composer');
+    assert(/unavailable on this server/.test(composer42) && /Connect Microsoft 365 in Settings/.test(composer42) && /Reconnect Microsoft 365 in Settings to enable Outlook sending/.test(composer42) && /The email may have been sent\. Check your Outlook Sent Items before trying again\./.test(composer42) && !/draft-email/.test(composer42), 'Composer covers not-configured, not-connected, missing-permission and timeout states and is not wired to /ai/draft-email');
+    assert(/confirmed: true/.test(fs35.readFileSync('PM-Portal/js/services/microsoftService.js', 'utf8')) && !/userId|msUserId|connectionId|sender|from:/.test(fs35.readFileSync('PM-Portal/js/services/microsoftService.js', 'utf8').replace(/The server identifies the sender from the session/, '')), 'The browser sends confirmed:true and no identity field');
+
+    // --- 53. Settings ---
+    const settings42 = fs35.readFileSync('PM-Portal/js/settings.js', 'utf8');
+    assert(/Reconnect to enable Outlook sending/.test(settings42) && /s\.canSendMail \? ''/.test(settings42) && /this\.connectMicrosoft\(reconnectBtn\)/.test(settings42), 'Settings offers "Reconnect to enable Outlook sending" when canSendMail is false, reusing the connect flow');
+
+    // --- docs ---
+    const arch42 = fs35.readFileSync('V2_ARCHITECTURE.md', 'utf8');
+    assert(/Mail\.Send/.test(arch42) && /only the scopes the connection was actually granted/.test(arch42) && /reconnects from Settings to grant `Mail\.Send`/.test(arch42) && /Mail\.Send/.test(fs35.readFileSync('.env.example', 'utf8')), 'Architecture and .env.example document Mail.Send, granted-scope refresh and the reconnect requirement');
+  } finally {
+    setFetch41(null);
+    Object.assign(cfg41.microsoft, savedMs42);
+    for (const u of [sender42, legacy42, idle42]) {
+      await MsRepo41.deleteByUserId(u.id);
+      await UserRepo40.clearMicrosoftIdentity(u.id);
+      await UserRepo40.update(u.id, { isActive: false });
+    }
+  }
+  assert(cfg41.microsoft.tokenEncryptionKey === savedMs42.tokenEncryptionKey && (await MsRepo41.findByUserId(sender42.id)) === null, 'Microsoft configuration, transport and fixtures are restored after §42');
 
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
