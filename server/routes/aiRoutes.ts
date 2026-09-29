@@ -40,21 +40,32 @@ aiRoutes.post(
   AIController.query
 );
 
+// Sprint 13 — Project Copilot: read-only analysis of one in-scope project.
+// Shares the per-user AI quota with the assistant.
 aiRoutes.post(
   '/ai/insights',
   authenticateToken,
   requireRoles([...AI_READ_ROLES]),
+  aiAssistantRateLimit,
   AIController.projectInsights
 );
 
+// Sprint 13 — AI executive report over the caller's authorised context (read-only).
+aiRoutes.post(
+  '/ai/report',
+  authenticateToken,
+  requireRoles([...AI_READ_ROLES]),
+  aiAssistantRateLimit,
+  AIController.executiveReport
+);
+
+// Sprint 13 — AI email drafting for one in-scope project. Generative, so
+// management roles only; returns a draft and never sends.
 aiRoutes.post(
   '/ai/draft-email',
   authenticateToken,
   requireRoles([...AI_GENERATE_ROLES]),
-  validateBody([
-    { field: 'project', required: true, type: 'string' },
-    { field: 'client', required: true, type: 'string' },
-    { field: 'status', required: true, type: 'string' },
-  ]),
+  aiAssistantRateLimit,
+  validateBody([{ field: 'projectId', required: true, type: 'string' }]),
   AIController.draftEmail
 );

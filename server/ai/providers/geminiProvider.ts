@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { AIProvider, AIProviderResponse } from './baseProvider';
+import { AIProvider, AIProviderResponse, ExecutiveReportInput } from './baseProvider';
 import { config, GEMINI_DEFAULT_MODEL, GEMINI_DEFAULT_TIMEOUT_MS } from '../../config/env';
 import {
   PM_SYSTEM_INSTRUCTION,
@@ -9,7 +9,18 @@ import {
 
 let geminiClient: GoogleGenAI | null = null;
 
+/**
+ * Test seam (Sprint 13): a stand-in client so tests can inspect exactly what
+ * reaches Gemini (system instruction and sealed contents) without an API key.
+ * Never set outside tests.
+ */
+let geminiClientOverride: unknown = null;
+export function setGeminiClientForTests(client: unknown): void {
+  geminiClientOverride = client;
+}
+
 function getClient(): GoogleGenAI | null {
+  if (geminiClientOverride) return geminiClientOverride as GoogleGenAI;
   const key = process.env.GEMINI_API_KEY;
   if (!key || key === 'MY_GEMINI_API_KEY' || key.trim() === '') {
     return null;
@@ -193,5 +204,43 @@ Surya Project Management Team`
     } catch (err: any) {
       throw err;
     }
+  },
+
+  /**
+   * Sprint 13 — executive status brief. The figures and project summaries are
+   * server-built from the caller's authorised context but still derive from
+   * user-authored records, so they travel sealed as untrusted data.
+   */
+  async generateExecutiveReport(input: ExecutiveReportInput): Promise<AIProviderResponse> {
+    const ai = getClient();
+    if (!ai) {
+      throw new Error('Gemini API key is not configured.');
+    }
+
+    const guardedContents = buildGuardedContents(
+      `Write the ${input.period} executive status brief from the supplied figures and projects.`,
+      { figures: input.figures, projects: input.projects }
+    );
+    const model = resolveGeminiModel();
+    const response = await withGeminiTimeout(
+      ai.models.generateContent({
+        model,
+        contents: guardedContents,
+        config: {
+          systemInstruction: taskSystemInstruction(
+            `Write a concise executive status brief for the stated period in plain text (4 to 8 sentences, no tables).
+Use only the supplied figures and projects and quote numbers exactly. Name the projects that need attention.
+Do not invent resources, customers, hours, budgets or dates that are not supplied.`
+          ),
+        },
+      }),
+      'executive report'
+    );
+
+    return {
+      provider: 'gemini',
+      text: response.text || '',
+      metadata: { model },
+    };
   },
 };

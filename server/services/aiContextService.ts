@@ -533,7 +533,75 @@ export const AiContextService = {
 
     return context;
   },
+
+  /**
+   * Sprint 13 — authorised context for ONE project (Project Copilot insights and
+   * AI email drafting). The same scoping rule as buildContext: organisation
+   * scope may use any project; managed and personal scopes only projects the
+   * caller manages, is a member of, or has assigned work in. Returns null when
+   * the project does not exist or is out of scope, so a caller cannot probe for
+   * a project's existence. The projection is the same whitelist buildContext
+   * uses (commercial fields withheld from personal scope), never the raw record.
+   */
+  async buildProjectContext(actor: AiContextActor, projectRef: string): Promise<AiAuthorizedProjectContext | null> {
+    const ref = String(projectRef ?? '').trim();
+    if (!ref) return null;
+    const scope = resolveScope(actor.role);
+
+    let project = await ProjectRepository.findById(ref);
+    if (!project) {
+      const all = await ProjectRepository.findAll();
+      project = all.find((p) => p.code === ref || p.id === ref) || null;
+    }
+    if (!project) return null;
+
+    if (scope !== 'organisation' && !isAssociatedWithProject(project, actor.userId)) {
+      const myWork = await MyWorkService.getMyWork(actor.userId);
+      const workProjectIds = new Set(
+        [...myWork.stories, ...myWork.tasks].map((item: any) => item.projectId).filter(Boolean)
+      );
+      if (!workProjectIds.has(project.id)) return null;
+    }
+
+    const [healthResult, strategy] = await Promise.all([
+      ProjectHealthService.computeHealth(project),
+      buildStrategyByProject([project]),
+    ]);
+    const contextProject = toContextProject(
+      project,
+      scope !== 'personal',
+      strategy.byProjectId.get(project.id) || NO_ALIGNMENT
+    );
+    contextProject.health = toContextHealth(healthResult);
+
+    const result: AiAuthorizedProjectContext = {
+      scope,
+      project: contextProject,
+      meta: {
+        generatedAt: new Date().toISOString(),
+        healthModel: HEALTH_MODEL_VERSION,
+        strategyModel: STRATEGY_MODEL_VERSION,
+      },
+    };
+    // Counts for this project only (never the organisation's), management scopes only.
+    if (scope !== 'personal') {
+      result.governance = await buildGovernanceSummary([project], 'managed');
+    }
+    return result;
+  },
 };
+
+/** Sprint 13 — single-project authorised context (see buildProjectContext). */
+export interface AiAuthorizedProjectContext {
+  scope: AiContextScope;
+  project: AiContextProject;
+  governance?: AiGovernanceSummary;
+  meta: {
+    generatedAt: string;
+    healthModel: string;
+    strategyModel: string;
+  };
+}
 
 async function buildGovernanceSummary(
   scopedProjects: Project[],

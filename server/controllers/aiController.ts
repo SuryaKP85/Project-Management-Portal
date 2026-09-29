@@ -2,7 +2,28 @@ import { Request, Response, NextFunction } from 'express';
 import { AIService } from '../services/aiService';
 import { AiContextService } from '../services/aiContextService';
 import { AiAssistantService } from '../services/aiAssistantService';
-import { ProjectRepository } from '../repositories/projectRepository';
+import { AiCopilotService, REPORT_PERIODS, ReportPeriod, EMAIL_TEMPLATE_PURPOSES } from '../services/aiCopilotService';
+
+/** The acting user as the AI services expect it, from the verified JWT payload. */
+function actorFrom(req: Request) {
+  return req.user
+    ? {
+        userId: req.user.userId,
+        role: req.user.role,
+        firstName: req.user.firstName,
+        lastName: req.user.lastName,
+        email: req.user.email,
+        ipAddress: req.ip,
+      }
+    : null;
+}
+
+const unauthenticated = (res: Response) =>
+  res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication required.' } });
+
+/** Same answer for a missing project and one outside the caller's scope, so existence cannot be probed. */
+const projectNotAvailable = (res: Response) =>
+  res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Project not found or not available to you.' } });
 
 /**
  * Sprint 7A (Step 1) — AI endpoint hardening.
@@ -19,7 +40,6 @@ import { ProjectRepository } from '../repositories/projectRepository';
 
 const MAX_PROMPT_LENGTH = 2000;
 const MAX_FIELD_LENGTH = 500;
-const MAX_HIGHLIGHTS = 20;
 
 /** Coerce to a trimmed, length-capped string. Non-strings become ''. */
 function sanitizeText(value: unknown, maxLength: number): string {
@@ -117,11 +137,16 @@ export const AIController = {
     }
   },
 
+  /**
+   * Sprint 13 — Project Copilot. Accepts an identifier only (projectId, or the
+   * legacy project.id / project.code shape). A client-supplied project object is
+   * never used: the server resolves the project through the caller's authorised
+   * scope and sends the provider only the whitelisted projection.
+   */
   async projectInsights(req: Request, res: Response, _next: NextFunction) {
     try {
-      // Accept an identifier only. A full project object from the client is
-      // never trusted; the record is re-read from the repository so the
-      // provider only ever sees server-owned data.
+      const actor = actorFrom(req);
+      if (!actor) return unauthenticated(res);
       const projectId =
         sanitizeText(req.body?.projectId, MAX_FIELD_LENGTH) ||
         sanitizeText(req.body?.project?.id, MAX_FIELD_LENGTH) ||
@@ -134,43 +159,61 @@ export const AIController = {
         });
       }
 
-      let project = await ProjectRepository.findById(projectId);
-      if (!project) {
-        const all = await ProjectRepository.findAll();
-        project = all.find((p) => p.code === projectId || p.id === projectId) || null;
-      }
-
-      if (!project) {
-        return res.status(404).json({
-          success: false,
-          error: { code: 'NOT_FOUND', message: 'Project not found' },
-        });
-      }
-
-      const insights = await AIService.getProjectInsights(project);
+      const insights = await AiCopilotService.projectInsights(actor, projectId);
+      if (!insights) return projectNotAvailable(res);
       res.json({ success: true, data: insights });
     } catch (err: any) {
       respondAiError(res, err, 'AI insight generation failed.');
     }
   },
 
+  /** Sprint 13 — AI executive report over the caller's authorised context. */
+  async executiveReport(req: Request, res: Response, _next: NextFunction) {
+    try {
+      const actor = actorFrom(req);
+      if (!actor) return unauthenticated(res);
+      const raw = req.body?.period;
+      const period = (raw === undefined || raw === null || raw === '' ? 'weekly' : raw) as ReportPeriod;
+      if (!(REPORT_PERIODS as readonly string[]).includes(period)) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: `Field 'period' must be one of: ${REPORT_PERIODS.join(', ')}.` },
+        });
+      }
+      res.json({ success: true, data: await AiCopilotService.executiveReport(actor, period) });
+    } catch (err: any) {
+      respondAiError(res, err, 'AI report generation failed.');
+    }
+  },
+
+  /**
+   * Sprint 13 — AI email drafting. The caller chooses a project and one of the
+   * composer's template keys; every fact in the draft comes from the server's
+   * authorised project context. Client-supplied project/client/status/highlight
+   * text is ignored. The draft is returned as text and is never sent here.
+   */
   async draftEmail(req: Request, res: Response, _next: NextFunction) {
     try {
-      // These are author-supplied composition inputs rather than authorisation
-      // scoped records, but they still reach a prompt, so they are type-checked
-      // and length-capped before use.
-      const project = sanitizeText(req.body?.project, MAX_FIELD_LENGTH);
-      const client = sanitizeText(req.body?.client, MAX_FIELD_LENGTH);
-      const status = sanitizeText(req.body?.status, MAX_FIELD_LENGTH);
+      const actor = actorFrom(req);
+      if (!actor) return unauthenticated(res);
+      const projectId = sanitizeText(req.body?.projectId, MAX_FIELD_LENGTH);
+      if (!projectId) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: 'A projectId is required.' },
+        });
+      }
+      const templateKey = req.body?.templateKey === undefined ? 'executive_status' : req.body.templateKey;
+      if (typeof templateKey !== 'string' || !Object.prototype.hasOwnProperty.call(EMAIL_TEMPLATE_PURPOSES, templateKey)) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'VALIDATION_ERROR', message: `Field 'templateKey' must be one of: ${Object.keys(EMAIL_TEMPLATE_PURPOSES).join(', ')}.` },
+        });
+      }
 
-      const rawHighlights = Array.isArray(req.body?.keyHighlights) ? req.body.keyHighlights : [];
-      const keyHighlights = rawHighlights
-        .slice(0, MAX_HIGHLIGHTS)
-        .map((h: unknown) => sanitizeText(h, MAX_FIELD_LENGTH))
-        .filter((h: string) => h.length > 0);
-
-      const email = await AIService.draftExecutiveEmail({ project, client, status, keyHighlights });
-      res.json({ success: true, data: email });
+      const draft = await AiCopilotService.draftEmail(actor, projectId, templateKey);
+      if (!draft) return projectNotAvailable(res);
+      res.json({ success: true, data: draft });
     } catch (err: any) {
       respondAiError(res, err, 'Draft email failed.');
     }

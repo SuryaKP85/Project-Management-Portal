@@ -91,8 +91,10 @@ All V2 APIs are structured under `/api/v1/`:
 
 ### 3.6 Server-Side AI Copilot
 * `POST /api/v1/ai/query` — Executes natural language PM intelligence queries.
-* `POST /api/v1/ai/insights` — Generates risk mitigations and health recommendations for projects.
-* `POST /api/v1/ai/draft-email` — Drafts executive stakeholder status update emails.
+* `POST /api/v1/ai/insights` — Project Copilot: health-grounded recommendations for one project (`{ projectId }`). All roles; the project must be in the caller's AI scope, otherwise 404.
+* `POST /api/v1/ai/report` — AI executive report (`{ period: weekly|monthly|quarterly }`). All roles; figures are computed server-side from the caller's authorised AI context.
+* `POST /api/v1/ai/draft-email` — Drafts a stakeholder email (`{ projectId, templateKey }`). Admin, project manager and product manager; facts come from the server, never the client. Drafting never sends — sending remains `POST /integrations/microsoft/mail/send` with explicit confirmation.
+* Insights, report, draft-email and the assistant share the per-user AI quota (20 requests per minute). Every provider call goes through the prompt guard and falls back to the LocalRule provider on failure; activity entries record the operation only.
 
 ---
 

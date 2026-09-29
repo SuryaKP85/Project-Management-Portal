@@ -16,6 +16,7 @@ import { DeliveryService } from './services/deliveryService.js';
 import { RiskService } from './services/riskService.js';
 import { IssueService } from './services/issueService.js';
 import { DependencyService } from './services/dependencyService.js';
+import { AIInsightsModule } from './aiInsights.js';
 
 export const ProjectsModule = {
   app: null,
@@ -1398,6 +1399,9 @@ export const ProjectsModule = {
 
     // Render server-calculated project health (Sprint 8.4)
     this.renderProjectHealth(proj.id);
+
+    // Sprint 13: AI Project Copilot for this project (V2 /ai/insights, on request)
+    AIInsightsModule.mountProjectCopilot(proj.id, this.app);
 
     // Render linked project risks (Sprint 5A)
     this.renderProjectRisks(proj.id);

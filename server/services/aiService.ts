@@ -1,6 +1,6 @@
 import { GeminiAIProvider } from '../ai/providers/geminiProvider';
 import { LocalRuleAIProvider } from '../ai/providers/localRuleProvider';
-import { AIProvider, AIProviderResponse } from '../ai/providers/baseProvider';
+import { AIProvider, AIProviderResponse, ExecutiveReportInput } from '../ai/providers/baseProvider';
 
 export const AIService = {
   getProvider(preferred?: string): AIProvider {
@@ -38,6 +38,16 @@ export const AIService = {
       return await provider.draftExecutiveEmail(context);
     } catch (err) {
       return await LocalRuleAIProvider.draftExecutiveEmail(context);
+    }
+  },
+
+  /** Sprint 13 — executive brief, with the same provider-then-LocalRule fallback. */
+  async generateExecutiveReport(input: ExecutiveReportInput): Promise<AIProviderResponse> {
+    const provider = this.getProvider();
+    try {
+      return await provider.generateExecutiveReport(input);
+    } catch (err) {
+      return await LocalRuleAIProvider.generateExecutiveReport(input);
     }
   },
 };

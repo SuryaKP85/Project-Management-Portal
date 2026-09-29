@@ -2,6 +2,8 @@
 
 import { Storage } from './storage.js';
 import { MicrosoftService } from './services/microsoftService.js';
+import { AiAssistantService } from './services/aiAssistantService.js';
+import { ProjectService } from './services/projectService.js';
 
 /** Sprint 10B: HTML-escapes the values interpolated into the composer markup. */
 const escapeComposerHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
@@ -16,6 +18,16 @@ const buildMailto = (to, subject, body) =>
   `mailto:${to.map(encodeURIComponent).join(',')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
 const OUTLOOK_TIMEOUT_MESSAGE = 'Microsoft did not respond in time. The email may have been sent. Check your Outlook Sent Items before trying again.';
+
+/** Sprint 13: turns an AI draft failure into the message shown in the composer. */
+const describeDraftError = (err) => {
+  const status = err && err.status;
+  if (status === 401) return 'Your session has ended. Please sign in again.';
+  if (status === 403) return 'AI drafting is available to administrators, project managers and product managers.';
+  if (status === 404) return 'That project is not available to your AI scope.';
+  if (status === 429) return (err && err.message) || 'Too many AI requests. Try again shortly.';
+  return 'AI drafting is unavailable right now. You can still edit and send the template.';
+};
 
 /** Turns a send failure into the message shown in the composer. */
 const describeOutlookError = (err) => {
@@ -173,6 +185,18 @@ Delivery Lead`
           <label class="form-label font-bold text-xs text-secondary" for="email-to-input">To</label>
           <input type="text" id="email-to-input" class="form-control form-control-sm" placeholder="name@company.com; second@company.com" autocomplete="off" />
           <div class="text-muted mt-1" style="font-size: 0.72rem;">Separate addresses with commas or semicolons (Outlook sending accepts up to 10).</div>
+        </div>
+
+        <!-- AI draft from a project (Sprint 13) -->
+        <div class="mb-3 p-2 border rounded-3 bg-body-tertiary">
+          <label class="form-label font-bold text-xs text-secondary mb-1" for="email-ai-project-select">Draft with AI from a project</label>
+          <div class="d-flex gap-2 flex-wrap">
+            <select id="email-ai-project-select" class="form-select form-select-sm" style="max-width: 320px;"><option value="">Loading projects…</option></select>
+            <button type="button" id="email-ai-draft-btn" class="btn btn-sm btn-outline-primary py-1 px-3" disabled>
+              <i class="fa-solid fa-wand-magic-sparkles me-1"></i> Draft with AI
+            </button>
+          </div>
+          <div id="email-ai-draft-status" class="text-muted mt-1" style="font-size: 0.72rem;" role="status">The AI drafts from the selected project's server data and the chosen template. Nothing is sent until you confirm.</div>
         </div>
 
         <!-- Subject Line Field -->
@@ -339,6 +363,69 @@ Delivery Lead`
             confirmBtn.textContent = label;
             if (backBtn) backBtn.disabled = false;
             if (outlookBtn && outlookAccount) outlookBtn.disabled = false;
+          }
+        });
+      }
+
+      // Sprint 13: AI drafting through the V2 /ai/draft-email endpoint. The
+      // browser sends only the project id and template key; the draft fills the
+      // editable fields and never sends anything.
+      const aiProjectSelect = document.getElementById('email-ai-project-select');
+      const aiDraftBtn = document.getElementById('email-ai-draft-btn');
+      const aiDraftStatus = document.getElementById('email-ai-draft-status');
+      const setDraftStatus = (text, tone = 'text-muted') => {
+        if (!aiDraftStatus) return;
+        aiDraftStatus.className = `${tone} mt-1`;
+        aiDraftStatus.textContent = text;
+      };
+
+      ProjectService.getProjects().then((projects) => {
+        if (!aiProjectSelect) return;
+        const list = Array.isArray(projects) ? projects : [];
+        aiProjectSelect.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = list.length ? 'Select a project…' : 'No projects available';
+        aiProjectSelect.appendChild(placeholder);
+        list.forEach((p) => {
+          const option = document.createElement('option');
+          option.value = p.id;
+          option.textContent = `${p.name} (${p.code || p.id})`;
+          if (params.projectName && p.name === params.projectName) option.selected = true;
+          aiProjectSelect.appendChild(option);
+        });
+        if (aiDraftBtn) aiDraftBtn.disabled = !aiProjectSelect.value;
+      }).catch(() => {
+        if (aiProjectSelect) aiProjectSelect.innerHTML = '<option value="">Projects could not be loaded</option>';
+        setDraftStatus('Projects could not be loaded, so AI drafting is unavailable.', 'text-danger');
+      });
+
+      if (aiProjectSelect) {
+        aiProjectSelect.addEventListener('change', () => {
+          if (aiDraftBtn) aiDraftBtn.disabled = !aiProjectSelect.value;
+        });
+      }
+
+      if (aiDraftBtn) {
+        aiDraftBtn.addEventListener('click', async () => {
+          if (aiDraftBtn.disabled || !aiProjectSelect || !aiProjectSelect.value) return;
+          const label = aiDraftBtn.innerHTML;
+          aiDraftBtn.disabled = true;
+          aiDraftBtn.textContent = 'Drafting…';
+          // A new draft replaces the content, so any pending send confirmation is withdrawn.
+          hideConfirm();
+          if (outlookBtn && outlookAccount) outlookBtn.disabled = false;
+          try {
+            const draft = await AiAssistantService.draftEmail(aiProjectSelect.value, select ? select.value : 'executive_status');
+            if (draft && draft.subject) subjectInput.value = draft.subject;
+            if (draft && draft.body) bodyInput.value = draft.body;
+            updateMailto();
+            setDraftStatus(`AI draft ready (${draft && draft.provider === 'gemini' ? 'Gemini' : 'offline rules engine'}). Review and edit it before sending.`, 'text-success');
+          } catch (err) {
+            setDraftStatus(describeDraftError(err), 'text-danger');
+          } finally {
+            aiDraftBtn.innerHTML = label;
+            aiDraftBtn.disabled = !aiProjectSelect.value;
           }
         });
       }

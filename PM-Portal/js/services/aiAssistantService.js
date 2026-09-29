@@ -19,6 +19,28 @@ export class AiAssistantService {
   }
 
   /**
+   * Sprint 13 — Project Copilot. Sends only the project identifier; the server
+   * resolves the project through the caller's authorised scope.
+   */
+  static async projectInsights(projectId) {
+    return apiClient.post('/ai/insights', { projectId });
+  }
+
+  /** Sprint 13 — AI executive report. Sends only the period label. */
+  static async executiveReport(period = 'weekly') {
+    return apiClient.post('/ai/report', { period });
+  }
+
+  /**
+   * Sprint 13 — AI email draft for one project. Sends only the project
+   * identifier and a composer template key; returns { subject, body, provider }.
+   * Drafting never sends email.
+   */
+  static async draftEmail(projectId, templateKey) {
+    return apiClient.post('/ai/draft-email', { projectId, templateKey });
+  }
+
+  /**
    * Decides whether a failure should fall back to the local V1.1 engine.
    *
    * Fall back only when the secure path is genuinely unavailable — network

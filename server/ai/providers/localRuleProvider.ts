@@ -1,4 +1,4 @@
-import { AIProvider, AIProviderResponse } from './baseProvider';
+import { AIProvider, AIProviderResponse, ExecutiveReportInput } from './baseProvider';
 
 export const LocalRuleAIProvider: AIProvider = {
   name: 'local-rules',
@@ -63,18 +63,39 @@ export const LocalRuleAIProvider: AIProvider = {
     };
   },
 
+  /**
+   * Sprint 13: grounded in the server-built project projection (including its
+   * deterministic health), so the offline answer reflects the real project
+   * rather than fixed sample figures.
+   */
   async generateProjectInsights(project: Record<string, any>): Promise<AIProviderResponse> {
+    const name = project.name || project.code || 'This project';
+    const code = project.code ? ` (${project.code})` : '';
+    const health = project.health;
+    const healthLine = health ? ` Deterministic health is ${health.band} (${health.score}/100).` : '';
+    const factors: Array<Record<string, any>> = Array.isArray(health?.topNegativeFactors) ? health.topNegativeFactors : [];
+
+    const recommendations: NonNullable<AIProviderResponse['recommendations']> = factors.length > 0
+      ? factors.map((f) => ({
+          category: 'Health Factor',
+          title: String(f.label || f.id || 'Health factor'),
+          description: `This factor currently lowers the health score by ${Math.abs(Number(f.impact) || 0)} points. Review it with the delivery team.`,
+          urgency: Number(f.impact) <= -20 ? 'high' : 'medium',
+        }))
+      : [
+          {
+            category: 'Delivery Health',
+            title: 'Maintain delivery cadence',
+            description: 'No health factors are currently reducing the score. Keep monitoring schedule and governance signals.',
+            urgency: 'low',
+          },
+        ];
+    if (project.risk === 'Critical' && recommendations.length > 0) recommendations[0].urgency = 'critical';
+
     return {
       provider: 'local-rules',
-      text: `Project ${project.name || 'PRJ'} is currently at ${project.progress || 0}% progress with ${project.risk || 'Low'} risk status.`,
-      recommendations: [
-        {
-          category: 'Schedule Control',
-          title: 'Sprint Variance Check',
-          description: 'Ensure deliverables for current sprint meet the agreed SOW milestones.',
-          urgency: project.risk === 'Critical' ? 'critical' : 'medium',
-        },
-      ],
+      text: `${name}${code} is ${project.progress ?? 0}% complete with ${project.risk || 'unrated'} delivery risk.${healthLine}`,
+      recommendations,
     };
   },
 
@@ -98,5 +119,25 @@ Surya Project Management Office (PMO)`;
       provider: 'local-rules',
       text,
     };
+  },
+
+  /** Sprint 13: deterministic brief from the server-built figures only. */
+  async generateExecutiveReport(input: ExecutiveReportInput): Promise<AIProviderResponse> {
+    const f = input.figures || {};
+    const label = input.period.charAt(0).toUpperCase() + input.period.slice(1);
+    const parts: string[] = [
+      `${label} executive brief: ${f.projectsIncluded ?? 0} of ${f.projectsInScope ?? 0} project(s) in your scope reviewed${f.truncated ? ' (the AI context is capped, so not every project is included)' : ''}.`,
+    ];
+    if (typeof f.averageProgress === 'number') parts.push(`Average progress across the reviewed projects is ${f.averageProgress}%.`);
+    const attention: Array<Record<string, any>> = Array.isArray(f.attentionProjects) ? f.attentionProjects : [];
+    parts.push(
+      attention.length > 0
+        ? `${attention.length} project(s) need attention: ${attention.slice(0, 5).map((a) => `${a.name} (${a.band}, ${a.score}/100)`).join(', ')}.`
+        : 'No reviewed project is At Risk or Critical.'
+    );
+    if (f.governance) {
+      parts.push(`Governance: ${f.governance.criticalOrHighRisks} high/critical risk(s) open, ${f.governance.openIssues} open issue(s), ${f.governance.blockedDependencies} blocked dependenc${f.governance.blockedDependencies === 1 ? 'y' : 'ies'}.`);
+    }
+    return { provider: 'local-rules', text: parts.join(' ') };
   },
 };
