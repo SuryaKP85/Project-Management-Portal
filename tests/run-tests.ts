@@ -5731,6 +5731,372 @@ async function runTests() {
   }
   assert(!(await EpicRepo46.findAll()).some((e: any) => /^S16 /.test(e.name)) && (await ProjRepo24.findById('PRJ-101'))!.name !== 'Overwritten', 'Sprint 16 fixtures are removed after §46');
 
+  // 47. Requirements Studio foundation (Sprint 17)
+  // Project-scoped requirements: server-controlled ids and codes, project
+  // access, member/approver status rules, the approval-reopen rule, delete
+  // rules, activity, owner notifications, the AI projection, inert rendering
+  // and the schema/sequence contract.
+  console.log('\n--- 47. Requirements Studio Foundation (Sprint 17) ---');
+  const { RequirementController: ReqCtl47 } = await import('../server/controllers/requirementController');
+  const { RequirementRepository: ReqRepo47, nextRequirementCodeNumber: nextCode47 } = await import('../server/repositories/requirementRepository');
+  const { toRequirementContext: toCtx47, REQUIREMENT_CONTEXT_LIMITS: CTX_LIMITS47, REQUIREMENT_SUBSTANTIVE_FIELDS: SUBSTANTIVE47 } = await import('../server/services/requirementService');
+  const { ProjectController: ProjCtl47 } = await import('../server/controllers/projectController');
+  const { NotificationRepository: NotifRepo47 } = await import('../server/repositories/notificationRepository');
+  const { requirementRoutes: routes47 } = await import('../server/routes/requirementRoutes');
+
+  const stamp47 = Date.now();
+  const XSS47 = '<img src=x onerror=alert(1)>"\'';
+  const mk47 = (key: string, role: any) => Auth40.register({ email: `s17.${key}.${stamp47}@company.com`, password: 'Sprint17@12345', firstName: `U${key}`, lastName: 'S17', role }, login40.user);
+  const pmA47 = await mk47('pma', 'project-manager');
+  const pmB47 = await mk47('pmb', 'project-manager');
+  const prod47 = await mk47('prod', 'product-manager');
+  const member47 = await mk47('member', 'team-member');
+  const member247 = await mk47('member2', 'team-member');
+  const viewer47 = await mk47('viewer', 'viewer');
+  const outsider47 = await mk47('outsider', 'team-member');
+  const inactive47 = await mk47('inactive', 'team-member');
+  const users47 = [pmA47, pmB47, prod47, member47, member247, viewer47, outsider47, inactive47];
+  const call47 = (handler: any, user: any, { body = {}, params = {}, query = {} }: any = {}) =>
+    run41(handler, reqAs40(user, { url: '/api/v1/requirements', body, params, query }));
+  const code47 = (r: any) => r.body?.error?.code;
+  const req47 = (r: any) => r.body?.data?.requirement;
+  const cleanup47: Array<() => Promise<unknown>> = [];
+  const acts47 = async (id: string) => ActivityRepository.findByEntity('requirement', id);
+  const notifs47 = async (u: any) => NotifRepo47.findByUserId(u.id);
+  const createAs47 = async (user: any, body: any) => {
+    const r = await call47(ReqCtl47.create, user, { body });
+    if (req47(r)) cleanup47.push(() => ReqRepo47.delete(req47(r).id));
+    return r;
+  };
+  const status47 = (user: any, id: string, status: string) => call47(ReqCtl47.updateStatus, user, { params: { id }, body: { status } });
+  const patch47 = (user: any, id: string, body: any) => call47(ReqCtl47.update, user, { params: { id }, body });
+
+  try {
+    await UserRepo40.update(inactive47.id, { isActive: false });
+    const projA47 = (await call47(ProjCtl47.create, pmA47, { body: { name: 'S17 Project A', client: 'Client A' } })).body.data.project;
+    cleanup47.push(() => ProjRepo24.delete(projA47.id));
+    const projB47 = (await call47(ProjCtl47.create, pmB47, { body: { name: 'S17 Project B', client: 'Client B' } })).body.data.project;
+    cleanup47.push(() => ProjRepo24.delete(projB47.id));
+    const membersA47 = [
+      { userId: prod47.id, name: 'Prod', role: 'Product Manager' },
+      { userId: member47.id, name: 'Member', role: 'Analyst' },
+      { userId: member247.id, name: 'Member 2', role: 'Developer' },
+      { userId: viewer47.id, name: 'Viewer', role: 'Stakeholder' },
+      { userId: inactive47.id, name: 'Inactive', role: 'Developer' },
+    ];
+    const setMembers47 = await call47(ProjCtl47.update, pmA47, { params: { id: projA47.id }, body: { members: membersA47 } });
+    assert(setMembers47.statusCode === 200, 'Fixture: project A has a manager, a product manager, members and a viewer');
+
+    // --- A. Create: server-controlled fields, defaults, codes ---
+    const hostileCreate47 = await createAs47(member47, {
+      projectId: projA47.id, title: 'S17 Login must support SSO', id: 'req_hijack', code: 'REQ-1', createdBy: adminUser40.id, updatedBy: adminUser40.id,
+      createdAt: '2000-01-01T00:00:00.000Z', updatedAt: '2000-01-01T00:00:00.000Z', isAdmin: true,
+    });
+    const r1 = req47(hostileCreate47);
+    assert(hostileCreate47.statusCode === 201 && r1.id !== 'req_hijack' && /^REQ-\d+$/.test(r1.code) && r1.code !== 'REQ-1' && r1.createdBy === member47.id && r1.updatedBy === member47.id && !r1.createdAt.startsWith('2000') && !('isAdmin' in r1), 'A member creates a requirement; id, code, actors and timestamps are server-controlled and unknown fields are dropped');
+    assert(r1.status === 'draft' && r1.type === 'functional' && r1.priority === 'medium' && r1.projectId === projA47.id, 'New requirements default to draft, functional, medium priority');
+    const batch47 = await Promise.all([1, 2, 3, 4].map((n) => createAs47(pmA47, { projectId: projA47.id, title: `S17 Parallel ${n}`, type: 'business', priority: 'high' })));
+    const codes47 = batch47.map((r) => req47(r)?.code);
+    assert(batch47.every((r) => r.statusCode === 201) && new Set([r1.code, ...codes47]).size === 5 && codes47.every((c) => /^REQ-\d+$/.test(c)), `Concurrent creates get distinct REQ codes (${codes47.join(', ')})`);
+    assert(nextCode47(['REQ-7', 'REQ-x', 'RM-900', null, 'REQ-012']) === 13 && nextCode47([]) === 101, 'Code numbering continues above the highest valid REQ code and ignores malformed codes');
+
+    // --- B. Validation ---
+    const invalid47 = await Promise.all([
+      { projectId: projA47.id },
+      { projectId: projA47.id, title: '   ' },
+      { projectId: projA47.id, title: 'x'.repeat(256) },
+      { projectId: projA47.id, title: 'Bad type', type: 'epic' },
+      { projectId: projA47.id, title: 'Bad priority', priority: 'urgent' },
+      { projectId: projA47.id, title: 'Bad date', targetDate: '2026-02-30' },
+      { projectId: projA47.id, title: 'Bad description', description: 'x'.repeat(10001) },
+      { projectId: projA47.id, title: 'Bad owner', ownerId: 'usr_missing' },
+      { projectId: projA47.id, title: { $gt: '' } },
+    ].map((body) => createAs47(member47, body)));
+    assert(invalid47.every((r) => r.statusCode === 400 && code47(r) === 'VALIDATION_ERROR'), `Missing or oversized title, unknown type/priority, impossible dates, oversized text, unknown owners and non-text values are 400s (${invalid47.map((r) => r.statusCode).join(',')})`);
+
+    // --- C. Create authorization and project isolation ---
+    const outsiderCreate47 = await createAs47(outsider47, { projectId: projA47.id, title: 'Intrusion' });
+    const otherPmCreate47 = await createAs47(pmB47, { projectId: projA47.id, title: 'Intrusion' });
+    const noProject47 = await createAs47(pmA47, { title: 'No project' });
+    const missingProject47 = await createAs47(pmA47, { projectId: 'PRJ-NOPE', title: 'Nowhere' });
+    const viewerCreate47 = await createAs47(viewer47, { projectId: projA47.id, title: 'Viewer attempt' });
+    assert([outsiderCreate47, otherPmCreate47, noProject47, missingProject47].every((r) => r.statusCode === 404 && code47(r) === 'NOT_FOUND') && viewerCreate47.statusCode === 403, 'A client-supplied projectId is validated: inaccessible or missing projects are 404, and a listed viewer cannot write (403)');
+    const memberReviewCreate47 = await createAs47(member47, { projectId: projA47.id, title: 'S17 Requested review', status: 'in-review', type: 'non-functional', priority: 'low' });
+    const prodCreate47 = await createAs47(prod47, { projectId: projA47.id, title: 'S17 Product manager requirement', type: 'business', priority: 'critical', status: 'approved' });
+    const adminCreate47 = await createAs47(adminUser40, { projectId: projB47.id, title: 'S17 Admin requirement in B', status: 'rejected' });
+    assert([memberReviewCreate47, prodCreate47, adminCreate47].every((r) => r.statusCode === 201 && req47(r).status === 'draft'), 'Members, product managers and admins create requirements, always as drafts');
+    const submitRequested47 = await status47(member47, req47(memberReviewCreate47).id, 'in-review');
+    assert(submitRequested47.statusCode === 200 && req47(submitRequested47).status === 'in-review', 'Review takes an explicit status transition after creation');
+
+    // --- D. Read, list, filters, pagination, no-probe ---
+    const got47 = await call47(ReqCtl47.get, member47, { params: { id: r1.id } });
+    const outsiderGet47 = await call47(ReqCtl47.get, outsider47, { params: { id: r1.id } });
+    const otherPmGet47 = await call47(ReqCtl47.get, pmB47, { params: { id: r1.id } });
+    const missingGet47 = await call47(ReqCtl47.get, pmA47, { params: { id: 'req_missing' } });
+    assert(got47.statusCode === 200 && req47(got47).code === r1.code && outsiderGet47.statusCode === 404 && otherPmGet47.statusCode === 404 && missingGet47.statusCode === 404 && outsiderGet47.body.error.message === missingGet47.body.error.message, 'Reading a requirement needs project access; an inaccessible one is reported exactly like a missing one');
+    const listOutsider47 = await call47(ReqCtl47.list, outsider47, { query: { projectId: projA47.id } });
+    const listOutsiderAll47 = await call47(ReqCtl47.list, outsider47);
+    const listPmB47 = await call47(ReqCtl47.list, pmB47);
+    assert(listOutsider47.statusCode === 404 && !listOutsiderAll47.body.data.requirements.some((r: any) => r.projectId === projA47.id) && !listPmB47.body.data.requirements.some((r: any) => r.projectId === projA47.id), 'Listing another project by id is a 404 and default listings exclude it');
+    const listA47 = (q: any, user: any = pmA47) => call47(ReqCtl47.list, user, { query: { projectId: projA47.id, ...q } });
+    const allA47 = (await listA47({ limit: 100 })).body.data;
+    const byType47 = (await listA47({ type: 'business' })).body.data.requirements;
+    const byPriority47 = (await listA47({ priority: 'low' })).body.data.requirements;
+    const byStatus47 = (await listA47({ status: 'in-review' })).body.data.requirements;
+    const bySearch47 = (await listA47({ search: 'sso' })).body.data.requirements;
+    const byCode47 = (await listA47({ search: r1.code })).body.data.requirements;
+    assert(allA47.total === 7 && byType47.length === 5 && byType47.every((r: any) => r.type === 'business') && byPriority47.length === 1 && byStatus47.length === 1 && bySearch47.length === 1 && bySearch47[0].id === r1.id && byCode47.some((r: any) => r.id === r1.id), 'Filters narrow by type, priority, status and a case-insensitive search over code and text');
+    const page1_47 = (await listA47({ limit: 3, page: 1 })).body.data;
+    const page3_47 = (await listA47({ limit: 3, page: 3 })).body.data;
+    const huge47 = (await listA47({ limit: 1000 })).body.data;
+    const dflt47 = (await listA47({})).body.data;
+    assert(page1_47.requirements.length === 3 && page3_47.requirements.length === 1 && page1_47.total === 7 && huge47.limit === 100 && dflt47.limit === 25, 'Pagination: pages of the requested size, limit capped at 100, default 25');
+
+    // --- D2. Creation always starts as a draft ---
+    const requested47 = [undefined, 'in-review', 'approved', 'rejected', 'deferred', 'done'];
+    const creators47: Array<[string, any]> = [['member', member47], ['project manager', pmA47], ['product manager', prod47], ['admin', adminUser40]];
+    const createCases47 = creators47.flatMap(([who, actor]) => requested47.map((status) => ({ who, actor, status })));
+    const createRes47 = await Promise.all(createCases47.map((c) => call47(ReqCtl47.create, c.actor, { body: { projectId: projA47.id, title: `S17 Create as ${c.who} (${c.status ?? 'no status'})`, ...(c.status === undefined ? {} : { status: c.status }) } })));
+    const createdAll47 = createRes47.map(req47).filter(Boolean);
+    const createdSummary47 = createCases47.map((c, i) => `${c.who}/${c.status ?? '-'}=${createRes47[i].statusCode}:${req47(createRes47[i])?.status}`);
+    const memberCreates47 = createRes47.slice(0, requested47.length);
+    assert(memberCreates47[0].statusCode === 201 && req47(memberCreates47[0]).status === 'draft', 'A member creating without a status gets a draft');
+    assert(memberCreates47.slice(1).every((r) => r.statusCode === 201 && req47(r).status === 'draft'), 'A member asking for in-review, approved, rejected, deferred or an unknown status still gets a draft');
+    assert(createRes47.slice(requested47.length).every((r) => r.statusCode === 201 && req47(r).status === 'draft'), `Project managers, product managers and admins also get drafts, whatever they request (${createdSummary47.join(', ')})`);
+    const createActs47 = await Promise.all(createdAll47.map((r: any) => acts47(r.id)));
+    assert(createdAll47.length === 24 && createActs47.every((list: any[]) => list.length === 1 && list[0].action === 'create' && list[0].details.status === 'draft'), 'Each create logs one create entry recording draft, and no status change');
+    for (const r of createdAll47) await ReqRepo47.delete(r.id);
+
+    // --- E. Edit: allowlist, immutable project, status via its own endpoint ---
+    const snap1_47 = JSON.stringify(await ReqRepo47.findById(r1.id));
+    const move47 = await patch47(pmA47, r1.id, { projectId: projB47.id, title: 'Moved' });
+    const statusViaPatch47 = await patch47(member47, r1.id, { status: 'approved' });
+    assert(move47.statusCode === 400 && statusViaPatch47.statusCode === 400 && JSON.stringify(await ReqRepo47.findById(r1.id)) === snap1_47, 'projectId is immutable and status cannot be changed through PATCH');
+    const tamper47 = await patch47(member47, r1.id, { id: 'req_other', code: 'REQ-999999', createdBy: adminUser40.id, createdAt: '2000-01-01T00:00:00.000Z', projectId: projA47.id, description: 'Users sign in with the corporate identity provider.' });
+    const t47 = req47(tamper47);
+    assert(tamper47.statusCode === 200 && t47.id === r1.id && t47.code === r1.code && t47.createdBy === member47.id && t47.createdAt === r1.createdAt && t47.updatedBy === member47.id && t47.description.startsWith('Users sign in'), 'A member edits content; id, code, creator and creation time cannot be changed');
+    const outsiderPatch47 = await patch47(outsider47, r1.id, { title: 'Hijack' });
+    const viewerPatch47 = await patch47(viewer47, r1.id, { title: 'Viewer edit' });
+    const otherPmPatch47 = await patch47(pmB47, r1.id, { title: 'Hijack' });
+    assert(outsiderPatch47.statusCode === 404 && otherPmPatch47.statusCode === 404 && viewerPatch47.statusCode === 403 && (await ReqRepo47.findById(r1.id))!.title === r1.title, 'Outsiders get 404, a listed viewer gets 403, and nothing changes');
+
+    // --- F. Owners: validation, notifications, ownership grants nothing ---
+    const ownerBad47 = await Promise.all([outsider47.id, inactive47.id, 'usr_missing', 42].map((ownerId) => patch47(pmA47, r1.id, { ownerId })));
+    assert(ownerBad47.every((r) => r.statusCode === 400) && !(await ReqRepo47.findById(r1.id))!.ownerId, 'The owner must be an active user who is part of the project');
+    const before47 = (await notifs47(member47)).length;
+    const own47 = await patch47(pmA47, r1.id, { ownerId: member47.id });
+    const ownNotif47 = (await notifs47(member47)).find((n: any) => n.type === 'work_assigned' && n.message.includes(r1.code));
+    assert(own47.statusCode === 200 && req47(own47).ownerId === member47.id && !!ownNotif47 && ownNotif47.link === '/PM-Portal/index.html?page=requirements' && (await notifs47(member47)).length === before47 + 1, 'A new owner is notified through the existing notifications');
+    const reassign47 = await patch47(pmA47, r1.id, { ownerId: member247.id });
+    const reNotif47 = (await notifs47(member247)).find((n: any) => n.type === 'work_reassigned' && n.message.includes(r1.code));
+    const selfBefore47 = (await notifs47(member47)).length;
+    const selfOwn47 = await patch47(member47, r1.id, { ownerId: member47.id });
+    const clear47 = await patch47(pmA47, r1.id, { ownerId: '' });
+    assert(reassign47.statusCode === 200 && !!reNotif47 && selfOwn47.statusCode === 200 && (await notifs47(member47)).length === selfBefore47 && clear47.statusCode === 200 && !req47(clear47).ownerId, 'Reassignment notifies the new owner; taking ownership yourself sends nothing; the owner can be cleared');
+    const byOwner47 = (await listA47({ ownerId: member47.id })).body.data.requirements;
+    await patch47(pmA47, r1.id, { ownerId: member47.id });
+    const byOwnerAfter47 = (await listA47({ ownerId: member47.id })).body.data.requirements;
+    assert(byOwner47.length === 0 && byOwnerAfter47.length === 1 && byOwnerAfter47[0].id === r1.id, 'The owner filter lists requirements by owner');
+    // Ownership does not grant access: removed from the project, the owner loses the requirement.
+    await call47(ProjCtl47.update, pmA47, { params: { id: projA47.id }, body: { members: membersA47.filter((m) => m.userId !== member47.id) } });
+    const ownerGet47 = await call47(ReqCtl47.get, member47, { params: { id: r1.id } });
+    const ownerList47 = await call47(ReqCtl47.list, member47);
+    const ownerPatch47 = await patch47(member47, r1.id, { title: 'Still mine?' });
+    await call47(ProjCtl47.update, pmA47, { params: { id: projA47.id }, body: { members: membersA47 } });
+    assert(ownerGet47.statusCode === 404 && !ownerList47.body.data.requirements.some((r: any) => r.id === r1.id) && ownerPatch47.statusCode === 404, 'Owning a requirement grants no access once the owner leaves the project');
+
+    // --- G. Status lifecycle ---
+    const ALL47 = ['draft', 'in-review', 'approved', 'rejected', 'deferred'];
+    const LIFECYCLE47: Record<string, string[]> = { draft: ['in-review'], 'in-review': ['approved', 'rejected', 'deferred'], approved: [], rejected: [], deferred: [] };
+    const reach47: Record<string, string[]> = { draft: [], 'in-review': ['in-review'], approved: ['in-review', 'approved'], rejected: ['in-review', 'rejected'], deferred: ['in-review', 'deferred'] };
+    /** A fresh requirement in the given state, reached through the lifecycle itself. */
+    const inState47 = async (state: string) => {
+      const r = req47(await createAs47(member47, { projectId: projA47.id, title: `S17 Matrix ${state}` }));
+      for (const step of reach47[state]) {
+        const res = await status47(prod47, r.id, step);
+        if (res.statusCode !== 200) throw new Error(`fixture ${state}: ${step} answered ${res.statusCode}`);
+      }
+      return r;
+    };
+    const matrixErrors47: string[] = [];
+    let matrixCases47 = 0;
+    for (const [who, actor, approver] of [['member', member47, false], ['product manager', prod47, true]] as Array<[string, any, boolean]>) {
+      for (const from of ALL47) {
+        for (const to of ALL47) {
+          const r = await inState47(from);
+          const before = (await acts47(r.id)).length;
+          const res = await status47(actor, r.id, to);
+          const valid = LIFECYCLE47[from].includes(to);
+          const expected = !valid ? 400 : approver || (from === 'draft' && to === 'in-review') ? 200 : 403;
+          const after = (await ReqRepo47.findById(r.id))!.status;
+          const logged = (await acts47(r.id)).length - before;
+          const ok = res.statusCode === expected
+            && (expected === 200 ? after === to && logged === 1 : after === from && logged === 0)
+            && (expected !== 400 || code47(res) === 'VALIDATION_ERROR');
+          if (!ok) matrixErrors47.push(`${who} ${from}->${to}: ${res.statusCode} (expected ${expected}), now ${after}, logged ${logged}`);
+          matrixCases47 += 1;
+          await ReqRepo47.delete(r.id);
+        }
+      }
+    }
+    assert(matrixCases47 === 50 && matrixErrors47.length === 0, `Status matrix, every from/to for a member and a product manager: only draft→in-review and in-review→approved/rejected/deferred exist (others are 400); members may only submit (403 otherwise); only real changes are logged (${matrixErrors47.join('; ') || '50 cases as expected'})`);
+    const roleErrors47: string[] = [];
+    for (const [who, actor] of [['project manager', pmA47], ['admin', adminUser40]] as Array<[string, any]>) {
+      for (const [from, to] of [['draft', 'in-review'], ['in-review', 'approved'], ['in-review', 'rejected'], ['in-review', 'deferred']]) {
+        const r = await inState47(from);
+        const res = await status47(actor, r.id, to);
+        if (res.statusCode !== 200 || req47(res).status !== to) roleErrors47.push(`${who} ${from}->${to}: ${res.statusCode}`);
+        await ReqRepo47.delete(r.id);
+      }
+      for (const [from, to] of [['approved', 'draft'], ['rejected', 'draft'], ['deferred', 'draft'], ['in-review', 'draft'], ['approved', 'in-review'], ['rejected', 'in-review'], ['deferred', 'in-review'], ['draft', 'approved'], ['rejected', 'approved'], ['deferred', 'approved'], ['approved', 'rejected'], ['approved', 'deferred']]) {
+        const r = await inState47(from);
+        const res = await status47(actor, r.id, to);
+        if (res.statusCode !== 400 || (await ReqRepo47.findById(r.id))!.status !== from) roleErrors47.push(`${who} ${from}->${to}: ${res.statusCode}`);
+        await ReqRepo47.delete(r.id);
+      }
+    }
+    assert(roleErrors47.length === 0, `Project managers and admins make every lifecycle transition and nothing outside it — no return to draft and no reopening through the status endpoint (${roleErrors47.join('; ') || 'as expected'})`);
+
+    const r2 = req47(await createAs47(member47, { projectId: projA47.id, title: 'S17 Status draft' }));
+    const submit47 = await status47(member47, r2.id, 'in-review');
+    const memberApprove47 = await status47(member47, r2.id, 'approved');
+    const memberReject47 = await status47(member47, r2.id, 'rejected');
+    const memberDefer47 = await status47(member47, r2.id, 'deferred');
+    const viewerStatus47 = await status47(viewer47, r2.id, 'approved');
+    const outsiderStatus47 = await status47(outsider47, r2.id, 'approved');
+    const badStatus47 = await status47(pmA47, r2.id, 'done');
+    assert(submit47.statusCode === 200 && req47(submit47).status === 'in-review', 'A project member submits a draft for review');
+    assert([memberApprove47, memberReject47, memberDefer47, viewerStatus47].every((r) => r.statusCode === 403) && outsiderStatus47.statusCode === 404 && badStatus47.statusCode === 400 && (await ReqRepo47.findById(r2.id))!.status === 'in-review', 'Members cannot approve, reject or defer; viewers change nothing; outsiders get 404; unknown statuses are 400');
+    const prodApprove47 = await status47(prod47, r2.id, 'approved');
+    const r3 = req47(await createAs47(member47, { projectId: projA47.id, title: 'S17 Status reject' }));
+    const r4 = req47(await createAs47(member47, { projectId: projA47.id, title: 'S17 Status defer' }));
+    await status47(member47, r3.id, 'in-review');
+    await status47(member47, r4.id, 'in-review');
+    const adminReject47 = await status47(adminUser40, r3.id, 'rejected');
+    const pmDefer47 = await status47(pmA47, r4.id, 'deferred');
+    const otherPmApprove47 = await status47(pmB47, r4.id, 'approved');
+    assert(prodApprove47.statusCode === 200 && req47(prodApprove47).status === 'approved' && adminReject47.statusCode === 200 && req47(adminReject47).status === 'rejected' && pmDefer47.statusCode === 200 && req47(pmDefer47).status === 'deferred' && otherPmApprove47.statusCode === 404, 'Product managers, admins and project managers approve, reject and defer — only in projects they can reach');
+    const acts2_47 = await acts47(r2.id);
+    assert(acts2_47.filter((a: any) => a.action === 'status_change').map((a: any) => `${a.details.from}>${a.details.to}`).sort().join(',') === ['draft>in-review', 'in-review>approved'].sort().join(','), 'Each status change is logged with from/to');
+
+    // --- H. Approval rule ---
+    const ownerOnly47 = await patch47(member47, r2.id, { ownerId: member247.id });
+    assert(ownerOnly47.statusCode === 200 && req47(ownerOnly47).status === 'approved' && req47(ownerOnly47).ownerId === member247.id, 'An owner-only change leaves an approved requirement approved');
+    const dateOnly47 = await patch47(member47, r2.id, { targetDate: '2026-12-31' });
+    assert(dateOnly47.statusCode === 200 && req47(dateOnly47).status === 'approved' && req47(dateOnly47).targetDate === '2026-12-31', 'A target-date-only change leaves an approved requirement approved');
+    assert(!(await acts47(r2.id)).some((a: any) => a.action === 'status_change' && a.details.reason === 'content-changed'), 'Metadata changes log no return to review');
+    const same47 = await patch47(member47, r2.id, { title: r2.title, priority: r2.priority });
+    assert(same47.statusCode === 200 && req47(same47).status === 'approved', 'Saving unchanged content does not reopen an approved requirement');
+    const values47: Record<string, any> = { title: 'S17 Status draft (revised)', description: 'New scope', type: 'business', priority: 'critical', rationale: 'Regulatory', source: 'Audit finding' };
+    const reopened47: string[] = [];
+    const reapproveFailures47: string[] = [];
+    for (const field of SUBSTANTIVE47) {
+      const res = await patch47(member47, r2.id, { [field]: values47[field] });
+      if (res.statusCode === 200 && req47(res).status === 'in-review' && req47(res)[field] === values47[field]) reopened47.push(field);
+      const again = await status47(prod47, r2.id, 'approved');
+      if (again.statusCode !== 200) reapproveFailures47.push(`${field}: ${again.statusCode}`);
+    }
+    assert(reopened47.length === 6 && reapproveFailures47.length === 0, `A substantive change to an approved requirement returns it to review, from where it is approved again (${reopened47.join(', ')}${reapproveFailures47.length ? `; re-approval failed: ${reapproveFailures47.join(', ')}` : ''})`);
+    const reopenActs47 = (await acts47(r2.id)).filter((a: any) => a.action === 'status_change' && a.details.reason === 'content-changed');
+    assert(reopenActs47.length === 6 && reopenActs47.every((a: any) => a.details.from === 'approved' && a.details.to === 'in-review' && a.actorId === member47.id), 'Each automatic return to review is logged as an approved → in-review status change by the editor');
+
+    // --- I. Delete ---
+    const approvedDelete47 = await call47(ReqCtl47.remove, pmA47, { params: { id: r2.id } });
+    const adminApprovedDelete47 = await call47(ReqCtl47.remove, adminUser40, { params: { id: r2.id } });
+    assert(approvedDelete47.statusCode === 409 && adminApprovedDelete47.statusCode === 409 && !!(await ReqRepo47.findById(r2.id)), 'An approved requirement cannot be deleted, even by an admin');
+    const memberDelete47 = await call47(ReqCtl47.remove, member47, { params: { id: r3.id } });
+    const prodDelete47 = await call47(ReqCtl47.remove, prod47, { params: { id: r3.id } });
+    const otherPmDelete47 = await call47(ReqCtl47.remove, pmB47, { params: { id: r3.id } });
+    assert(memberDelete47.statusCode === 403 && prodDelete47.statusCode === 403 && otherPmDelete47.statusCode === 404 && !!(await ReqRepo47.findById(r3.id)), 'Members and a listed product manager cannot delete; another project\'s manager gets 404');
+    const pmDelete47 = await call47(ReqCtl47.remove, pmA47, { params: { id: r3.id } });
+    const adminDelete47 = await call47(ReqCtl47.remove, adminUser40, { params: { id: r4.id } });
+    const goneGet47 = await call47(ReqCtl47.get, pmA47, { params: { id: r3.id } });
+    assert(pmDelete47.statusCode === 200 && adminDelete47.statusCode === 200 && goneGet47.statusCode === 404, 'The current project manager and admins delete requirements that are not approved');
+
+    // --- J. Activity ---
+    const a1 = await acts47(r1.id);
+    const actions1 = new Set(a1.map((a: any) => a.action));
+    const delAct47 = (await acts47(r3.id)).find((a: any) => a.action === 'delete');
+    assert(['create', 'update', 'owner_change'].every((x) => actions1.has(x)) && !!delAct47 && delAct47.details.code === r3.code && delAct47.actorId === pmA47.id, 'Create, update, owner change and delete are logged against the requirement');
+    const allDetails47 = JSON.stringify([...a1, ...(await acts47(r2.id))].map((a: any) => a.details));
+    assert(!allDetails47.includes('Users sign in with the corporate identity provider') && !allDetails47.includes('Regulatory') && !allDetails47.includes('New scope'), 'Activity details are concise: no descriptions or rationale');
+    const ownAct47 = a1.find((a: any) => a.action === 'owner_change');
+    assert(!!ownAct47 && 'from' in ownAct47.details && 'to' in ownAct47.details && ownAct47.details.code === r1.code, 'Owner changes record the previous and new owner');
+
+    // --- K. Repository: duplicate ids, code integrity ---
+    const existing47 = (await ReqRepo47.findById(r1.id))!;
+    const dup47 = await (async () => { try { await ReqRepo47.create({ ...existing47, title: 'Overwritten' } as any, r1.id); return null; } catch (e: any) { return e; } })();
+    assert(dup47?.status === 409 && dup47?.code === 'CONFLICT' && (await ReqRepo47.findById(r1.id))!.title === existing47.title, 'Repository backstop: a create with an id in use throws 409 instead of overwriting');
+    const direct47 = await ReqRepo47.create({ ...existing47, title: 'S17 Direct', code: 'REQ-1' } as any);
+    cleanup47.push(() => ReqRepo47.delete(direct47.id));
+    const allCodes47 = (await ReqRepo47.findAll()).map((r) => r.code);
+    assert(direct47.code !== 'REQ-1' && direct47.code !== existing47.code && new Set(allCodes47).size === allCodes47.length, 'The repository always issues its own code; every stored code is unique');
+    const upd47 = await ReqRepo47.update(r1.id, { id: 'x', code: 'REQ-1', projectId: projB47.id, createdBy: 'x', createdAt: '2000-01-01' } as any);
+    assert(upd47!.id === r1.id && upd47!.code === r1.code && upd47!.projectId === projA47.id && upd47!.createdBy === member47.id && upd47!.createdAt === r1.createdAt, 'Repository updates never change id, code, project, creator or creation time');
+
+    // --- L. AI projection ---
+    const big47 = 'y'.repeat(5000);
+    const ctx47: any = toCtx47({ ...existing47, title: big47, description: big47, rationale: big47, source: big47, ownerId: member47.id, targetDate: '2026-12-31', password: 'secret', email: 'a@b.c' } as any);
+    const keys47 = Object.keys(ctx47).sort();
+    const allowed47 = ['code', 'title', 'type', 'status', 'priority', 'description', 'rationale', 'source', 'targetDate', 'hasOwner'];
+    assert(keys47.every((k) => allowed47.includes(k)) && !('id' in ctx47) && !('ownerId' in ctx47) && !('createdBy' in ctx47) && !('updatedBy' in ctx47) && !('projectId' in ctx47) && !JSON.stringify(ctx47).includes(member47.id) && ctx47.hasOwner === true, 'toRequirementContext is whitelisted and carries no record or user identities');
+    assert(ctx47.title.length <= CTX_LIMITS47.title && ctx47.description.length <= CTX_LIMITS47.description && ctx47.rationale.length <= CTX_LIMITS47.rationale && ctx47.source.length <= CTX_LIMITS47.source, 'toRequirementContext caps every text field');
+    const bare47: any = toCtx47({ ...existing47, description: '   ', rationale: undefined, source: '', ownerId: undefined, targetDate: 'soon' } as any);
+    assert(!('description' in bare47) && !('rationale' in bare47) && !('source' in bare47) && !('targetDate' in bare47) && bare47.hasOwner === false, 'Empty or malformed optional values are left out of the projection');
+    const aiSources47 = fs35.readdirSync('server/services').filter((f: string) => /^ai/i.test(f)).map((f: string) => fs35.readFileSync(`server/services/${f}`, 'utf8')).join('\n');
+    assert(!/requirement/i.test(aiSources47), 'The projection is not wired into the AI services');
+
+    // --- M. Browser: rendering and sources ---
+    const hadWindow47 = 'window' in globalThis;
+    const hadDocument47 = 'document' in globalThis;
+    if (!hadWindow47) (globalThis as any).window = {};
+    if (!hadDocument47) (globalThis as any).document = { getElementById: () => null, querySelector: () => null, querySelectorAll: () => [] };
+    const { RequirementsModule: ReqMod47 } = await import('../PM-Portal/js/requirements.js');
+    const saved47 = { me: ReqMod47.me, projects: ReqMod47.projects, users: ReqMod47.users };
+    try {
+      ReqMod47.me = { id: 'u-admin', role: 'admin' };
+      ReqMod47.projects = [{ id: 'P-1', name: XSS47, code: XSS47, managerId: 'u-admin', members: [] }];
+      ReqMod47.users = [{ id: 'u-1', firstName: XSS47, lastName: XSS47 }];
+      const evil47 = { id: "evil'); alert(1); ('", code: XSS47, title: XSS47, description: XSS47, rationale: XSS47, source: XSS47, projectId: 'P-1', type: XSS47, status: XSS47, priority: 'constructor', ownerId: 'u-1', targetDate: '2026-01-01', updatedAt: '2026-01-01T00:00:00Z' };
+      const html47 = ReqMod47.renderList({ items: [evil47], total: 60, page: 1, limit: 25 }) + ReqMod47.renderDetail(evil47) + ReqMod47.formHtml(evil47);
+      assert(!/<img/i.test(html47) && /&lt;img src=x onerror=alert\(1\)&gt;/.test(html47), 'Requirement lists, details and forms render hostile values as inert text');
+      assert(!/onclick=|onchange=|oninput=/i.test(html47) && /data-rq-action="open" data-args="\[&quot;evil&#39;\); alert\(1\); \(&#39;&quot;\]"/.test(html47) && !html47.includes("('evil'); alert(1)"), 'No inline handlers: ids travel in escaped data-args');
+      assert(!/value="[^"]*&lt;img/.test(ReqMod47.formHtml(evil47)) && !/<textarea[^>]*>[^<]+<\/textarea>/.test(ReqMod47.formHtml(evil47)), 'The form markup carries no record values; they are filled through the DOM');
+      ReqMod47.me = { id: 'u-m', role: 'team-member' };
+      ReqMod47.projects = [{ id: 'P-1', name: 'P', code: 'P', managerId: 'u-pm', members: [{ userId: 'u-m' }] }, { id: 'P-2', name: 'Q', code: 'Q', managerId: 'u-pm', members: [] }];
+      const moves47 = (s: string) => ReqMod47.statusMoves({ ...evil47, status: s }).map((m: any) => m.status).join(',');
+      assert(moves47('draft') === 'in-review' && ['in-review', 'approved', 'rejected', 'deferred'].every((st) => moves47(st) === '') && ReqMod47.canEdit('P-1') && !ReqMod47.canEdit('P-2') && !ReqMod47.canDelete({ ...evil47, status: 'draft' }), 'For a member the UI offers only submit-for-review, only in their projects, and no delete');
+      ReqMod47.me = { id: 'u-pm', role: 'project-manager' };
+      assert(!ReqMod47.canDelete({ ...evil47, status: 'approved' }) && ReqMod47.canDelete({ ...evil47, status: 'draft' }) && moves47('draft') === 'in-review' && moves47('in-review') === 'approved,rejected,deferred' && ['approved', 'rejected', 'deferred'].every((st) => moves47(st) === ''), 'The project manager is offered exactly the lifecycle moves (submit; approve, reject, defer) and can delete requirements that are not approved');
+    } finally {
+      Object.assign(ReqMod47, saved47);
+      if (!hadWindow47) delete (globalThis as any).window;
+      if (!hadDocument47) delete (globalThis as any).document;
+    }
+    const reqJs47 = fs35.readFileSync('PM-Portal/js/requirements.js', 'utf8');
+    const html47src = fs35.readFileSync('PM-Portal/index.html', 'utf8');
+    const app47 = fs35.readFileSync('PM-Portal/js/app.js', 'utf8');
+    assert(/from '\.\/safeHtml\.js'/.test(reqJs47) && !/onclick=/i.test(reqJs47) && !/value="\$\{(?!escapeHtml\()/.test(reqJs47) && /el\.value = value \?\? ''/.test(reqJs47) && /this\.toast\(describeError\(err\), 'danger'\)/.test(reqJs47), 'requirements.js uses safeHtml, no inline handlers, DOM value fills and text toasts');
+    assert(/data-page="requirements"/.test(html47src) && /<section id="page-requirements" class="page-container">/.test(html47src) && /id="requirements-workspace"/.test(html47src) && /import \{ RequirementsModule \} from '\.\/requirements\.js';/.test(app47) && /pageId === 'requirements'\) \{\s*RequirementsModule\.init\(this\);/.test(app47), 'The Requirements workspace has a sidebar entry, a page and a route');
+    assert(!/RequirementService|requirements\.js/.test(fs35.readFileSync('PM-Portal/js/projects.js', 'utf8')), 'No project-detail requirements panel');
+
+    // --- N. Schema, sequence and route contract ---
+    const schema47 = fs35.readFileSync('server/db/schema.sql', 'utf8').replace(/\r/g, '');
+    const table47 = (/CREATE TABLE IF NOT EXISTS requirements \(([\s\S]*?)\n\);/.exec(schema47) || [])[1] || '';
+    assert(/code VARCHAR\(20\) NOT NULL UNIQUE/.test(table47) && /project_id VARCHAR\(64\) NOT NULL REFERENCES projects\(id\) ON DELETE CASCADE/.test(table47) && /owner_id VARCHAR\(64\) REFERENCES users\(id\) ON DELETE SET NULL/.test(table47) && /status VARCHAR\(30\) NOT NULL DEFAULT 'draft'/.test(table47), 'Schema: requirements table with a unique code, cascading project FK, set-null owner FK and draft default');
+    assert(['project_id', 'status', 'priority', 'owner_id'].every((c) => new RegExp(`CREATE INDEX IF NOT EXISTS idx_requirements_\\w+ ON requirements\\(${c}\\);`).test(schema47)) && /CREATE SEQUENCE IF NOT EXISTS requirement_code_seq START WITH 101 INCREMENT BY 1;/.test(schema47), 'Schema: indexes on project, status, priority and owner, and an idempotent requirement_code_seq');
+    const repo47 = fs35.readFileSync('server/repositories/requirementRepository.ts', 'utf8');
+    assert(/nextval\('requirement_code_seq'\)/.test(repo47) && /FROM requirement_code_seq/.test(repo47) && /PG_UNIQUE_VIOLATION/.test(repo47) && /duplicateRecordError\('requirement'/.test(repo47), 'Repository: sequence codes, sequence sync, unique-violation retry and duplicate-id guard');
+    assert(/\| 'requirement'/.test(fs35.readFileSync('server/models/types.ts', 'utf8')), "ActivityEntityType includes 'requirement'");
+    const stack47 = (routes47 as any).stack.map((l: any) => `${Object.keys(l.route.methods)[0].toUpperCase()} ${l.route.path} ${l.route.stack.length}`);
+    assert(['GET /requirements 2', 'GET /requirements/:id 2', 'POST /requirements 3', 'PATCH /requirements/:id/status 3', 'PATCH /requirements/:id 3', 'DELETE /requirements/:id 3'].every((r) => stack47.includes(r)) && (routes47 as any).stack.every((l: any) => l.route.stack[0].name === 'authenticateToken'), `All six requirement routes are authenticated; writes also pass a role filter (${stack47.join('; ')})`);
+    assert(/v1ApiRouter\.use\(requirementRoutes\);/.test(fs35.readFileSync('server/routes/index.ts', 'utf8')), 'Requirement routes are registered on the V1/V2 router');
+  } finally {
+    for (const fn of cleanup47.reverse()) { try { await fn(); } catch { /* already removed */ } }
+    for (const u of users47) await UserRepo40.update(u.id, { isActive: false });
+  }
+  assert(!(await ReqRepo47.findAll()).some((r: any) => /^S17 /.test(r.title)), 'Sprint 17 fixtures are removed after §47');
+
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('========================================\n');

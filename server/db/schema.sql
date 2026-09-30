@@ -730,4 +730,34 @@ ALTER TABLE stories ADD COLUMN IF NOT EXISTS jira_url VARCHAR(2048);
 -- multi-link list stores them; an empty array means none.
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_links JSONB NOT NULL DEFAULT '[]'::jsonb;
 
+-- ====================================================================
+-- Sprint 17: Requirements Studio (foundation)
+-- ====================================================================
+-- Project-scoped requirements. Codes are REQ-### from requirement_code_seq
+-- (atomic across connections; UNIQUE(code) is the backstop). Deleting a
+-- project removes its requirements; deleting a user clears ownership.
+CREATE SEQUENCE IF NOT EXISTS requirement_code_seq START WITH 101 INCREMENT BY 1;
 
+CREATE TABLE IF NOT EXISTS requirements (
+  id VARCHAR(64) PRIMARY KEY,
+  code VARCHAR(20) NOT NULL UNIQUE,
+  project_id VARCHAR(64) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  title VARCHAR(255) NOT NULL,
+  description TEXT,
+  type VARCHAR(30) NOT NULL DEFAULT 'functional',
+  status VARCHAR(30) NOT NULL DEFAULT 'draft',
+  priority VARCHAR(20) NOT NULL DEFAULT 'medium',
+  rationale TEXT,
+  source VARCHAR(500),
+  owner_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+  target_date DATE,
+  created_by VARCHAR(64),
+  updated_by VARCHAR(64),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_requirements_project ON requirements(project_id);
+CREATE INDEX IF NOT EXISTS idx_requirements_status ON requirements(status);
+CREATE INDEX IF NOT EXISTS idx_requirements_priority ON requirements(priority);
+CREATE INDEX IF NOT EXISTS idx_requirements_owner ON requirements(owner_id);

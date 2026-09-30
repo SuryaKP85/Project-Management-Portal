@@ -511,6 +511,7 @@ export type ActivityEntityType =
   | 'action_item'
   | 'waiting_for'
   | 'follow_up'
+  | 'requirement'
   | 'system';
 
 export type ActivityAction =
@@ -1451,4 +1452,31 @@ export interface FollowUp {
   updatedAt: string;
 }
 
+// ====================================================================
+// Sprint 17: Requirements Studio (foundation)
+// ====================================================================
 
+export type RequirementType = 'business' | 'functional' | 'non-functional';
+export type RequirementStatus = 'draft' | 'in-review' | 'approved' | 'rejected' | 'deferred';
+export type RequirementPriority = 'critical' | 'high' | 'medium' | 'low';
+
+/** A project-scoped requirement. id, code, actors and timestamps are server-controlled; projectId never changes. */
+export interface Requirement {
+  id: string;
+  /** REQ-###, issued by the server and never re-issued. */
+  code: string;
+  projectId: string;
+  title: string;
+  description?: string;
+  type: RequirementType;
+  status: RequirementStatus;
+  priority: RequirementPriority;
+  rationale?: string;
+  source?: string;
+  ownerId?: string;
+  targetDate?: string;
+  createdBy: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}

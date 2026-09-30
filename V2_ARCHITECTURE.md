@@ -107,6 +107,20 @@ All V2 APIs are structured under `/api/v1/`:
 * Owners, organizers, participants and waiting-on users must be active users with access to the project. Waiting For and Follow-ups may reference one related record (`relatedType` + `relatedId`) that must be in the same project.
 * Activity is logged for create, update, assignment, status change, completion/resolution and delete; assignment and meaningful status changes notify the person concerned (never the actor). Tables: `meetings`, `action_items`, `waiting_for_items`, `follow_ups`.
 
+### 3.8 Requirements (Sprint 17, Requirements Studio foundation)
+* `GET|POST /api/v1/requirements`, `GET|PATCH|DELETE /api/v1/requirements/:id`, `PATCH /api/v1/requirements/:id/status` (also under `/api/v2`).
+* A requirement belongs to one project for its whole life (`projectId` is immutable). Fields: `code` (REQ-###), `title`, `description`, `type` (`business` | `functional` | `non-functional`), `status` (`draft` | `in-review` | `approved` | `rejected` | `deferred`; every requirement is created as `draft` and a client-supplied status is ignored), `priority` (`critical` | `high` | `medium` | `low`), `rationale`, `source`, `ownerId`, `targetDate`. `id`, `code`, `createdBy`/`updatedBy` and timestamps are set by the server; only these fields are read from a request body.
+* Read: the existing project access rule (as in 3.7); anything outside it is a 404, exactly like a missing record. A client-supplied `projectId` is always resolved server-side.
+* Create and edit: admins, project and product managers who can see the project, and team members who manage or are listed on it. Viewers never write. Owning a requirement grants no access.
+* Status lifecycle (`PATCH …/status`; `PATCH /requirements/:id` does not change status): `draft → in-review`, then `in-review → approved | rejected | deferred`. Any other transition is a 400 (`REQUIREMENT_TRANSITIONS`); rejected and deferred are final, and nothing returns to draft. Anyone who can edit may submit a draft for review; approving, rejecting and deferring belong to admins and project/product managers (403 otherwise). Enforced in `RequirementService`, since `requireRoles` is hierarchical.
+* Approval rule: a change to the title, description, type, priority, rationale or source of an approved requirement returns it to `in-review` (logged as a status change with `reason: content-changed`). Owner and target date changes leave it approved. This edit is the only way an approved requirement leaves approval.
+* Delete: admins and the project's current manager (`ProjectGuards.canAdminister`); an approved requirement cannot be deleted (409).
+* Lists take `page`/`limit` (default 25, max 100) and filters `projectId`, `status`, `priority`, `type`, `ownerId`, `search` (code, title, description, source); newest code first.
+* The owner must be an active user with access to the project; a new owner is notified (`work_assigned` / `work_reassigned`, never the actor). Activity (`entityType: requirement`) is logged for create, update (changed field names only), status change, owner change and delete — no descriptions or rationale.
+* Table `requirements` (project FK cascades, owner FK sets null; indexes on project, status, priority, owner). Codes come from `requirement_code_seq`, raised above any stored code before each create, with `UNIQUE(code)` and a bounded retry as the backstop; memory mode uses a monotonic in-process counter. A create with an id already in use is a 409.
+* AI extension point: `toRequirementContext(requirement)` is a pure, whitelisted, length-capped projection (code, title, type, status, priority, capped description/rationale/source, target date, `hasOwner`) with no record or user identities. It is not yet connected to the AI services.
+* Browser: the global **Requirements** workspace (`PM-Portal/js/requirements.js`, sidebar under Strategy & Portfolios) lists, filters, creates, edits, changes status and deletes, rendering through `safeHtml.js` with delegated `data-*` actions and DOM-filled forms.
+
 ---
 
 ## 4. Authentication, Security, and RBAC

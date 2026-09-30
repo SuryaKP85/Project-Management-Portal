@@ -29,6 +29,7 @@ import { AgileBoardModule } from './agileBoard.js';
 import { SprintPlanningModule } from './sprintPlanning.js';
 import { MyWorkModule } from './myWork.js';
 import { MeetingsModule } from './meetings.js';
+import { RequirementsModule } from './requirements.js';
 import { GovernanceModule } from './governance.js';
 import { NotificationService } from './services/notificationService.js';
 import { Authentication } from './authentication.js';
@@ -326,6 +327,7 @@ class EnterprisePortalApp {
         'projects': 'Projects Portfolio',
         'portfolios': 'Strategic Portfolios & OKRs',
         'products': 'Enterprise Products',
+        'requirements': 'Requirements Studio',
         'delivery': 'Delivery Management & Hierarchy',
         'agile-board': 'Agile Execution Board',
         'sprint-planning': 'Sprint Planning & Backlog',
@@ -375,6 +377,8 @@ class EnterprisePortalApp {
       MyWorkModule.init(this);
     } else if (pageId === 'meetings') {
       MeetingsModule.init(this);
+    } else if (pageId === 'requirements') {
+      RequirementsModule.init(this);
     } else if (pageId === 'customers') {
       CustomersModule.init(this);
     } else if (pageId === 'resources') {
