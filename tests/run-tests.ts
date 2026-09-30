@@ -5230,6 +5230,222 @@ async function runTests() {
   }
   assert((await MtgRepo44.findAll({ projectId: projA44 })).length === 0 && (await ActRepo44.findAll({ projectId: projA44 })).length === 0 && (await ProjRepo24.findById(projA44)) === null, 'Sprint 14 fixtures are removed after §44');
 
+  // 45. Jira references — External Delivery Links (Sprint 15A)
+  // A Jira key and/or link on epics, features and stories, and the existing
+  // project Jira links, rendered as safe links that open Jira in a new tab.
+  // No Jira API, OAuth, sync or stored Jira data. Browser and server share the
+  // same validation rules; both are exercised here.
+  console.log('\n--- 45. Jira References / External Delivery Links (Sprint 15A) ---');
+  const JiraSrv45 = await import('../server/services/jiraReference');
+  const JiraWeb45: any = await import('../PM-Portal/js/jiraLinks.js');
+  const { config: cfg45 } = await import('../server/config/env');
+  const { externalLinkRoutes: extRoutes45 } = await import('../server/routes/externalLinkRoutes');
+  const { v1ApiRouter: v1Router45 } = await import('../server/routes/index');
+  const { DeliveryController: DelivCtl45 } = await import('../server/controllers/deliveryController');
+  const { EpicRepository: EpicRepo45 } = await import('../server/repositories/epicRepository');
+  const { FeatureRepository: FeatRepo45 } = await import('../server/repositories/featureRepository');
+  const { StoryRepository: StoryRepo45 } = await import('../server/repositories/storyRepository');
+  const { ProjectController: ProjCtl45 } = await import('../server/controllers/projectController');
+  const { projectFromRow: projectFromRow45 } = await import('../server/repositories/projectRepository');
+
+  const savedBase45 = cfg45.jira.baseUrl;
+  const created45: { epics: string[]; features: string[]; stories: string[]; projects: string[] } = { epics: [], features: [], stories: [], projects: [] };
+  const hadWindow45 = 'window' in globalThis;
+  const d45 = (handler: any, body: any, params: any = {}) => run41(handler, reqAs40(adminUser40, { url: '/api/v1/sprint-15a', body, params }));
+  try {
+    // --- key validation ---
+    const validKeys45 = ['PROJ-123', 'WMS-42', 'ABC123-999', 'A_B-1', 'proj-7'];
+    const invalidKeys45 = ['', 'PROJ', 'PROJ-', '-12', '123-45', 'PROJ-0', 'PROJ 123', 'PROJ-12a', '<b>X-1</b>', 'X-1"onmouseover=1', 'P'.repeat(60) + '-1', 42, null];
+    assert(validKeys45.every((k) => JiraSrv45.normalizeJiraKey(k) === k.toUpperCase()), 'Jira keys such as PROJ-123, WMS-42, ABC123-999 are valid and normalised to upper case');
+    assert(invalidKeys45.every((k) => JiraSrv45.normalizeJiraKey(k) === null), 'Malformed keys, HTML and non-strings are rejected');
+    assert([...validKeys45, ...invalidKeys45].every((k) => JiraWeb45.normalizeJiraKey(k) === JiraSrv45.normalizeJiraKey(k)), 'Browser and server key rules agree');
+
+    // --- URL validation ---
+    const base45 = JiraSrv45.configuredJiraBase('https://jira.example.com');
+    const accept45 = [
+      'https://company.atlassian.net/browse/PROJ-123',
+      'https://company.atlassian.net/jira/software/projects/PROJ/boards/123',
+      'https://legacy.jira.com/browse/ABC-9',
+    ];
+    const acceptWithBase45 = ['https://jira.example.com/browse/PROJ-1', 'https://JIRA.example.com/secure/RapidBoard.jspa?rapidView=4'];
+    const reject45 = [
+      'javascript:alert(1)', ' JavaScript:alert(1)', 'data:text/html,<script>alert(1)</script>', 'vbscript:msgbox(1)',
+      '//evil.example', '//company.atlassian.net/browse/X-1', 'http://evil.example', 'http://company.atlassian.net/browse/PROJ-1',
+      'https://evil.example/browse/PROJ-123', 'https://atlassian.net.evil.com/browse/X-1', 'https://evilatlassian.net/browse/X-1',
+      'https://atlassian.net/browse/X-1', 'https://user:pass@company.atlassian.net/browse/X-1', 'https://company.atlassian.net:8443/browse/X-1',
+      'https://', 'not a url', 'https://com pany.atlassian.net/', '', 'https://jira.example.com/browse/PROJ-1', 'https://x.atlassian.net/' + 'a'.repeat(2100),
+    ];
+    assert(accept45.every((u) => JiraSrv45.safeJiraUrl(u, null) !== null), 'https links on Atlassian cloud sites are accepted (issue and board URLs)');
+    assert(acceptWithBase45.every((u) => JiraSrv45.safeJiraUrl(u, base45) !== null) && acceptWithBase45.every((u) => JiraSrv45.safeJiraUrl(u, null) === null), 'A company Jira host is accepted only when configured as JIRA_BASE_URL');
+    assert(reject45.every((u) => JiraSrv45.safeJiraUrl(u, null) === null), 'javascript:, data:, vbscript:, protocol-relative, http, look-alike hosts, credentials, odd ports and malformed URLs are rejected');
+    assert(JiraSrv45.safeJiraUrl('https://jira.example.com:8443/browse/X-1', base45) === null && JiraSrv45.safeJiraUrl('https://jira.example.com:8443/browse/X-1', JiraSrv45.configuredJiraBase('https://jira.example.com:8443')) !== null, 'A non-default port is allowed only when it is part of the configured base URL');
+    const allUrls45 = [...accept45, ...acceptWithBase45, ...reject45, 'https://jira.example.com:8443/browse/X-1'];
+    const webBase45 = JiraWeb45.parseJiraBase('https://jira.example.com');
+    assert(allUrls45.every((u) => JiraWeb45.safeJiraUrl(u, null) === JiraSrv45.safeJiraUrl(u, null) && JiraWeb45.safeJiraUrl(u, webBase45) === JiraSrv45.safeJiraUrl(u, base45)), 'Browser and server URL rules agree, with and without a configured base');
+    assert(['http://jira.example.com', 'https://u:p@jira.example.com', 'https://jira.example.com/?x=1', 'javascript:alert(1)', 'nonsense'].every((b) => JiraSrv45.configuredJiraBase(b) === null && JiraWeb45.parseJiraBase(b) === null), 'An unsafe JIRA_BASE_URL (http, credentials, query, script) is ignored');
+
+    // --- links built from the configured base ---
+    const cloudBase45 = JiraSrv45.configuredJiraBase('https://company.atlassian.net');
+    assert(JiraSrv45.jiraIssueUrl('proj-123', cloudBase45) === 'https://company.atlassian.net/browse/PROJ-123' && JiraSrv45.jiraIssueUrl('PROJ-1', JiraSrv45.configuredJiraBase('https://example.com/jira/')) === 'https://example.com/jira/browse/PROJ-1', 'Keys become <base>/browse/<KEY>, including a base with a context path');
+    assert(JiraSrv45.jiraIssueUrl('PROJ-1', null) === null && JiraSrv45.jiraIssueUrl('<b>', cloudBase45) === null, 'No link is built without a base or from an invalid key');
+
+    // --- rendering: escaping, new tab, noopener ---
+    JiraWeb45.setJiraBaseUrl(null);
+    const good45 = JiraWeb45.jiraLinkHtml({ jiraKey: 'PROJ-123', jiraUrl: 'https://company.atlassian.net/browse/PROJ-123' });
+    assert(good45.includes('href="https://company.atlassian.net/browse/PROJ-123"') && good45.includes('target="_blank"') && good45.includes('rel="noopener noreferrer"') && good45.includes('Jira: PROJ-123') && good45.includes('↗'), 'A valid reference renders as "Jira: PROJ-123 ↗" opening Jira in a new tab with rel="noopener noreferrer"');
+    const quote45 = JiraWeb45.jiraLinkHtml({ jiraUrl: 'https://company.atlassian.net/browse/X-1" onmouseover="alert(1)' });
+    assert(!/onmouseover="/.test(quote45) && (quote45.match(/"/g) || []).length % 2 === 0 && /%22/.test(quote45), 'A quote-breaking URL cannot escape the href attribute');
+    const script45 = JiraWeb45.jiraLinkHtml({ jiraUrl: 'javascript:alert(1)' });
+    const dataUrl45 = JiraWeb45.jiraLinkHtml({ jiraUrl: 'data:text/html,<script>alert(1)</script>' });
+    const evil45 = JiraWeb45.jiraLinkHtml({ jiraUrl: 'https://evil.example/browse/PROJ-123' });
+    assert([script45, dataUrl45, evil45].every((h) => !/href=/.test(h) && !/<script/i.test(h) && /<span/.test(h)), 'Unsafe or non-Jira URLs render as inert text, never as a link');
+    const keyHtml45 = JiraWeb45.jiraLinkHtml({ jiraKey: '<img src=x onerror=alert(1)>' });
+    assert(!/<img/i.test(keyHtml45) && keyHtml45.includes('&lt;img'), 'A malicious Jira key is escaped and cannot inject HTML');
+    const bare45 = JiraWeb45.jiraLinkHtml({ jiraKey: 'PROJ-9' });
+    JiraWeb45.setJiraBaseUrl('https://company.atlassian.net');
+    const built45 = JiraWeb45.jiraLinkHtml({ jiraKey: 'proj-9' });
+    JiraWeb45.setJiraBaseUrl(null);
+    assert(!/href=/.test(bare45) && /JIRA_BASE_URL/.test(bare45) && built45.includes('href="https://company.atlassian.net/browse/PROJ-9"'), 'A bare key is shown as text until a base URL is configured, then links to <base>/browse/<KEY>');
+    assert(JiraWeb45.jiraLinkHtml({}) === '' && JiraWeb45.jiraLinkHtml({ jiraKey: '', jiraUrl: '' }) === '', 'Records without a Jira reference render nothing');
+
+    // --- config endpoint (no secrets) ---
+    const cfgLayer45 = (extRoutes45 as any).stack.find((l: any) => l.route && l.route.path === '/config/external-links');
+    assert(!!cfgLayer45 && cfgLayer45.route.stack[0].name === 'authenticateToken' && (v1Router45 as any).stack.some((l: any) => l.handle === extRoutes45), 'GET /config/external-links is mounted and requires authentication');
+    cfg45.jira.baseUrl = '';
+    const cfgNone45 = res41(); cfgLayer45.route.stack[1].handle({} as any, cfgNone45 as any);
+    cfg45.jira.baseUrl = 'https://company.atlassian.net/';
+    const cfgSet45 = res41(); cfgLayer45.route.stack[1].handle({} as any, cfgSet45 as any);
+    cfg45.jira.baseUrl = 'http://insecure.example';
+    const cfgBad45 = res41(); cfgLayer45.route.stack[1].handle({} as any, cfgBad45 as any);
+    cfg45.jira.baseUrl = savedBase45;
+    assert(cfgNone45.body.data.jira.baseUrl === null && cfgSet45.body.data.jira.baseUrl === 'https://company.atlassian.net' && cfgBad45.body.data.jira.baseUrl === null && Object.keys(cfgSet45.body.data.jira).sort().join() === 'baseUrl,cloudHostSuffixes', 'The link config exposes only the (validated) base URL and cloud host suffixes');
+
+    // --- delivery objects: optional, validated, reference only ---
+    const epicRes45 = await d45(DelivCtl45.createEpic, { name: 'Sprint 15A epic', projectId: 'PRJ-101', jiraKey: 'proj-501', jiraUrl: 'https://company.atlassian.net/browse/PROJ-501', jiraStatus: 'Done', jiraSummary: 'copied from Jira' });
+    const epic45 = epicRes45.body?.data?.epic;
+    if (epic45) created45.epics.push(epic45.id);
+    assert(epicRes45.statusCode === 201 && epic45.jiraKey === 'PROJ-501' && epic45.jiraUrl === 'https://company.atlassian.net/browse/PROJ-501', 'An epic stores a normalised Jira key and link');
+    assert(!('jiraStatus' in epic45) && !('jiraSummary' in epic45) && !('jiraStatus' in (await EpicRepo45.findById(epic45.id))!), 'Jira metadata sent by a client is not stored');
+    const plain45 = await d45(DelivCtl45.createEpic, { name: 'Sprint 15A plain epic', projectId: 'PRJ-101' });
+    created45.epics.push(plain45.body.data.epic.id);
+    assert(plain45.statusCode === 201 && plain45.body.data.epic.jiraKey === undefined && plain45.body.data.epic.jiraUrl === undefined, 'Jira references are optional');
+    const badEpics45 = await Promise.all([
+      d45(DelivCtl45.createEpic, { name: 'x', projectId: 'PRJ-101', jiraKey: 'not a key' }),
+      d45(DelivCtl45.createEpic, { name: 'x', projectId: 'PRJ-101', jiraUrl: 'javascript:alert(1)' }),
+      d45(DelivCtl45.createEpic, { name: 'x', projectId: 'PRJ-101', jiraUrl: 'https://evil.example/browse/PROJ-1' }),
+      d45(DelivCtl45.createEpic, { name: 'x', projectId: 'PRJ-101', jiraKey: 'PROJ-1', jiraUrl: 'https://company.atlassian.net/browse/PROJ-2' }),
+    ]);
+    assert(badEpics45.every((r) => r.statusCode === 400 && r.body.error.code === 'VALIDATION_ERROR'), `Invalid keys, unsafe or non-Jira links and key/link mismatches are rejected with 400 (${badEpics45.map((r) => r.statusCode).join(',')})`);
+    const epicCount45 = (await EpicRepo45.findAll()).length;
+    const updKey45 = await d45(DelivCtl45.updateEpic, { jiraKey: 'PROJ-777' }, { id: epic45.id });
+    const updPair45 = await d45(DelivCtl45.updateEpic, { jiraKey: 'PROJ-777', jiraUrl: 'https://company.atlassian.net/browse/PROJ-777', jiraAssignee: 'someone' }, { id: epic45.id });
+    const cleared45 = await d45(DelivCtl45.updateEpic, { jiraKey: '', jiraUrl: null }, { id: epic45.id });
+    assert(updKey45.statusCode === 400 && updPair45.statusCode === 200 && updPair45.body.data.epic.jiraKey === 'PROJ-777' && !('jiraAssignee' in updPair45.body.data.epic), 'Updating the key alone is checked against the stored link; a matching pair updates, and other jira* fields are dropped');
+    assert(cleared45.statusCode === 200 && cleared45.body.data.epic.jiraKey === undefined && cleared45.body.data.epic.jiraUrl === undefined && (await EpicRepo45.findAll()).length === epicCount45, 'Empty values clear the reference');
+    const featRes45 = await d45(DelivCtl45.createFeature, { name: 'Sprint 15A feature', projectId: 'PRJ-101', epicId: 'epic_1', jiraKey: 'WMS-42' });
+    if (featRes45.body?.data?.feature) created45.features.push(featRes45.body.data.feature.id);
+    const storyRes45 = await d45(DelivCtl45.createStory, { title: 'Allow warehouse operator to verify loading', projectId: 'PRJ-101', jiraKey: 'ABC123-999', jiraUrl: 'https://company.atlassian.net/browse/ABC123-999' });
+    if (storyRes45.body?.data?.story) created45.stories.push(storyRes45.body.data.story.id);
+    const badFeat45 = await d45(DelivCtl45.createFeature, { name: 'x', projectId: 'PRJ-101', jiraUrl: 'data:text/html,x' });
+    const badStory45 = await d45(DelivCtl45.updateStory, { jiraUrl: 'http://company.atlassian.net/browse/ABC123-999' }, { id: storyRes45.body.data.story.id });
+    assert(featRes45.statusCode === 201 && featRes45.body.data.feature.jiraKey === 'WMS-42' && storyRes45.statusCode === 201 && storyRes45.body.data.story.jiraKey === 'ABC123-999', 'Features and stories carry Jira references too');
+    assert(badFeat45.statusCode === 400 && badStory45.statusCode === 400, 'Feature and story references are validated on create and update');
+    const seedEpics45 = await d45(DelivCtl45.listEpics, {});
+    assert(seedEpics45.statusCode === 200 && seedEpics45.body.data.epics.some((e: any) => e.id === 'epic_1' && e.jiraKey === undefined), 'Existing records without Jira fields still list normally');
+
+    // --- schema and repositories ---
+    const schema45 = fs35.readFileSync('server/db/schema.sql', 'utf8');
+    const table45 = (t: string) => (new RegExp(`CREATE TABLE IF NOT EXISTS ${t} \\(([\\s\\S]*?)\\n\\);`).exec(schema45) || [])[1] || '';
+    assert(['epics', 'features', 'stories'].every((t) => /jira_key VARCHAR\(64\)/.test(table45(t)) && /jira_url VARCHAR\(2048\)/.test(table45(t)) && new RegExp(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS jira_key VARCHAR\\(64\\);`).test(schema45) && new RegExp(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS jira_url VARCHAR\\(2048\\);`).test(schema45)), 'Schema: nullable jira_key/jira_url on epics, features and stories, with idempotent ALTERs for existing databases');
+    assert(!/CREATE TABLE IF NOT EXISTS jira/i.test(schema45) && !/(jira_status|jira_summary|jira_assignee)/i.test(schema45), 'No Jira issue tables or Jira metadata columns');
+    assert(['epic', 'feature', 'story'].every((r) => { const src = fs35.readFileSync(`server/repositories/${r}Repository.ts`, 'utf8'); return /created_at, updated_at, jira_key, jira_url\n/.test(src.replace(/\r/g, '')) && /jira_key = \$\d+, jira_url = \$\d+/.test(src) && (src.match(/jiraKey: r\.jira_key \|\| undefined/g) || []).length === 2; }), 'Repositories read and write jira_key/jira_url in PostgreSQL mode (insert, update and both row mappings)');
+
+    // --- browser sources ---
+    const projectsSrc45 = fs35.readFileSync('PM-Portal/js/projects.js', 'utf8');
+    const deliverySrc45 = fs35.readFileSync('PM-Portal/js/delivery.js', 'utf8');
+    assert(!/href="\$\{link\}"/.test(projectsSrc45) && !/value="\$\{link\}"/.test(projectsSrc45) && /const ref = projectLinkReference\(link\);\s*linksHtml \+= jiraLinkHtml\(ref, \{/.test(projectsSrc45) && /inp\.value = typeof link === 'string' \? link : ''/.test(projectsSrc45), 'Project Jira links are rendered by the safe helper and the edit form sets values through the DOM');
+    assert(/if \(value && !isValidProjectJiraLink\(value\)\) \{\s*inp\.classList\.add\('is-invalid'\)/.test(projectsSrc45), 'Saving a project with an unsafe Jira link is blocked like other invalid fields');
+    assert(['epic', 'feat', 'story'].every((p) => deliverySrc45.includes(`this.jiraFieldsValid('${p}') && (async () => {`) && deliverySrc45.includes(`...this.readJiraFields('${p}')`) && deliverySrc45.includes(`this.jiraFieldsHtml('${p}', `)), 'Epic, feature and story forms edit Jira references and validate them before saving');
+    assert(/id="\$\{prefix\}-jira-key" class="form-control" maxlength="64" placeholder="e\.g\. PROJ-123" autocomplete="off" \/>/.test(deliverySrc45) && /key\.value = \(record && record\.jiraKey\) \|\| ''/.test(deliverySrc45), 'Jira inputs are filled through the DOM, never interpolated');
+    assert((deliverySrc45.match(/this\.jiraChip\(/g) || []).length >= 6 && (projectsSrc45.match(/jiraLinkHtml\((epic|feature|story), \{ prefix: false \}\)/g) || []).length === 3, 'Jira references show in the delivery tree, tables, story cards and the project breakdown');
+
+    // --- no Jira integration ---
+    const newSrc45 = ['server/services/jiraReference.ts', 'server/routes/externalLinkRoutes.ts', 'PM-Portal/js/jiraLinks.js'].map((f) => fs35.readFileSync(f, 'utf8')).join('\n');
+    assert(!/api\.atlassian\.com|auth\.atlassian\.com|\/rest\/api|\/rest\/agile|oauth|client_secret|access_token|refresh_token|\bfetch\(/i.test(newSrc45), 'No Jira API, OAuth or tokens: the helpers only validate and render links');
+    const serverSrc45 = ['server/services/deliveryService.ts', 'server/config/env.ts', 'server/routes/index.ts'].map((f) => fs35.readFileSync(f, 'utf8')).join('\n');
+    assert(!/atlassian\.com|JIRA_(API|TOKEN|CLIENT|SECRET)/i.test(serverSrc45), 'No Jira credentials or endpoints were added to the server');
+
+    // --- project Jira links: persisted in memory and PostgreSQL alike ---
+    const p45 = (handler: any, body: any, params: any = {}) => run41(handler, reqAs40(adminUser40, { url: '/api/v1/sprint-15a', body, params }));
+    const projId45 = `PRJ-S15A-${Date.now()}`;
+    const createdProj45 = await p45(ProjCtl45.create, {
+      id: projId45, code: projId45, name: 'Sprint 15A linked project', client: 'Client',
+      jiraLinks: ['proj-11', 'https://company.atlassian.net/browse/PROJ-11', 'javascript:alert(1)', 'http://company.atlassian.net/browse/X-1', 'PROJ-11', '  ', 'https://u:p@company.atlassian.net/'],
+    });
+    created45.projects.push(projId45);
+    assert(createdProj45.statusCode === 201 && JSON.stringify(createdProj45.body.data.project.jiraLinks) === JSON.stringify(['PROJ-11', 'https://company.atlassian.net/browse/PROJ-11']), 'Creating a project stores its Jira links: keys upper-cased, https links kept, unsafe and duplicate entries dropped');
+    assert(JSON.stringify((await ProjRepo24.findById(projId45))!.jiraLinks) === JSON.stringify(['PROJ-11', 'https://company.atlassian.net/browse/PROJ-11']), 'Reading the project returns the same Jira links');
+    const updLinks45 = await p45(ProjCtl45.update, { jiraLinks: ['WMS-42', 'https://jira.example.com/browse/WMS-42'] }, { id: projId45 });
+    const keepLinks45 = await p45(ProjCtl45.update, { remarks: 'unrelated change' }, { id: projId45 });
+    assert(JSON.stringify(updLinks45.body.data.project.jiraLinks) === JSON.stringify(['WMS-42', 'https://jira.example.com/browse/WMS-42']) && JSON.stringify(keepLinks45.body.data.project.jiraLinks) === JSON.stringify(['WMS-42', 'https://jira.example.com/browse/WMS-42']), 'Updating replaces the Jira links, and an update without them keeps them');
+    const clearLinks45 = await p45(ProjCtl45.update, { jiraLinks: [] }, { id: projId45 });
+    const nullLinks45 = await p45(ProjCtl45.update, { jiraLinks: null }, { id: projId45 });
+    assert(JSON.stringify(clearLinks45.body.data.project.jiraLinks) === '[]' && JSON.stringify(nullLinks45.body.data.project.jiraLinks) === '[]', 'An empty list or null clears the Jira links');
+    const csvLinks45 = await p45(ProjCtl45.update, { jiraLinks: 'ABC-1, https://x.atlassian.net/browse/ABC-1\nABC-2' }, { id: projId45 });
+    const manyLinks45 = await p45(ProjCtl45.update, { jiraLinks: Array.from({ length: 30 }, (_, i) => `MANY-${i + 1}`) }, { id: projId45 });
+    assert(JSON.stringify(csvLinks45.body.data.project.jiraLinks) === JSON.stringify(['ABC-1', 'https://x.atlassian.net/browse/ABC-1', 'ABC-2']) && manyLinks45.body.data.project.jiraLinks.length === 20, 'Comma/newline text from the V1.1 importer is accepted, and a project keeps at most 20 links');
+    const plainProjId45 = `PRJ-S15A-PLAIN-${Date.now()}`;
+    const plainProj45 = await p45(ProjCtl45.create, { id: plainProjId45, code: plainProjId45, name: 'Sprint 15A plain project', client: 'Client' });
+    created45.projects.push(plainProjId45);
+    const seedProj45 = await ProjRepo24.findById('PRJ-101');
+    assert(plainProj45.statusCode === 201 && JSON.stringify(plainProj45.body.data.project.jiraLinks) === '[]' && Array.isArray(seedProj45!.jiraLinks), 'Projects without Jira links keep working and read back an empty list, as PostgreSQL returns');
+    const migId45 = `PRJ-S15A-MIG-${Date.now()}`;
+    await ProjRepo24.migrateFromLocal([{ id: migId45, code: migId45, name: 'Sprint 15A migrated', jiraLinks: ['mig-7', 'data:text/html,x'] } as any]);
+    created45.projects.push(migId45);
+    assert(JSON.stringify((await ProjRepo24.findById(migId45))!.jiraLinks) === JSON.stringify(['MIG-7']), 'Projects migrated from browser storage keep their (valid) Jira links');
+
+    // --- PostgreSQL read mapping and write contract ---
+    const rowBase45 = { id: 'R-1', code: 'R-1', name: 'Row', members: '[{"userId":"u1","name":"A","role":"Dev"}]' };
+    assert(JSON.stringify(projectFromRow45({ ...rowBase45, jira_links: '["PROJ-1","https://company.atlassian.net/browse/PROJ-1"]' }).jiraLinks) === JSON.stringify(['PROJ-1', 'https://company.atlassian.net/browse/PROJ-1']) && JSON.stringify(projectFromRow45({ ...rowBase45, jira_links: ['X-2'] }).jiraLinks) === '["X-2"]', 'A PostgreSQL row maps jira_links whether pg returns JSON text or an array');
+    assert(JSON.stringify(projectFromRow45({ ...rowBase45, jira_links: null }).jiraLinks) === '[]' && JSON.stringify(projectFromRow45(rowBase45).jiraLinks) === '[]' && projectFromRow45(rowBase45).members.length === 1 && JSON.stringify(projectFromRow45({ ...rowBase45, jira_links: 'not json' }).jiraLinks) === '[]', 'NULL, missing or malformed jira_links read as no links, and members still map');
+    const projRepoSrc45 = fs35.readFileSync('server/repositories/projectRepository.ts', 'utf8').replace(/\r/g, '');
+    const insert45 = /INSERT INTO projects \(([^)]*)\)\s*VALUES \(([^)]*)\)/.exec(projRepoSrc45)!;
+    const insertCols45 = insert45[1].split(',').map((c: string) => c.trim());
+    const insertParams45 = insert45[2].split(',').map((c: string) => c.trim());
+    assert(insertCols45[insertCols45.length - 1] === 'jira_links' && insertCols45.length === insertParams45.length && insertParams45[insertParams45.length - 1] === '$' + insertCols45.length && /newProject\.updatedAt,\n\s*JSON\.stringify\(newProject\.jiraLinks \|\| \[\]\),\n\s*\]/.test(projRepoSrc45), 'PostgreSQL insert writes jira_links as the last column with a matching placeholder and value');
+    assert(/updated_at = \$24,\s*jira_links = \$25\s*WHERE id = \$26/.test(projRepoSrc45) && /updated\.updatedAt,\n\s*JSON\.stringify\(updated\.jiraLinks \|\| \[\]\),\n\s*id,/.test(projRepoSrc45) && (projRepoSrc45.match(/projectFromRow\)|projectFromRow\(res\.rows\[0\]\)/g) || []).length === 2, 'PostgreSQL update writes jira_links, and both reads use the shared row mapper');
+    const projTable45 = (/CREATE TABLE IF NOT EXISTS projects \(([\s\S]*?)\n\);/.exec(schema45.replace(/\r/g, '')) || [])[1] || '';
+    assert(/jira_links JSONB NOT NULL DEFAULT '\[\]'::jsonb/.test(projTable45) && /ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_links JSONB NOT NULL DEFAULT '\[\]'::jsonb;/.test(schema45), 'Schema: projects.jira_links (JSONB, default empty) with an idempotent ALTER for existing databases');
+
+    // --- browser: project link entries and key-first forms ---
+    assert(JSON.stringify(JiraWeb45.projectLinkReference(' ares-392 ')) === '{"jiraKey":"ares-392"}' && JSON.stringify(JiraWeb45.projectLinkReference('https://company.atlassian.net/browse/A-1')) === '{"jiraUrl":"https://company.atlassian.net/browse/A-1"}', 'Project link entries are read as a Jira key or a URL');
+    assert(JiraWeb45.isValidProjectJiraLink('PROJ-5') && JiraWeb45.isValidProjectJiraLink('https://company.atlassian.net/browse/PROJ-5') && !JiraWeb45.isValidProjectJiraLink('javascript:alert(1)') && !JiraWeb45.isValidProjectJiraLink('https://evil.example/browse/PROJ-5') && !JiraWeb45.isValidProjectJiraLink('http://company.atlassian.net/browse/PROJ-5'), 'The project editor accepts a key or an https Jira link and rejects everything else');
+    JiraWeb45.setJiraBaseUrl('https://company.atlassian.net');
+    const keyEntry45 = JiraWeb45.jiraLinkHtml(JiraWeb45.projectLinkReference('ares-392'));
+    JiraWeb45.setJiraBaseUrl(null);
+    const keyEntryNoBase45 = JiraWeb45.jiraLinkHtml(JiraWeb45.projectLinkReference('ares-392'));
+    assert(keyEntry45.includes('href="https://company.atlassian.net/browse/ARES-392"') && keyEntry45.includes('Jira: ARES-392') && !/href=/.test(keyEntryNoBase45) && keyEntryNoBase45.includes('ARES-392'), 'A key in the project list links through JIRA_BASE_URL, and is shown as text without it');
+    if (!hadWindow45) (globalThis as any).window = {};
+    const { DeliveryModule: DelivMod45 } = await import('../PM-Portal/js/delivery.js');
+    JiraWeb45.setJiraBaseUrl('https://company.atlassian.net');
+    const keyOnly45 = DelivMod45.jiraFieldsHtml('epic', { jiraKey: 'PROJ-1' });
+    const customUrl45 = DelivMod45.jiraFieldsHtml('epic', { jiraKey: 'PROJ-1', jiraUrl: 'https://other.atlassian.net/browse/PROJ-1' });
+    JiraWeb45.setJiraBaseUrl(null);
+    const noBase45 = DelivMod45.jiraFieldsHtml('story', null);
+    assert(keyOnly45.includes('id="epic-jira-key"') && !keyOnly45.includes('id="epic-jira-url"') && keyOnly45.includes('https://company.atlassian.net/browse/&lt;KEY&gt;'), 'With JIRA_BASE_URL the form asks only for the Jira key and shows the link it builds');
+    assert(customUrl45.includes('id="epic-jira-url"') && noBase45.includes('id="story-jira-url"') && noBase45.includes('id="story-jira-key"'), 'The link field appears only when a record already has a custom link or no base URL is configured');
+    assert(![keyOnly45, customUrl45, noBase45].some((h) => /value=/.test(h)), 'Jira form inputs never carry interpolated values');
+  } finally {
+    cfg45.jira.baseUrl = savedBase45;
+    if (!hadWindow45) delete (globalThis as any).window;
+    for (const id of created45.projects) await ProjRepo24.delete(id);
+    JiraWeb45.setJiraBaseUrl(null);
+    for (const id of created45.stories) await StoryRepo45.delete(id);
+    for (const id of created45.features) await FeatRepo45.delete(id);
+    for (const id of created45.epics) await EpicRepo45.delete(id);
+  }
+  assert(!(await EpicRepo45.findAll()).some((e: any) => /^Sprint 15A/.test(e.name)), 'Sprint 15A fixtures are removed after §45');
+
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('========================================\n');

@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS projects (
   manager_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
   team_id VARCHAR(64) REFERENCES teams(id) ON DELETE SET NULL,
   members JSONB DEFAULT '[]'::jsonb,
+  jira_links JSONB NOT NULL DEFAULT '[]'::jsonb,
   status VARCHAR(50) DEFAULT 'planning',
   risk VARCHAR(30) DEFAULT 'Low',
   progress INTEGER DEFAULT 0,
@@ -174,6 +175,8 @@ CREATE TABLE IF NOT EXISTS epics (
   start_date DATE,
   target_date DATE,
   is_archived BOOLEAN DEFAULT FALSE,
+  jira_key VARCHAR(64),
+  jira_url VARCHAR(2048),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -195,6 +198,8 @@ CREATE TABLE IF NOT EXISTS features (
   start_date DATE,
   target_date DATE,
   progress INTEGER DEFAULT 0,
+  jira_key VARCHAR(64),
+  jira_url VARCHAR(2048),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -221,6 +226,8 @@ CREATE TABLE IF NOT EXISTS stories (
   target_release VARCHAR(50),
   due_date DATE,
   progress INTEGER DEFAULT 0,
+  jira_key VARCHAR(64),
+  jira_url VARCHAR(2048),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -705,5 +712,22 @@ CREATE INDEX IF NOT EXISTS idx_follow_ups_project ON follow_ups(project_id);
 CREATE INDEX IF NOT EXISTS idx_follow_ups_owner ON follow_ups(owner_id);
 CREATE INDEX IF NOT EXISTS idx_follow_ups_status ON follow_ups(status);
 CREATE INDEX IF NOT EXISTS idx_follow_ups_related ON follow_ups(related_id, related_type);
+
+-- ====================================================================
+-- Sprint 15A: Jira references (External Delivery Links)
+-- ====================================================================
+-- An optional Jira issue key and link on epics, features and stories. A
+-- reference only: no Jira data is stored. The columns are in the CREATE
+-- TABLE statements above for new databases; these idempotent statements add
+-- them to databases created before Sprint 15A.
+ALTER TABLE epics ADD COLUMN IF NOT EXISTS jira_key VARCHAR(64);
+ALTER TABLE epics ADD COLUMN IF NOT EXISTS jira_url VARCHAR(2048);
+ALTER TABLE features ADD COLUMN IF NOT EXISTS jira_key VARCHAR(64);
+ALTER TABLE features ADD COLUMN IF NOT EXISTS jira_url VARCHAR(2048);
+ALTER TABLE stories ADD COLUMN IF NOT EXISTS jira_key VARCHAR(64);
+ALTER TABLE stories ADD COLUMN IF NOT EXISTS jira_url VARCHAR(2048);
+-- The project's Jira links (Jira keys or https Jira URLs), as the V1.1
+-- multi-link list stores them; an empty array means none.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_links JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 

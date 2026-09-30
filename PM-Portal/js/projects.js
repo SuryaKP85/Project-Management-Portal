@@ -17,6 +17,7 @@ import { RiskService } from './services/riskService.js';
 import { IssueService } from './services/issueService.js';
 import { DependencyService } from './services/dependencyService.js';
 import { AIInsightsModule } from './aiInsights.js';
+import { jiraLinkHtml, loadJiraLinkConfig, projectLinkReference, isValidProjectJiraLink, resolveJiraReference } from './jiraLinks.js';
 
 export const ProjectsModule = {
   app: null,
@@ -77,6 +78,9 @@ export const ProjectsModule = {
 
     // Sprint 12: the manager/staffing picker lists the V2 user directory.
     this.loadV2Users();
+
+    // Sprint 15A: once the Jira base URL is known, links on that host render as links.
+    loadJiraLinkConfig().then((base) => { if (base) this.render(); });
   },
 
   /** Loads the V2 user directory for the team-member picker. Never throws. */
@@ -997,9 +1001,16 @@ export const ProjectsModule = {
       const jiraArr = Array.isArray(p.jiraLinks) ? p.jiraLinks : (p.jiraLinks ? [p.jiraLinks] : []);
       if (jiraArr.length > 0) {
         linksHtml += `<div class="d-flex flex-wrap gap-1 mt-1">`;
+        // Sprint 15A: an entry is a Jira key (linked through JIRA_BASE_URL) or
+        // an https link to a recognised Jira site; both render escaped, open in
+        // a new tab with noopener, and anything else is shown as inert text.
         jiraArr.forEach((link, idx) => {
           if (link) {
-            linksHtml += `<a href="${link}" target="_blank" class="badge bg-primary-subtle text-primary text-decoration-none" style="font-size: 0.7rem;" title="${link}"><i class="fa-brands fa-jira me-1"></i>JIRA ${jiraArr.length > 1 ? '#' + (idx + 1) : ''}</a>`;
+            const ref = projectLinkReference(link);
+            linksHtml += jiraLinkHtml(ref, {
+              label: resolveJiraReference(ref).key ? undefined : `JIRA${jiraArr.length > 1 ? ' #' + (idx + 1) : ''}`,
+              className: 'badge bg-primary-subtle text-primary text-decoration-none',
+            });
           }
         });
         linksHtml += `</div>`;
@@ -1450,6 +1461,8 @@ export const ProjectsModule = {
     `;
 
     try {
+      // Sprint 15A: the Jira base URL (if configured) turns bare keys into links.
+      await loadJiraLinkConfig();
       // Sprint 14: the services take a filter object; a bare id was serialised
       // as ?0=P&1=R… and ignored, so every project's items were listed here.
       const [epics, features, stories, tasks] = await Promise.all([
@@ -1487,6 +1500,7 @@ export const ProjectsModule = {
                     <strong class="text-dark">${epic.name}</strong>
                     <span class="badge bg-light text-secondary border small text-capitalize">${epic.status}</span>
                     <span class="badge bg-light text-secondary border small text-capitalize">${epic.priority}</span>
+                    ${jiraLinkHtml(epic, { prefix: false })}
                   </div>
                   <div class="d-flex align-items-center gap-3">
                     <div class="d-flex align-items-center gap-2" style="width: 140px;">
@@ -1518,6 +1532,7 @@ export const ProjectsModule = {
                               <span class="badge bg-info-subtle text-info fw-bold font-monospace"><i class="fa-solid fa-puzzle-piece me-1"></i>${feature.code || 'FEAT'}</span>
                               <span class="fw-semibold small">${feature.name}</span>
                               <span class="badge bg-white text-secondary border small text-capitalize">${feature.status}</span>
+                              ${jiraLinkHtml(feature, { prefix: false })}
                             </div>
                             <div class="d-flex align-items-center gap-2">
                               <span class="small text-muted">${feature.progress || 0}%</span>
@@ -1541,6 +1556,7 @@ export const ProjectsModule = {
                                       <span class="badge bg-warning-subtle text-warning font-monospace small">${story.code || 'STR'}</span>
                                       <span class="small fw-semibold text-dark">${story.title}</span>
                                       ${story.storyPoints ? `<span class="badge bg-white text-secondary border small">${story.storyPoints} pts</span>` : ''}
+                                      ${jiraLinkHtml(story, { prefix: false })}
                                     </div>
                                     <div class="d-flex align-items-center gap-2">
                                       <span class="small text-muted">${storyTasks.length} tasks</span>
@@ -2167,7 +2183,7 @@ export const ProjectsModule = {
       row.innerHTML = `
         <div class="input-group">
           <span class="input-group-text bg-light"><i class="fa-brands fa-jira text-primary"></i></span>
-          <input type="url" class="form-control select-enterprise jira-link-input" placeholder="https://jira.company.com/browse/PROJ-101" value="${link}" />
+          <input type="text" inputmode="url" class="form-control select-enterprise jira-link-input" placeholder="PROJ-101 or https://company.atlassian.net/browse/PROJ-101" />
         </div>
         <button type="button" class="btn btn-outline-danger btn-sm btn-remove-jira-link" title="Remove Link">
           <i class="fa-solid fa-trash-can"></i>
@@ -2176,6 +2192,8 @@ export const ProjectsModule = {
       container.appendChild(row);
 
       const inp = row.querySelector('.jira-link-input');
+      // Sprint 15A: set as a property so a stored value can never break out of the markup.
+      inp.value = typeof link === 'string' ? link : '';
       inp.addEventListener('input', () => this.triggerAutosave());
       inp.addEventListener('change', () => this.triggerAutosave());
 
@@ -2197,7 +2215,7 @@ export const ProjectsModule = {
         row.innerHTML = `
           <div class="input-group">
             <span class="input-group-text bg-light"><i class="fa-brands fa-jira text-primary"></i></span>
-            <input type="url" class="form-control select-enterprise jira-link-input" placeholder="https://jira.company.com/browse/PROJ-101" value="" />
+            <input type="text" inputmode="url" class="form-control select-enterprise jira-link-input" placeholder="PROJ-101 or https://company.atlassian.net/browse/PROJ-101" value="" />
           </div>
           <button type="button" class="btn btn-outline-danger btn-sm btn-remove-jira-link" title="Remove Link">
             <i class="fa-solid fa-trash-can"></i>
@@ -2476,6 +2494,19 @@ export const ProjectsModule = {
     } else {
       estEndInput.classList.remove('is-invalid');
     }
+
+    // Sprint 15A: each entry is a Jira key or an https link to a recognised Jira site.
+    jiraInputs.forEach((inp) => {
+      const value = inp.value.trim();
+      if (value && !isValidProjectJiraLink(value)) {
+        inp.classList.add('is-invalid');
+        inp.title = 'Enter a Jira key such as PROJ-123, or an https link to your Jira site';
+        isValid = false;
+      } else {
+        inp.classList.remove('is-invalid');
+        inp.removeAttribute('title');
+      }
+    });
 
     if (!isValid) {
       this.updateAutosaveIndicator('error');

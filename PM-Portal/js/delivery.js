@@ -14,6 +14,7 @@ import { ProjectService } from './services/projectService.js';
 import { ProductService } from './services/productService.js';
 import { PortfolioService } from './services/portfolioService.js';
 import { UserService } from './services/userService.js';
+import { jiraLinkHtml, loadJiraLinkConfig, getJiraBaseUrl, normalizeJiraKey, safeJiraUrl, keyFromJiraUrl, escapeHtml as escapeJira } from './jiraLinks.js';
 
 export const DeliveryModule = {
   app: null,
@@ -38,6 +39,8 @@ export const DeliveryModule = {
 
   async init(appInstance) {
     this.app = appInstance;
+    // Sprint 15A: the Jira base URL (if configured) turns bare Jira keys into links.
+    await loadJiraLinkConfig();
     await this.loadData();
     this.setupEventListeners();
     this.render();
@@ -285,6 +288,7 @@ export const DeliveryModule = {
                               <span class="fw-bold text-dark">${epic.name}</span>
                               ${this.getStatusBadge(epic.status)}
                               ${this.getPriorityBadge(epic.priority)}
+                              ${this.jiraChip(epic, false)}
                             </div>
                             <div class="d-flex align-items-center gap-3">
                               <div class="d-flex align-items-center gap-2" style="width: 140px;">
@@ -322,6 +326,7 @@ export const DeliveryModule = {
                                       <span class="badge bg-info-subtle text-info fw-bold"><i class="fa-solid fa-puzzle-piece me-1"></i>${feature.code || 'FEAT'}</span>
                                       <span class="fw-semibold">${feature.name}</span>
                                       ${this.getStatusBadge(feature.status)}
+                                      ${this.jiraChip(feature, false)}
                                     </div>
                                     <div class="d-flex align-items-center gap-2">
                                       <span class="small text-muted">${feature.progress || 0}%</span>
@@ -349,6 +354,7 @@ export const DeliveryModule = {
                                             <span class="small fw-semibold text-dark">${story.title}</span>
                                             ${story.storyPoints ? `<span class="badge bg-light text-secondary border small">${story.storyPoints} pts</span>` : ''}
                                             ${this.getStatusBadge(story.status)}
+                                            ${this.jiraChip(story, false)}
                                           </div>
                                           <div class="d-flex align-items-center gap-2">
                                             <span class="small text-muted">${storyTasks.length} tasks</span>
@@ -447,6 +453,7 @@ export const DeliveryModule = {
                     <td><span class="badge bg-purple-subtle text-purple fw-bold font-monospace" style="background-color: rgba(139, 92, 246, 0.15); color: #7c3aed;">${epic.code || 'EPC'}</span></td>
                     <td>
                       <div class="fw-bold text-dark">${epic.name}</div>
+                      ${this.jiraChip(epic)}
                       <div class="text-muted small text-truncate" style="max-width: 280px;">${epic.description || 'No description provided'}</div>
                     </td>
                     <td><span class="small fw-semibold">${project?.name || epic.projectId || '-'}</span></td>
@@ -535,6 +542,7 @@ export const DeliveryModule = {
                     <td><span class="badge bg-info-subtle text-info fw-bold font-monospace">${feat.code || 'FEAT'}</span></td>
                     <td>
                       <div class="fw-bold text-dark">${feat.name}</div>
+                      ${this.jiraChip(feat)}
                       <div class="text-muted small text-truncate" style="max-width: 250px;">${feat.description || 'No description provided'}</div>
                     </td>
                     <td><span class="small fw-semibold text-purple">${epic?.name || 'Unassigned'}</span></td>
@@ -610,6 +618,7 @@ export const DeliveryModule = {
                     <span class="badge bg-warning-subtle text-warning fw-bold font-monospace">${story.code || 'STR'}</span>
                     <div class="d-flex align-items-center gap-1">
                       ${story.storyPoints ? `<span class="badge bg-light text-dark border">${story.storyPoints} pts</span>` : ''}
+                      ${this.jiraChip(story, false)}
                       ${this.getStatusBadge(story.status)}
                     </div>
                   </div>
@@ -983,6 +992,79 @@ export const DeliveryModule = {
   // ================= MODALS & CRUD OPERATIONS =================
 
   // --- EPIC MODAL ---
+  /** Sprint 15A: a Jira reference (escaped link opening Jira in a new tab), or '' when there is none. */
+  jiraChip(record, block = true) {
+    const html = jiraLinkHtml(record || {}, { prefix: false });
+    return html && block ? `<div class="mt-1">${html}</div>` : html;
+  },
+
+  /**
+   * Sprint 15A: Jira reference inputs. The key is the normal input: with
+   * JIRA_BASE_URL configured it alone makes the link, so the link field is only
+   * shown when there is no base URL or the record already has a custom link.
+   * Stored values are filled through the DOM (fillJiraFields).
+   */
+  jiraFieldsHtml(prefix, record) {
+    const base = getJiraBaseUrl();
+    const showUrl = !base || !!(record && record.jiraUrl);
+    const keyHint = base
+      ? `A reference only: opens ${escapeJira(base)}/browse/&lt;KEY&gt; in Jira.`
+      : 'A reference only: add the Jira link to make the key clickable.';
+    return `
+        <div class="${showUrl ? 'col-md-4' : 'col-12'}">
+          <label class="form-label fw-semibold" for="${prefix}-jira-key">Jira key</label>
+          <input type="text" id="${prefix}-jira-key" class="form-control" maxlength="64" placeholder="e.g. PROJ-123" autocomplete="off" />
+          ${showUrl ? '' : `<div class="invalid-feedback" id="${prefix}-jira-error"></div><div class="form-text">${keyHint}</div>`}
+        </div>${showUrl ? `
+        <div class="col-md-8">
+          <label class="form-label fw-semibold" for="${prefix}-jira-url">Jira link (${base ? 'custom' : 'optional'})</label>
+          <input type="url" id="${prefix}-jira-url" class="form-control" maxlength="2048" placeholder="https://company.atlassian.net/browse/PROJ-123" />
+          <div class="invalid-feedback" id="${prefix}-jira-error"></div>
+          <div class="form-text">A reference only: it opens the issue in Jira. ${base ? 'Clear it to use the link built from the key.' : 'Or set JIRA_BASE_URL on the server so the key alone is enough.'}</div>
+        </div>` : ''}`;
+  },
+
+  fillJiraFields(prefix, record) {
+    const key = document.getElementById(`${prefix}-jira-key`);
+    const url = document.getElementById(`${prefix}-jira-url`);
+    if (key) key.value = (record && record.jiraKey) || '';
+    if (url) url.value = (record && record.jiraUrl) || '';
+  },
+
+  /** The Jira fields to send; jiraUrl only when its input is shown, so a hidden one never changes. */
+  readJiraFields(prefix) {
+    const fields = { jiraKey: document.getElementById(`${prefix}-jira-key`)?.value.trim() || '' };
+    const urlEl = document.getElementById(`${prefix}-jira-url`);
+    if (urlEl) fields.jiraUrl = urlEl.value.trim();
+    return fields;
+  },
+
+  /**
+   * Validates the Jira inputs with the server's rules, marking invalid ones.
+   * Runs synchronously inside the modal's save callback, so an invalid
+   * reference keeps the modal (and the user's input) open.
+   */
+  jiraFieldsValid(prefix) {
+    const keyEl = document.getElementById(`${prefix}-jira-key`);
+    const urlEl = document.getElementById(`${prefix}-jira-url`);
+    const errorEl = document.getElementById(`${prefix}-jira-error`);
+    const { jiraKey, jiraUrl = '' } = this.readJiraFields(prefix);
+    let message = '';
+    const key = jiraKey ? normalizeJiraKey(jiraKey) : null;
+    const url = jiraUrl ? safeJiraUrl(jiraUrl) : null;
+    keyEl?.classList.toggle('is-invalid', !!jiraKey && !key);
+    urlEl?.classList.toggle('is-invalid', !!jiraUrl && !url);
+    if (jiraKey && !key) message = 'The Jira key must look like PROJ-123.';
+    else if (jiraUrl && !url) message = 'The Jira link must be an https link to your Jira site.';
+    else if (key && url && keyFromJiraUrl(url) && keyFromJiraUrl(url) !== key) {
+      urlEl?.classList.add('is-invalid');
+      message = `The Jira link points to ${keyFromJiraUrl(url)}, not ${key}.`;
+    }
+    if (errorEl) errorEl.textContent = message;
+    if (message) this.app.showToast('Check the Jira key and link.', 'warning');
+    return !message;
+  },
+
   openEpicModal(epicId = null, defaultProjectId = null) {
     const epic = epicId ? this.epics.find((e) => e.id === epicId) : null;
     const isEdit = !!epic;
@@ -1022,6 +1104,7 @@ export const DeliveryModule = {
             <option value="low" ${epic?.priority === 'low' ? 'selected' : ''}>Low</option>
           </select>
         </div>
+${this.jiraFieldsHtml('epic', epic)}
         <div class="col-12">
           <label class="form-label fw-semibold">Description & Objectives</label>
           <textarea id="epic-desc" class="form-control" rows="3" placeholder="Strategic delivery goals and business requirements...">${epic?.description || ''}</textarea>
@@ -1029,7 +1112,8 @@ export const DeliveryModule = {
       </form>
     `;
 
-    this.app.openModal(isEdit ? 'Edit Epic' : 'Create New Epic', bodyHtml, async () => {
+    // Sprint 15A: the Jira check runs first and synchronously; returning false keeps the modal open.
+    this.app.openModal(isEdit ? 'Edit Epic' : 'Create New Epic', bodyHtml, () => this.jiraFieldsValid('epic') && (async () => {
       const name = document.getElementById('epic-name')?.value.trim();
       const projectId = document.getElementById('epic-project')?.value;
       if (!name || !projectId) {
@@ -1044,6 +1128,7 @@ export const DeliveryModule = {
         targetRelease: document.getElementById('epic-release')?.value.trim() || '',
         status: document.getElementById('epic-status')?.value || 'planning',
         priority: document.getElementById('epic-priority')?.value || 'medium',
+        ...this.readJiraFields('epic'),
       };
 
       try {
@@ -1059,7 +1144,8 @@ export const DeliveryModule = {
       } catch (err) {
         this.app.showToast('Failed saving Epic', 'danger');
       }
-    });
+    })());
+    this.fillJiraFields('epic', epic);
   },
 
   async deleteEpic(id) {
@@ -1124,6 +1210,7 @@ export const DeliveryModule = {
             <option value="high" ${feature?.complexity === 'high' ? 'selected' : ''}>High</option>
           </select>
         </div>
+${this.jiraFieldsHtml('feat', feature)}
         <div class="col-12">
           <label class="form-label fw-semibold">Description</label>
           <textarea id="feat-desc" class="form-control" rows="3" placeholder="Technical specifications and criteria...">${feature?.description || ''}</textarea>
@@ -1131,7 +1218,8 @@ export const DeliveryModule = {
       </form>
     `;
 
-    this.app.openModal(isEdit ? 'Edit Feature' : 'Create New Feature', bodyHtml, async () => {
+    // Sprint 15A: the Jira check runs first and synchronously; returning false keeps the modal open.
+    this.app.openModal(isEdit ? 'Edit Feature' : 'Create New Feature', bodyHtml, () => this.jiraFieldsValid('feat') && (async () => {
       const name = document.getElementById('feat-name')?.value.trim();
       const projectId = document.getElementById('feat-project')?.value;
       if (!name || !projectId) {
@@ -1147,6 +1235,7 @@ export const DeliveryModule = {
         status: document.getElementById('feat-status')?.value || 'planning',
         priority: document.getElementById('feat-priority')?.value || 'medium',
         complexity: document.getElementById('feat-complexity')?.value || 'medium',
+        ...this.readJiraFields('feat'),
       };
 
       try {
@@ -1162,7 +1251,8 @@ export const DeliveryModule = {
       } catch (err) {
         this.app.showToast('Failed saving Feature', 'danger');
       }
-    });
+    })());
+    this.fillJiraFields('feat', feature);
   },
 
   async deleteFeature(id) {
@@ -1247,6 +1337,7 @@ export const DeliveryModule = {
             ${this.users.map((u) => `<option value="${u.id}" ${story?.assigneeId === u.id ? 'selected' : ''}>${u.firstName} ${u.lastName}</option>`).join('')}
           </select>
         </div>
+${this.jiraFieldsHtml('story', story)}
         <div class="col-12">
           <label class="form-label fw-semibold">Acceptance Criteria (One per line)</label>
           <textarea id="story-criteria" class="form-control" rows="3" placeholder="User can scan QR code with authenticator app&#10;Invalid codes return 401 error">${story?.acceptanceCriteria ? story.acceptanceCriteria.join('\n') : ''}</textarea>
@@ -1254,7 +1345,8 @@ export const DeliveryModule = {
       </form>
     `;
 
-    this.app.openModal(isEdit ? 'Edit User Story' : 'Create User Story', bodyHtml, async () => {
+    // Sprint 15A: the Jira check runs first and synchronously; returning false keeps the modal open.
+    this.app.openModal(isEdit ? 'Edit User Story' : 'Create User Story', bodyHtml, () => this.jiraFieldsValid('story') && (async () => {
       const title = document.getElementById('story-title')?.value.trim();
       const projectId = document.getElementById('story-project')?.value;
       if (!title || !projectId) {
@@ -1281,6 +1373,7 @@ export const DeliveryModule = {
         status: document.getElementById('story-status')?.value || 'backlog',
         assigneeId: document.getElementById('story-assignee')?.value || null,
         acceptanceCriteria,
+        ...this.readJiraFields('story'),
       };
 
       try {
@@ -1296,7 +1389,8 @@ export const DeliveryModule = {
       } catch (err) {
         this.app.showToast('Failed saving Story', 'danger');
       }
-    });
+    })());
+    this.fillJiraFields('story', story);
   },
 
   async deleteStory(id) {

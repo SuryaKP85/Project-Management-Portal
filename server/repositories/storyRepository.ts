@@ -220,6 +220,8 @@ export const StoryRepository = {
         code: r.code,
         title: r.title,
         description: r.description,
+        jiraKey: r.jira_key || undefined,
+        jiraUrl: r.jira_url || undefined,
         userStory: r.user_story,
         acceptanceCriteria: r.acceptance_criteria || [],
         featureId: r.feature_id,
@@ -303,6 +305,8 @@ export const StoryRepository = {
         code: r.code,
         title: r.title,
         description: r.description,
+        jiraKey: r.jira_key || undefined,
+        jiraUrl: r.jira_url || undefined,
         userStory: r.user_story,
         acceptanceCriteria: r.acceptance_criteria || [],
         featureId: r.feature_id,
@@ -341,12 +345,12 @@ export const StoryRepository = {
           id, code, title, description, user_story, acceptance_criteria,
           feature_id, epic_id, project_id, product_id, story_points, priority,
           status, assignee_id, team_id, reporter_id, sprint, target_release,
-          due_date, progress, created_at, updated_at
+          due_date, progress, created_at, updated_at, jira_key, jira_url
         ) VALUES (
           $1, $2, $3, $4, $5, $6,
           $7, $8, $9, $10, $11, $12,
           $13, $14, $15, $16, $17, $18,
-          $19, $20, $21, $22
+          $19, $20, $21, $22, $23, $24
         ) RETURNING *
       `;
       await query(q, [
@@ -372,6 +376,8 @@ export const StoryRepository = {
         story.progress || 0,
         story.createdAt || new Date().toISOString(),
         story.updatedAt || new Date().toISOString(),
+        story.jiraKey || null,
+        story.jiraUrl || null,
       ]);
     }
     memoryStories.set(story.id, story);
@@ -399,8 +405,8 @@ export const StoryRepository = {
           feature_id = $5, epic_id = $6, project_id = $7, product_id = $8,
           story_points = $9, priority = $10, status = $11, assignee_id = $12,
           team_id = $13, reporter_id = $14, sprint = $15, target_release = $16,
-          due_date = $17, progress = $18, updated_at = $19
-        WHERE id = $20
+          due_date = $17, progress = $18, updated_at = $19, jira_key = $20, jira_url = $21
+        WHERE id = $22
       `;
       await query(q, [
         merged.title,
@@ -422,6 +428,8 @@ export const StoryRepository = {
         merged.dueDate || null,
         merged.progress || 0,
         merged.updatedAt,
+        merged.jiraKey || null,
+        merged.jiraUrl || null,
         id,
       ]);
     }

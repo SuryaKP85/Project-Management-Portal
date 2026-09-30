@@ -244,6 +244,11 @@ export interface Project {
   portfolioId?: string;
   portfolioName?: string;
   sowStatus?: string;
+  /**
+   * Sprint 15A — the project's Jira links (V1.1 multi-link list): Jira keys
+   * (PROJ-123) or https Jira URLs. References only; no Jira data is stored.
+   */
+  jiraLinks?: string[];
   poc?: string;
   developer?: string;
   qa?: string;
@@ -270,7 +275,18 @@ export type DeliveryStatus =
 export type DeliveryPriority = 'critical' | 'high' | 'medium' | 'low';
 export type DeliveryHealth = 'on-track' | 'at-risk' | 'critical';
 
-export interface Epic {
+/**
+ * Sprint 15A — optional reference to the Jira issue that delivers a record.
+ * A link only: the portal stores no Jira data and makes no Jira calls.
+ */
+export interface JiraReferenceFields {
+  /** Jira issue key, upper-case, e.g. PROJ-123. */
+  jiraKey?: string;
+  /** Validated https link to the issue on the Jira site. */
+  jiraUrl?: string;
+}
+
+export interface Epic extends JiraReferenceFields {
   id: string;
   code: string;
   name: string;
@@ -300,7 +316,7 @@ export interface Epic {
   updatedAt: string;
 }
 
-export interface Feature {
+export interface Feature extends JiraReferenceFields {
   id: string;
   code: string;
   name: string;
@@ -340,7 +356,7 @@ export interface UserStoryFormat {
   soThat: string;
 }
 
-export interface UserStory {
+export interface UserStory extends JiraReferenceFields {
   id: string;
   code: string;
   title: string;

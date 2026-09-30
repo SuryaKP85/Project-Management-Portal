@@ -35,4 +35,10 @@ export const config = {
     tokenEncryptionKey: process.env.MICROSOFT_TOKEN_ENCRYPTION_KEY || '',
     graphTimeoutMs: parseInt(process.env.MICROSOFT_GRAPH_TIMEOUT_MS || '10000', 10),
   },
+  jira: {
+    // Sprint 15A: optional base URL of the organisation's Jira (for example
+    // https://company.atlassian.net or a self-hosted https host). Used only to
+    // build and recognise Jira issue links; there is no Jira API access.
+    baseUrl: process.env.JIRA_BASE_URL || '',
+  },
 };

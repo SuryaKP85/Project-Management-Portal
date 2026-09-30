@@ -25,6 +25,7 @@ import { releaseRoutes } from './releaseRoutes';
 import { governanceRoutes } from './governanceRoutes';
 import { microsoftRoutes } from './microsoftRoutes';
 import { followThroughRoutes } from './followThroughRoutes';
+import { externalLinkRoutes } from './externalLinkRoutes';
 
 export const v1ApiRouter = Router();
 
@@ -54,4 +55,5 @@ v1ApiRouter.use(notificationRoutes);
 v1ApiRouter.use(aiRoutes);
 v1ApiRouter.use(microsoftRoutes);
 v1ApiRouter.use(followThroughRoutes);
+v1ApiRouter.use(externalLinkRoutes);
 

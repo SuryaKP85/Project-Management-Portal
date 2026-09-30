@@ -1,5 +1,6 @@
 import { Project } from '../models/types';
 import { isDbConnected, query } from '../config/database';
+import { cleanProjectJiraLinks } from '../services/jiraReference';
 
 const memoryProjects: Map<string, Project> = new Map();
 
@@ -155,7 +156,56 @@ function seedDefaultProjects() {
       updatedAt: new Date().toISOString(),
     },
   ];
-  defaultProjects.forEach((p) => memoryProjects.set(p.id, p));
+  defaultProjects.forEach((p) => memoryProjects.set(p.id, { ...p, jiraLinks: p.jiraLinks || [] }));
+}
+
+/** Parses a JSONB column that may arrive as an array, a JSON string or null. */
+function jsonArray(value: unknown): any[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+/** Maps a projects row to a Project (shared by findAll and findById). */
+export function projectFromRow(r: any): Project {
+  return {
+    id: r.id,
+    code: r.code,
+    name: r.name,
+    client: r.client,
+    managerId: r.manager_id,
+    teamId: r.team_id,
+    members: jsonArray(r.members),
+    status: r.status,
+    risk: r.risk,
+    progress: parseInt(r.progress || '0', 10),
+    budget: parseFloat(r.budget || '0'),
+    sprint: r.sprint,
+    startDate: r.start_date,
+    endDate: r.end_date,
+    productId: r.product_id,
+    portfolioId: r.portfolio_id,
+    sowStatus: r.sow_status,
+    // Sprint 15A: Jira links (keys or https URLs); an absent column or NULL reads as none.
+    jiraLinks: jsonArray(r.jira_links).filter((l: unknown): l is string => typeof l === 'string'),
+    poc: r.poc,
+    developer: r.developer,
+    qa: r.qa,
+    ba: r.ba,
+    remarks: r.remarks,
+    month: r.month,
+    quarter: r.quarter,
+    year: r.year,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
 }
 
 seedDefaultProjects();
@@ -164,35 +214,7 @@ export const ProjectRepository = {
   async findAll(): Promise<Project[]> {
     if (isDbConnected()) {
       const res = await query('SELECT * FROM projects ORDER BY created_at DESC');
-      return res.rows.map((r) => ({
-        id: r.id,
-        code: r.code,
-        name: r.name,
-        client: r.client,
-        managerId: r.manager_id,
-        teamId: r.team_id,
-        members: typeof r.members === 'string' ? JSON.parse(r.members) : r.members || [],
-        status: r.status,
-        risk: r.risk,
-        progress: parseInt(r.progress || '0', 10),
-        budget: parseFloat(r.budget || '0'),
-        sprint: r.sprint,
-        startDate: r.start_date,
-        endDate: r.end_date,
-        productId: r.product_id,
-        portfolioId: r.portfolio_id,
-        sowStatus: r.sow_status,
-        poc: r.poc,
-        developer: r.developer,
-        qa: r.qa,
-        ba: r.ba,
-        remarks: r.remarks,
-        month: r.month,
-        quarter: r.quarter,
-        year: r.year,
-        createdAt: r.created_at,
-        updatedAt: r.updated_at,
-      }));
+      return res.rows.map(projectFromRow);
     }
     return Array.from(memoryProjects.values());
   },
@@ -201,36 +223,7 @@ export const ProjectRepository = {
     if (isDbConnected()) {
       const res = await query('SELECT * FROM projects WHERE id = $1 OR code = $1', [id]);
       if (res.rows.length === 0) return null;
-      const r = res.rows[0];
-      return {
-        id: r.id,
-        code: r.code,
-        name: r.name,
-        client: r.client,
-        managerId: r.manager_id,
-        teamId: r.team_id,
-        members: typeof r.members === 'string' ? JSON.parse(r.members) : r.members || [],
-        status: r.status,
-        risk: r.risk,
-        progress: parseInt(r.progress || '0', 10),
-        budget: parseFloat(r.budget || '0'),
-        sprint: r.sprint,
-        startDate: r.start_date,
-        endDate: r.end_date,
-        productId: r.product_id,
-        portfolioId: r.portfolio_id,
-        sowStatus: r.sow_status,
-        poc: r.poc,
-        developer: r.developer,
-        qa: r.qa,
-        ba: r.ba,
-        remarks: r.remarks,
-        month: r.month,
-        quarter: r.quarter,
-        year: r.year,
-        createdAt: r.created_at,
-        updatedAt: r.updated_at,
-      };
+      return projectFromRow(res.rows[0]);
     }
     return memoryProjects.get(id) || null;
   },
@@ -270,14 +263,16 @@ export const ProjectRepository = {
       month: project.month,
       quarter: project.quarter,
       year: project.year,
+      // Sprint 15A: Jira links are normalised here so memory and PostgreSQL hold the same list.
+      jiraLinks: cleanProjectJiraLinks(project.jiraLinks) ?? [],
       createdAt: now,
       updatedAt: now,
     };
 
     if (isDbConnected()) {
       await query(
-        `INSERT INTO projects (id, code, name, client, manager_id, team_id, members, status, risk, progress, budget, sprint, start_date, end_date, product_id, portfolio_id, sow_status, poc, developer, qa, ba, remarks, month, quarter, year, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)`,
+        `INSERT INTO projects (id, code, name, client, manager_id, team_id, members, status, risk, progress, budget, sprint, start_date, end_date, product_id, portfolio_id, sow_status, poc, developer, qa, ba, remarks, month, quarter, year, created_at, updated_at, jira_links)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)`,
         [
           newProject.id,
           newProject.code,
@@ -306,6 +301,7 @@ export const ProjectRepository = {
           newProject.year || null,
           newProject.createdAt,
           newProject.updatedAt,
+          JSON.stringify(newProject.jiraLinks || []),
         ]
       );
     }
@@ -322,6 +318,8 @@ export const ProjectRepository = {
       ...updates,
       updatedAt: new Date().toISOString(),
     };
+    // Sprint 15A: supplied Jira links are normalised; otherwise the stored list is kept.
+    updated.jiraLinks = cleanProjectJiraLinks(updates.jiraLinks) ?? existing.jiraLinks ?? [];
 
     if (isDbConnected()) {
       await query(
@@ -330,8 +328,9 @@ export const ProjectRepository = {
            status = $6, risk = $7, progress = $8, budget = $9, sprint = $10,
            start_date = $11, end_date = $12, product_id = $13, portfolio_id = $14,
            sow_status = $15, poc = $16, developer = $17, qa = $18, ba = $19,
-           remarks = $20, month = $21, quarter = $22, year = $23, updated_at = $24
-         WHERE id = $25`,
+           remarks = $20, month = $21, quarter = $22, year = $23, updated_at = $24,
+           jira_links = $25
+         WHERE id = $26`,
         [
           updated.name,
           updated.client,
@@ -357,6 +356,7 @@ export const ProjectRepository = {
           updated.quarter || null,
           updated.year || null,
           updated.updatedAt,
+          JSON.stringify(updated.jiraLinks || []),
           id,
         ]
       );

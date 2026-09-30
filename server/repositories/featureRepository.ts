@@ -158,6 +158,8 @@ export const FeatureRepository = {
         code: r.code,
         name: r.name,
         description: r.description,
+        jiraKey: r.jira_key || undefined,
+        jiraUrl: r.jira_url || undefined,
         epicId: r.epic_id,
         epicName: r.epic_name,
         projectId: r.project_id,
@@ -228,6 +230,8 @@ export const FeatureRepository = {
         code: r.code,
         name: r.name,
         description: r.description,
+        jiraKey: r.jira_key || undefined,
+        jiraUrl: r.jira_url || undefined,
         epicId: r.epic_id,
         epicName: r.epic_name,
         projectId: r.project_id,
@@ -259,11 +263,11 @@ export const FeatureRepository = {
         INSERT INTO features (
           id, code, name, description, epic_id, project_id, product_id,
           owner_id, team_id, status, priority, target_release, start_date,
-          target_date, progress, created_at, updated_at
+          target_date, progress, created_at, updated_at, jira_key, jira_url
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7,
           $8, $9, $10, $11, $12, $13,
-          $14, $15, $16, $17
+          $14, $15, $16, $17, $18, $19
         ) RETURNING *
       `;
       await query(q, [
@@ -284,6 +288,8 @@ export const FeatureRepository = {
         feature.progress || 0,
         feature.createdAt || new Date().toISOString(),
         feature.updatedAt || new Date().toISOString(),
+        feature.jiraKey || null,
+        feature.jiraUrl || null,
       ]);
     }
     memoryFeatures.set(feature.id, feature);
@@ -310,8 +316,8 @@ export const FeatureRepository = {
           name = $1, description = $2, epic_id = $3, project_id = $4,
           product_id = $5, owner_id = $6, team_id = $7, status = $8,
           priority = $9, target_release = $10, start_date = $11, target_date = $12,
-          progress = $13, updated_at = $14
-        WHERE id = $15
+          progress = $13, updated_at = $14, jira_key = $15, jira_url = $16
+        WHERE id = $17
       `;
       await query(q, [
         merged.name,
@@ -328,6 +334,8 @@ export const FeatureRepository = {
         merged.targetDate || null,
         merged.progress || 0,
         merged.updatedAt,
+        merged.jiraKey || null,
+        merged.jiraUrl || null,
         id,
       ]);
     }

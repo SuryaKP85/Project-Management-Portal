@@ -180,6 +180,8 @@ export const EpicRepository = {
         code: r.code,
         name: r.name,
         description: r.description,
+        jiraKey: r.jira_key || undefined,
+        jiraUrl: r.jira_url || undefined,
         projectId: r.project_id,
         projectName: r.project_name,
         productId: r.product_id,
@@ -259,6 +261,8 @@ export const EpicRepository = {
         code: r.code,
         name: r.name,
         description: r.description,
+        jiraKey: r.jira_key || undefined,
+        jiraUrl: r.jira_url || undefined,
         projectId: r.project_id,
         projectName: r.project_name,
         productId: r.product_id,
@@ -292,11 +296,11 @@ export const EpicRepository = {
         INSERT INTO epics (
           id, code, name, description, project_id, product_id, portfolio_id,
           owner_id, team_id, status, priority, health, progress, start_date,
-          target_date, is_archived, created_at, updated_at
+          target_date, is_archived, created_at, updated_at, jira_key, jira_url
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7,
           $8, $9, $10, $11, $12, $13,
-          $14, $15, $16, $17, $18
+          $14, $15, $16, $17, $18, $19, $20
         ) RETURNING *
       `;
       await query(q, [
@@ -318,6 +322,8 @@ export const EpicRepository = {
         epic.isArchived || false,
         epic.createdAt || new Date().toISOString(),
         epic.updatedAt || new Date().toISOString(),
+        epic.jiraKey || null,
+        epic.jiraUrl || null,
       ]);
     }
     memoryEpics.set(epic.id, epic);
@@ -344,8 +350,9 @@ export const EpicRepository = {
           name = $1, description = $2, project_id = $3, product_id = $4,
           portfolio_id = $5, owner_id = $6, team_id = $7, status = $8,
           priority = $9, health = $10, progress = $11, start_date = $12,
-          target_date = $13, is_archived = $14, updated_at = $15
-        WHERE id = $16
+          target_date = $13, is_archived = $14, updated_at = $15,
+          jira_key = $16, jira_url = $17
+        WHERE id = $18
       `;
       await query(q, [
         merged.name,
@@ -363,6 +370,8 @@ export const EpicRepository = {
         merged.targetDate || null,
         merged.isArchived || false,
         merged.updatedAt,
+        merged.jiraKey || null,
+        merged.jiraUrl || null,
         id,
       ]);
     }

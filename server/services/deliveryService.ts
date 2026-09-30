@@ -16,6 +16,7 @@ import { SubtaskRepository } from '../repositories/subtaskRepository';
 import { TraceabilityRepository } from '../repositories/traceabilityRepository';
 import { ActivityRepository } from '../repositories/activityRepository';
 import { NotificationRepository } from '../repositories/notificationRepository';
+import { applyJiraReference, cleanJiraReference } from './jiraReference';
 
 export const DeliveryService = {
   // ==========================================
@@ -70,6 +71,7 @@ export const DeliveryService = {
       code,
       name: data.name || 'Untitled Epic',
       description: data.description || '',
+      ...cleanJiraReference(data),
       projectId: data.projectId!,
       productId: data.productId,
       portfolioId: data.portfolioId,
@@ -119,6 +121,8 @@ export const DeliveryService = {
     const existing = await EpicRepository.findById(id);
     if (!existing) return null;
 
+    // Sprint 15A: only validated Jira reference fields reach the repository.
+    applyJiraReference(updates, existing);
     const updated = await EpicRepository.update(id, updates);
     if (!updated) return null;
 
@@ -196,6 +200,7 @@ export const DeliveryService = {
       code,
       name: data.name || 'Untitled Feature',
       description: data.description || '',
+      ...cleanJiraReference(data),
       epicId: data.epicId,
       projectId: data.projectId!,
       productId: data.productId,
@@ -248,6 +253,8 @@ export const DeliveryService = {
     const existing = await FeatureRepository.findById(id);
     if (!existing) return null;
 
+    // Sprint 15A: only validated Jira reference fields reach the repository.
+    applyJiraReference(updates, existing);
     const updated = await FeatureRepository.update(id, updates);
     if (!updated) return null;
 
@@ -332,6 +339,7 @@ export const DeliveryService = {
       code,
       title: data.title || 'Untitled User Story',
       description: data.description || '',
+      ...cleanJiraReference(data),
       userStory: data.userStory || { asA: '', iWant: '', soThat: '' },
       acceptanceCriteria: data.acceptanceCriteria || [],
       featureId: data.featureId,
@@ -391,6 +399,8 @@ export const DeliveryService = {
     const existing = await StoryRepository.findById(id);
     if (!existing) return null;
 
+    // Sprint 15A: only validated Jira reference fields reach the repository.
+    applyJiraReference(updates, existing);
     const updated = await StoryRepository.update(id, updates);
     if (!updated) return null;
 
