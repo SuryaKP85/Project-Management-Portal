@@ -14,6 +14,7 @@ import { ProjectService } from './services/projectService.js';
 import { ProductService } from './services/productService.js';
 import { PortfolioService } from './services/portfolioService.js';
 import { UserService } from './services/userService.js';
+import { escapeHtml, cssToken, percent, dataArgs, readDataArgs } from './safeHtml.js';
 import { jiraLinkHtml, loadJiraLinkConfig, getJiraBaseUrl, normalizeJiraKey, safeJiraUrl, keyFromJiraUrl, escapeHtml as escapeJira } from './jiraLinks.js';
 
 export const DeliveryModule = {
@@ -158,7 +159,7 @@ export const DeliveryModule = {
       <option value="all">All Projects</option>
       ${this.projects
         .map(
-          (p) => `<option value="${p.id}" ${p.id === currentVal ? 'selected' : ''}>${p.name || p.id}</option>`
+          (p) => `<option value="${escapeHtml(p.id)}" ${p.id === currentVal ? 'selected' : ''}>${escapeHtml(p.name || p.id)}</option>`
         )
         .join('')}
     `;
@@ -258,15 +259,15 @@ export const DeliveryModule = {
             <div class="card mb-3 shadow-sm border-0 delivery-tree-project">
               <div class="card-header bg-body-tertiary d-flex justify-content-between align-items-center py-2 px-3">
                 <div class="d-flex align-items-center gap-2">
-                  <span class="badge bg-primary-subtle text-primary fw-bold">${project.code || 'PRJ'}</span>
-                  <strong class="fs-6 text-dark">${project.name || project.id}</strong>
+                  <span class="badge bg-primary-subtle text-primary fw-bold">${escapeHtml(project.code || 'PRJ')}</span>
+                  <strong class="fs-6 text-dark">${escapeHtml(project.name || project.id)}</strong>
                   <span class="badge bg-light text-secondary border small">${projectEpics.length} Epics</span>
                 </div>
                 <div class="d-flex align-items-center gap-2">
-                  <button class="btn btn-sm btn-outline-primary py-0 px-2" onclick="window.portalDeliveryModule.openEpicModal(null, '${project.id}')">
+                  <button class="btn btn-sm btn-outline-primary py-0 px-2" data-dv-action="openEpicModal" data-args="${dataArgs(null, project.id)}">
                     <i class="fa-solid fa-plus me-1"></i> Add Epic
                   </button>
-                  <button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="window.portalDeliveryModule.inspectTrace('project', '${project.id}')">
+                  <button class="btn btn-sm btn-outline-secondary py-0 px-2" data-dv-action="inspectTrace" data-args="${dataArgs('project', project.id)}">
                     <i class="fa-solid fa-route me-1"></i> Trace
                   </button>
                 </div>
@@ -274,7 +275,7 @@ export const DeliveryModule = {
               <div class="card-body p-2">
                 ${
                   projectEpics.length === 0
-                    ? `<div class="p-3 text-muted text-center small">No Epics defined for this project. <a href="#" onclick="window.portalDeliveryModule.openEpicModal(null, '${project.id}'); return false;">Create Epic</a></div>`
+                    ? `<div class="p-3 text-muted text-center small">No Epics defined for this project. <a href="#" data-dv-action="openEpicModal" data-args="${dataArgs(null, project.id)}">Create Epic</a></div>`
                     : projectEpics
                         .map((epic) => {
                           const epicFeatures = this.features.filter((f) => f.epicId === epic.id);
@@ -283,9 +284,9 @@ export const DeliveryModule = {
                           <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                             <div class="d-flex align-items-center gap-2">
                               <span class="badge bg-purple-subtle text-purple fw-bold" style="background-color: rgba(139, 92, 246, 0.15); color: #7c3aed;">
-                                <i class="fa-solid fa-crown me-1"></i>${epic.code || 'EPIC'}
+                                <i class="fa-solid fa-crown me-1"></i>${escapeHtml(epic.code || 'EPIC')}
                               </span>
-                              <span class="fw-bold text-dark">${epic.name}</span>
+                              <span class="fw-bold text-dark">${escapeHtml(epic.name)}</span>
                               ${this.getStatusBadge(epic.status)}
                               ${this.getPriorityBadge(epic.priority)}
                               ${this.jiraChip(epic, false)}
@@ -293,18 +294,18 @@ export const DeliveryModule = {
                             <div class="d-flex align-items-center gap-3">
                               <div class="d-flex align-items-center gap-2" style="width: 140px;">
                                 <div class="progress flex-grow-1" style="height: 6px;">
-                                  <div class="progress-bar bg-success" style="width: ${epic.progress || 0}%"></div>
+                                  <div class="progress-bar bg-success" style="width: ${percent(epic.progress)}%"></div>
                                 </div>
-                                <span class="small text-muted fw-bold">${epic.progress || 0}%</span>
+                                <span class="small text-muted fw-bold">${percent(epic.progress)}%</span>
                               </div>
                               <div class="btn-group btn-group-sm">
-                                <button class="btn btn-outline-primary btn-sm py-0 px-1.5" title="Add Feature" onclick="window.portalDeliveryModule.openFeatureModal(null, '${epic.id}', '${project.id}')">
+                                <button class="btn btn-outline-primary btn-sm py-0 px-1.5" title="Add Feature" data-dv-action="openFeatureModal" data-args="${dataArgs(null, epic.id, project.id)}">
                                   <i class="fa-solid fa-plus"></i> Feature
                                 </button>
-                                <button class="btn btn-outline-secondary btn-sm py-0 px-1.5" title="Inspect Traceability" onclick="window.portalDeliveryModule.inspectTrace('epic', '${epic.id}')">
+                                <button class="btn btn-outline-secondary btn-sm py-0 px-1.5" title="Inspect Traceability" data-dv-action="inspectTrace" data-args="${dataArgs('epic', epic.id)}">
                                   <i class="fa-solid fa-route"></i>
                                 </button>
-                                <button class="btn btn-outline-secondary btn-sm py-0 px-1.5" title="Edit Epic" onclick="window.portalDeliveryModule.openEpicModal('${epic.id}', '${project.id}')">
+                                <button class="btn btn-outline-secondary btn-sm py-0 px-1.5" title="Edit Epic" data-dv-action="openEpicModal" data-args="${dataArgs(epic.id, project.id)}">
                                   <i class="fa-solid fa-pen"></i>
                                 </button>
                               </div>
@@ -323,17 +324,17 @@ export const DeliveryModule = {
                                 <div class="border-start border-3 border-info ps-2.5 mb-2 py-1 bg-white rounded shadow-2xs">
                                   <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                                     <div class="d-flex align-items-center gap-2">
-                                      <span class="badge bg-info-subtle text-info fw-bold"><i class="fa-solid fa-puzzle-piece me-1"></i>${feature.code || 'FEAT'}</span>
-                                      <span class="fw-semibold">${feature.name}</span>
+                                      <span class="badge bg-info-subtle text-info fw-bold"><i class="fa-solid fa-puzzle-piece me-1"></i>${escapeHtml(feature.code || 'FEAT')}</span>
+                                      <span class="fw-semibold">${escapeHtml(feature.name)}</span>
                                       ${this.getStatusBadge(feature.status)}
                                       ${this.jiraChip(feature, false)}
                                     </div>
                                     <div class="d-flex align-items-center gap-2">
-                                      <span class="small text-muted">${feature.progress || 0}%</span>
-                                      <button class="btn btn-outline-primary btn-xs py-0 px-1.5 text-xs" onclick="window.portalDeliveryModule.openStoryModal(null, '${feature.id}', '${project.id}')">
+                                      <span class="small text-muted">${percent(feature.progress)}%</span>
+                                      <button class="btn btn-outline-primary btn-xs py-0 px-1.5 text-xs" data-dv-action="openStoryModal" data-args="${dataArgs(null, feature.id, project.id)}">
                                         <i class="fa-solid fa-plus"></i> Story
                                       </button>
-                                      <button class="btn btn-outline-secondary btn-xs py-0 px-1.5 text-xs" onclick="window.portalDeliveryModule.inspectTrace('feature', '${feature.id}')">
+                                      <button class="btn btn-outline-secondary btn-xs py-0 px-1.5 text-xs" data-dv-action="inspectTrace" data-args="${dataArgs('feature', feature.id)}">
                                         <i class="fa-solid fa-route"></i>
                                       </button>
                                     </div>
@@ -350,18 +351,18 @@ export const DeliveryModule = {
                                           return `
                                         <div class="d-flex justify-content-between align-items-center py-1 border-bottom border-light">
                                           <div class="d-flex align-items-center gap-2">
-                                            <span class="badge bg-warning-subtle text-warning fw-bold small"><i class="fa-solid fa-book-open me-1"></i>${story.code || 'STR'}</span>
-                                            <span class="small fw-semibold text-dark">${story.title}</span>
-                                            ${story.storyPoints ? `<span class="badge bg-light text-secondary border small">${story.storyPoints} pts</span>` : ''}
+                                            <span class="badge bg-warning-subtle text-warning fw-bold small"><i class="fa-solid fa-book-open me-1"></i>${escapeHtml(story.code || 'STR')}</span>
+                                            <span class="small fw-semibold text-dark">${escapeHtml(story.title)}</span>
+                                            ${story.storyPoints ? `<span class="badge bg-light text-secondary border small">${escapeHtml(story.storyPoints)} pts</span>` : ''}
                                             ${this.getStatusBadge(story.status)}
                                             ${this.jiraChip(story, false)}
                                           </div>
                                           <div class="d-flex align-items-center gap-2">
                                             <span class="small text-muted">${storyTasks.length} tasks</span>
-                                            <button class="btn btn-outline-primary btn-xs py-0 px-1 text-xs" onclick="window.portalDeliveryModule.openTaskModal(null, '${story.id}', '${project.id}')">
+                                            <button class="btn btn-outline-primary btn-xs py-0 px-1 text-xs" data-dv-action="openTaskModal" data-args="${dataArgs(null, story.id, project.id)}">
                                               <i class="fa-solid fa-plus"></i> Task
                                             </button>
-                                            <button class="btn btn-outline-secondary btn-xs py-0 px-1 text-xs" onclick="window.portalDeliveryModule.inspectTrace('story', '${story.id}')">
+                                            <button class="btn btn-outline-secondary btn-xs py-0 px-1 text-xs" data-dv-action="inspectTrace" data-args="${dataArgs('story', story.id)}">
                                               <i class="fa-solid fa-route"></i>
                                             </button>
                                           </div>
@@ -421,7 +422,7 @@ export const DeliveryModule = {
     container.innerHTML = `
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h5 class="fw-bold m-0"><i class="fa-solid fa-crown text-warning me-2"></i>Epics Registry (${filtered.length})</h5>
-        <button class="btn btn-primary btn-sm" onclick="window.portalDeliveryModule.openEpicModal()">
+        <button class="btn btn-primary btn-sm" data-dv-action="openEpicModal" data-args="${dataArgs()}">
           <i class="fa-solid fa-plus me-1"></i> Create Epic
         </button>
       </div>
@@ -450,37 +451,37 @@ export const DeliveryModule = {
                       const featuresCount = this.features.filter((f) => f.epicId === epic.id).length;
                       return `
                   <tr>
-                    <td><span class="badge bg-purple-subtle text-purple fw-bold font-monospace" style="background-color: rgba(139, 92, 246, 0.15); color: #7c3aed;">${epic.code || 'EPC'}</span></td>
+                    <td><span class="badge bg-purple-subtle text-purple fw-bold font-monospace" style="background-color: rgba(139, 92, 246, 0.15); color: #7c3aed;">${escapeHtml(epic.code || 'EPC')}</span></td>
                     <td>
-                      <div class="fw-bold text-dark">${epic.name}</div>
+                      <div class="fw-bold text-dark">${escapeHtml(epic.name)}</div>
                       ${this.jiraChip(epic)}
-                      <div class="text-muted small text-truncate" style="max-width: 280px;">${epic.description || 'No description provided'}</div>
+                      <div class="text-muted small text-truncate" style="max-width: 280px;">${escapeHtml(epic.description || 'No description provided')}</div>
                     </td>
-                    <td><span class="small fw-semibold">${project?.name || epic.projectId || '-'}</span></td>
+                    <td><span class="small fw-semibold">${escapeHtml(project?.name || epic.projectId || '-')}</span></td>
                     <td>${this.getStatusBadge(epic.status)}</td>
                     <td>${this.getPriorityBadge(epic.priority)}</td>
                     <td>
                       <div class="d-flex align-items-center gap-2" style="width: 120px;">
                         <div class="progress flex-grow-1" style="height: 6px;">
-                          <div class="progress-bar bg-success" style="width: ${epic.progress || 0}%"></div>
+                          <div class="progress-bar bg-success" style="width: ${percent(epic.progress)}%"></div>
                         </div>
-                        <span class="small fw-bold">${epic.progress || 0}%</span>
+                        <span class="small fw-bold">${percent(epic.progress)}%</span>
                       </div>
                     </td>
-                    <td><span class="small">${epic.targetRelease || '-'}</span></td>
+                    <td><span class="small">${escapeHtml(epic.targetRelease || '-')}</span></td>
                     <td><span class="badge bg-light text-dark border">${featuresCount} Features</span></td>
                     <td class="text-end">
                       <div class="btn-group btn-group-sm">
-                        <button class="btn btn-outline-secondary" title="Trace Lineage" onclick="window.portalDeliveryModule.inspectTrace('epic', '${epic.id}')">
+                        <button class="btn btn-outline-secondary" title="Trace Lineage" data-dv-action="inspectTrace" data-args="${dataArgs('epic', epic.id)}">
                           <i class="fa-solid fa-route"></i>
                         </button>
-                        <button class="btn btn-outline-primary" title="Add Feature" onclick="window.portalDeliveryModule.openFeatureModal(null, '${epic.id}', '${epic.projectId}')">
+                        <button class="btn btn-outline-primary" title="Add Feature" data-dv-action="openFeatureModal" data-args="${dataArgs(null, epic.id, epic.projectId)}">
                           <i class="fa-solid fa-plus"></i>
                         </button>
-                        <button class="btn btn-outline-secondary" title="Edit" onclick="window.portalDeliveryModule.openEpicModal('${epic.id}')">
+                        <button class="btn btn-outline-secondary" title="Edit" data-dv-action="openEpicModal" data-args="${dataArgs(epic.id)}">
                           <i class="fa-solid fa-pen"></i>
                         </button>
-                        <button class="btn btn-outline-danger" title="Delete" onclick="window.portalDeliveryModule.deleteEpic('${epic.id}')">
+                        <button class="btn btn-outline-danger" title="Delete" data-dv-action="deleteEpic" data-args="${dataArgs(epic.id)}">
                           <i class="fa-solid fa-trash-can"></i>
                         </button>
                       </div>
@@ -508,7 +509,7 @@ export const DeliveryModule = {
     container.innerHTML = `
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h5 class="fw-bold m-0"><i class="fa-solid fa-puzzle-piece text-info me-2"></i>Features Registry (${filtered.length})</h5>
-        <button class="btn btn-primary btn-sm" onclick="window.portalDeliveryModule.openFeatureModal()">
+        <button class="btn btn-primary btn-sm" data-dv-action="openFeatureModal" data-args="${dataArgs()}">
           <i class="fa-solid fa-plus me-1"></i> Create Feature
         </button>
       </div>
@@ -539,38 +540,38 @@ export const DeliveryModule = {
                       const storiesCount = this.stories.filter((s) => s.featureId === feat.id).length;
                       return `
                   <tr>
-                    <td><span class="badge bg-info-subtle text-info fw-bold font-monospace">${feat.code || 'FEAT'}</span></td>
+                    <td><span class="badge bg-info-subtle text-info fw-bold font-monospace">${escapeHtml(feat.code || 'FEAT')}</span></td>
                     <td>
-                      <div class="fw-bold text-dark">${feat.name}</div>
+                      <div class="fw-bold text-dark">${escapeHtml(feat.name)}</div>
                       ${this.jiraChip(feat)}
-                      <div class="text-muted small text-truncate" style="max-width: 250px;">${feat.description || 'No description provided'}</div>
+                      <div class="text-muted small text-truncate" style="max-width: 250px;">${escapeHtml(feat.description || 'No description provided')}</div>
                     </td>
-                    <td><span class="small fw-semibold text-purple">${epic?.name || 'Unassigned'}</span></td>
-                    <td><span class="small text-muted">${project?.name || feat.projectId || '-'}</span></td>
+                    <td><span class="small fw-semibold text-purple">${escapeHtml(epic?.name || 'Unassigned')}</span></td>
+                    <td><span class="small text-muted">${escapeHtml(project?.name || feat.projectId || '-')}</span></td>
                     <td>${this.getStatusBadge(feat.status)}</td>
                     <td>${this.getPriorityBadge(feat.priority)}</td>
-                    <td><span class="badge bg-light text-secondary border small text-capitalize">${feat.complexity || 'medium'}</span></td>
+                    <td><span class="badge bg-light text-secondary border small text-capitalize">${escapeHtml(feat.complexity || 'medium')}</span></td>
                     <td>
                       <div class="d-flex align-items-center gap-2" style="width: 110px;">
                         <div class="progress flex-grow-1" style="height: 6px;">
-                          <div class="progress-bar bg-info" style="width: ${feat.progress || 0}%"></div>
+                          <div class="progress-bar bg-info" style="width: ${percent(feat.progress)}%"></div>
                         </div>
-                        <span class="small fw-bold">${feat.progress || 0}%</span>
+                        <span class="small fw-bold">${percent(feat.progress)}%</span>
                       </div>
                     </td>
                     <td><span class="badge bg-light text-dark border">${storiesCount} Stories</span></td>
                     <td class="text-end">
                       <div class="btn-group btn-group-sm">
-                        <button class="btn btn-outline-secondary" title="Trace Lineage" onclick="window.portalDeliveryModule.inspectTrace('feature', '${feat.id}')">
+                        <button class="btn btn-outline-secondary" title="Trace Lineage" data-dv-action="inspectTrace" data-args="${dataArgs('feature', feat.id)}">
                           <i class="fa-solid fa-route"></i>
                         </button>
-                        <button class="btn btn-outline-primary" title="Add Story" onclick="window.portalDeliveryModule.openStoryModal(null, '${feat.id}', '${feat.projectId}')">
+                        <button class="btn btn-outline-primary" title="Add Story" data-dv-action="openStoryModal" data-args="${dataArgs(null, feat.id, feat.projectId)}">
                           <i class="fa-solid fa-plus"></i>
                         </button>
-                        <button class="btn btn-outline-secondary" title="Edit" onclick="window.portalDeliveryModule.openFeatureModal('${feat.id}')">
+                        <button class="btn btn-outline-secondary" title="Edit" data-dv-action="openFeatureModal" data-args="${dataArgs(feat.id)}">
                           <i class="fa-solid fa-pen"></i>
                         </button>
-                        <button class="btn btn-outline-danger" title="Delete" onclick="window.portalDeliveryModule.deleteFeature('${feat.id}')">
+                        <button class="btn btn-outline-danger" title="Delete" data-dv-action="deleteFeature" data-args="${dataArgs(feat.id)}">
                           <i class="fa-solid fa-trash-can"></i>
                         </button>
                       </div>
@@ -598,7 +599,7 @@ export const DeliveryModule = {
     container.innerHTML = `
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h5 class="fw-bold m-0"><i class="fa-solid fa-book-open text-warning me-2"></i>User Stories (${filtered.length})</h5>
-        <button class="btn btn-primary btn-sm" onclick="window.portalDeliveryModule.openStoryModal()">
+        <button class="btn btn-primary btn-sm" data-dv-action="openStoryModal" data-args="${dataArgs()}">
           <i class="fa-solid fa-plus me-1"></i> Create Story
         </button>
       </div>
@@ -615,28 +616,28 @@ export const DeliveryModule = {
               <div class="col-md-6 col-lg-4">
                 <div class="card h-100 shadow-sm border-0 story-card">
                   <div class="card-header bg-white border-bottom-0 pb-0 pt-3 d-flex justify-content-between align-items-center">
-                    <span class="badge bg-warning-subtle text-warning fw-bold font-monospace">${story.code || 'STR'}</span>
+                    <span class="badge bg-warning-subtle text-warning fw-bold font-monospace">${escapeHtml(story.code || 'STR')}</span>
                     <div class="d-flex align-items-center gap-1">
-                      ${story.storyPoints ? `<span class="badge bg-light text-dark border">${story.storyPoints} pts</span>` : ''}
+                      ${story.storyPoints ? `<span class="badge bg-light text-dark border">${escapeHtml(story.storyPoints)} pts</span>` : ''}
                       ${this.jiraChip(story, false)}
                       ${this.getStatusBadge(story.status)}
                     </div>
                   </div>
                   <div class="card-body py-2">
-                    <h6 class="fw-bold mb-1 text-dark">${story.title}</h6>
+                    <h6 class="fw-bold mb-1 text-dark">${escapeHtml(story.title)}</h6>
                     ${
                       story.userPersona || story.userAction || story.userBenefit
                         ? `
                       <div class="p-2 rounded bg-light small mb-2 text-secondary font-monospace" style="font-size: 0.8rem;">
-                        <strong>As a</strong> ${story.userPersona || 'user'},<br/>
-                        <strong>I want</strong> ${story.userAction || 'feature action'},<br/>
-                        <strong>So that</strong> ${story.userBenefit || 'business benefit'}.
+                        <strong>As a</strong> ${escapeHtml(story.userPersona || 'user')},<br/>
+                        <strong>I want</strong> ${escapeHtml(story.userAction || 'feature action')},<br/>
+                        <strong>So that</strong> ${escapeHtml(story.userBenefit || 'business benefit')}.
                       </div>
                     `
                         : ''
                     }
                     <div class="small text-muted mb-2">
-                      <i class="fa-solid fa-puzzle-piece text-info me-1"></i> Feature: <span class="fw-semibold text-dark">${feature?.name || 'Unlinked'}</span>
+                      <i class="fa-solid fa-puzzle-piece text-info me-1"></i> Feature: <span class="fw-semibold text-dark">${escapeHtml(feature?.name || 'Unlinked')}</span>
                     </div>
                     ${
                       story.acceptanceCriteria && story.acceptanceCriteria.length > 0
@@ -654,20 +655,20 @@ export const DeliveryModule = {
                   <div class="card-footer bg-white border-top-0 pt-0 pb-3 d-flex justify-content-between align-items-center">
                     <div class="d-flex align-items-center gap-1.5 small text-muted">
                       <i class="fa-solid fa-user-circle"></i>
-                      <span>${assignee ? `${assignee.firstName} ${assignee.lastName}` : 'Unassigned'}</span>
+                      <span>${assignee ? `${escapeHtml(assignee.firstName)} ${escapeHtml(assignee.lastName)}` : 'Unassigned'}</span>
                       <span class="ms-2 badge bg-light text-secondary border">${tasksCount} Tasks</span>
                     </div>
                     <div class="btn-group btn-group-sm">
-                      <button class="btn btn-outline-secondary btn-xs py-0 px-1.5" title="Trace Lineage" onclick="window.portalDeliveryModule.inspectTrace('story', '${story.id}')">
+                      <button class="btn btn-outline-secondary btn-xs py-0 px-1.5" title="Trace Lineage" data-dv-action="inspectTrace" data-args="${dataArgs('story', story.id)}">
                         <i class="fa-solid fa-route"></i>
                       </button>
-                      <button class="btn btn-outline-primary btn-xs py-0 px-1.5" title="Add Task" onclick="window.portalDeliveryModule.openTaskModal(null, '${story.id}', '${story.projectId}')">
+                      <button class="btn btn-outline-primary btn-xs py-0 px-1.5" title="Add Task" data-dv-action="openTaskModal" data-args="${dataArgs(null, story.id, story.projectId)}">
                         <i class="fa-solid fa-plus"></i>
                       </button>
-                      <button class="btn btn-outline-secondary btn-xs py-0 px-1.5" title="Edit" onclick="window.portalDeliveryModule.openStoryModal('${story.id}')">
+                      <button class="btn btn-outline-secondary btn-xs py-0 px-1.5" title="Edit" data-dv-action="openStoryModal" data-args="${dataArgs(story.id)}">
                         <i class="fa-solid fa-pen"></i>
                       </button>
-                      <button class="btn btn-outline-danger btn-xs py-0 px-1.5" title="Delete" onclick="window.portalDeliveryModule.deleteStory('${story.id}')">
+                      <button class="btn btn-outline-danger btn-xs py-0 px-1.5" title="Delete" data-dv-action="deleteStory" data-args="${dataArgs(story.id)}">
                         <i class="fa-solid fa-trash-can"></i>
                       </button>
                     </div>
@@ -694,7 +695,7 @@ export const DeliveryModule = {
     container.innerHTML = `
       <div class="d-flex justify-content-between align-items-center mb-3">
         <h5 class="fw-bold m-0"><i class="fa-solid fa-list-check text-primary me-2"></i>Execution Tasks (${filtered.length})</h5>
-        <button class="btn btn-primary btn-sm" onclick="window.portalDeliveryModule.openTaskModal()">
+        <button class="btn btn-primary btn-sm" data-dv-action="openTaskModal" data-args="${dataArgs()}">
           <i class="fa-solid fa-plus me-1"></i> Create Task
         </button>
       </div>
@@ -726,38 +727,38 @@ export const DeliveryModule = {
                       const completedSubs = taskSubtasks.filter((st) => st.status === 'done').length;
                       return `
                   <tr>
-                    <td><span class="badge bg-primary-subtle text-primary fw-bold font-monospace">${task.code || 'TSK'}</span></td>
+                    <td><span class="badge bg-primary-subtle text-primary fw-bold font-monospace">${escapeHtml(task.code || 'TSK')}</span></td>
                     <td>
-                      <div class="fw-bold text-dark">${task.title}</div>
-                      <div class="text-muted small text-truncate" style="max-width: 250px;">${task.description || 'No description'}</div>
+                      <div class="fw-bold text-dark">${escapeHtml(task.title)}</div>
+                      <div class="text-muted small text-truncate" style="max-width: 250px;">${escapeHtml(task.description || 'No description')}</div>
                     </td>
-                    <td><span class="small fw-semibold text-warning">${story?.title || 'Unlinked'}</span></td>
-                    <td><span class="small">${assignee ? `${assignee.firstName} ${assignee.lastName}` : 'Unassigned'}</span></td>
+                    <td><span class="small fw-semibold text-warning">${escapeHtml(story?.title || 'Unlinked')}</span></td>
+                    <td><span class="small">${assignee ? `${escapeHtml(assignee.firstName)} ${escapeHtml(assignee.lastName)}` : 'Unassigned'}</span></td>
                     <td>${this.getStatusBadge(task.status)}</td>
                     <td>${this.getPriorityBadge(task.priority)}</td>
-                    <td><span class="small">${task.estimatedHours || 0}h / ${task.spentHours || 0}h</span></td>
+                    <td><span class="small">${escapeHtml(task.estimatedHours || 0)}h / ${escapeHtml(task.spentHours || 0)}h</span></td>
                     <td>
                       <div class="d-flex align-items-center gap-2" style="width: 100px;">
                         <div class="progress flex-grow-1" style="height: 6px;">
-                          <div class="progress-bar bg-primary" style="width: ${task.progress || 0}%"></div>
+                          <div class="progress-bar bg-primary" style="width: ${percent(task.progress)}%"></div>
                         </div>
-                        <span class="small fw-bold">${task.progress || 0}%</span>
+                        <span class="small fw-bold">${percent(task.progress)}%</span>
                       </div>
                     </td>
                     <td>
-                      <button class="btn btn-outline-secondary btn-xs py-0 px-2 small" onclick="window.portalDeliveryModule.openSubtasksManager('${task.id}')">
+                      <button class="btn btn-outline-secondary btn-xs py-0 px-2 small" data-dv-action="openSubtasksManager" data-args="${dataArgs(task.id)}">
                         <i class="fa-solid fa-list-check me-1"></i> ${completedSubs}/${taskSubtasks.length}
                       </button>
                     </td>
                     <td class="text-end">
                       <div class="btn-group btn-group-sm">
-                        <button class="btn btn-outline-secondary" title="Trace Lineage" onclick="window.portalDeliveryModule.inspectTrace('task', '${task.id}')">
+                        <button class="btn btn-outline-secondary" title="Trace Lineage" data-dv-action="inspectTrace" data-args="${dataArgs('task', task.id)}">
                           <i class="fa-solid fa-route"></i>
                         </button>
-                        <button class="btn btn-outline-secondary" title="Edit" onclick="window.portalDeliveryModule.openTaskModal('${task.id}')">
+                        <button class="btn btn-outline-secondary" title="Edit" data-dv-action="openTaskModal" data-args="${dataArgs(task.id)}">
                           <i class="fa-solid fa-pen"></i>
                         </button>
-                        <button class="btn btn-outline-danger" title="Delete" onclick="window.portalDeliveryModule.deleteTask('${task.id}')">
+                        <button class="btn btn-outline-danger" title="Delete" data-dv-action="deleteTask" data-args="${dataArgs(task.id)}">
                           <i class="fa-solid fa-trash-can"></i>
                         </button>
                       </div>
@@ -835,14 +836,14 @@ export const DeliveryModule = {
     const updateItemOptions = () => {
       const type = typeSelect.value;
       let items = [];
-      if (type === 'task') items = this.tasks.map((t) => ({ id: t.id, label: `${t.code || 'TSK'}: ${t.title}` }));
-      else if (type === 'subtask') items = this.subtasks.map((st) => ({ id: st.id, label: `Subtask: ${st.title}` }));
-      else if (type === 'story') items = this.stories.map((s) => ({ id: s.id, label: `${s.code || 'STR'}: ${s.title}` }));
-      else if (type === 'feature') items = this.features.map((f) => ({ id: f.id, label: `${f.code || 'FEAT'}: ${f.name}` }));
-      else if (type === 'epic') items = this.epics.map((e) => ({ id: e.id, label: `${e.code || 'EPC'}: ${e.name}` }));
-      else if (type === 'project') items = this.projects.map((p) => ({ id: p.id, label: `${p.code || 'PRJ'}: ${p.name}` }));
+      if (type === 'task') items = this.tasks.map((t) => ({ id: t.id, label: `${escapeHtml(t.code || 'TSK')}: ${escapeHtml(t.title)}` }));
+      else if (type === 'subtask') items = this.subtasks.map((st) => ({ id: st.id, label: `Subtask: ${escapeHtml(st.title)}` }));
+      else if (type === 'story') items = this.stories.map((s) => ({ id: s.id, label: `${escapeHtml(s.code || 'STR')}: ${escapeHtml(s.title)}` }));
+      else if (type === 'feature') items = this.features.map((f) => ({ id: f.id, label: `${escapeHtml(f.code || 'FEAT')}: ${escapeHtml(f.name)}` }));
+      else if (type === 'epic') items = this.epics.map((e) => ({ id: e.id, label: `${escapeHtml(e.code || 'EPC')}: ${escapeHtml(e.name)}` }));
+      else if (type === 'project') items = this.projects.map((p) => ({ id: p.id, label: `${escapeHtml(p.code || 'PRJ')}: ${escapeHtml(p.name)}` }));
 
-      itemSelect.innerHTML = items.map((i) => `<option value="${i.id}">${i.label}</option>`).join('');
+      itemSelect.innerHTML = items.map((i) => `<option value="${escapeHtml(i.id)}">${escapeHtml(i.label)}</option>`).join('');
     };
 
     if (typeSelect) {
@@ -903,11 +904,11 @@ export const DeliveryModule = {
                         </div>
                         <div class="flex-grow-1">
                           <div class="d-flex justify-content-between align-items-center">
-                            <span class="badge bg-light text-secondary border text-uppercase small">${a.type}</span>
+                            <span class="badge bg-light text-secondary border text-uppercase small">${escapeHtml(a.type)}</span>
                             ${a.status ? this.getStatusBadge(a.status) : ''}
                           </div>
-                          <strong class="d-block text-dark mt-0.5">${a.code ? `[${a.code}] ` : ''}${a.name}</strong>
-                          ${a.progress !== undefined ? `<div class="small text-muted">Progress: ${a.progress}%</div>` : ''}
+                          <strong class="d-block text-dark mt-0.5">${a.code ? `[${escapeHtml(a.code)}] ` : ''}${escapeHtml(a.name)}</strong>
+                          ${a.progress !== undefined ? `<div class="small text-muted">Progress: ${escapeHtml(a.progress)}%</div>` : ''}
                         </div>
                       </div>
                     `;
@@ -925,16 +926,16 @@ export const DeliveryModule = {
           <div class="card shadow-sm border-0 mb-3 border-start border-4 border-primary">
             <div class="card-header bg-white fw-bold py-2.5 d-flex justify-content-between align-items-center">
               <span><i class="fa-solid fa-bullseye text-primary me-2"></i>Active Focus Entity</span>
-              <span class="badge bg-primary text-uppercase">${node.type}</span>
+              <span class="badge bg-primary text-uppercase">${escapeHtml(node.type)}</span>
             </div>
             <div class="card-body p-3">
-              <h5 class="fw-bold text-dark mb-1">${node.code ? `[${node.code}] ` : ''}${node.name}</h5>
+              <h5 class="fw-bold text-dark mb-1">${node.code ? `[${escapeHtml(node.code)}] ` : ''}${escapeHtml(node.name)}</h5>
               <div class="d-flex align-items-center gap-2 mb-2">
                 ${node.status ? this.getStatusBadge(node.status) : ''}
                 ${node.priority ? this.getPriorityBadge(node.priority) : ''}
-                ${node.progress !== undefined ? `<span class="small fw-bold text-muted">${node.progress}% Progress</span>` : ''}
+                ${node.progress !== undefined ? `<span class="small fw-bold text-muted">${escapeHtml(node.progress)}% Progress</span>` : ''}
               </div>
-              <p class="text-muted small mb-0">${node.description || 'No detailed specification provided.'}</p>
+              <p class="text-muted small mb-0">${escapeHtml(node.description || 'No detailed specification provided.')}</p>
             </div>
           </div>
 
@@ -952,12 +953,12 @@ export const DeliveryModule = {
                         (c) => `
                     <div class="p-2 border-bottom d-flex justify-content-between align-items-center">
                       <div class="d-flex align-items-center gap-2">
-                        <span class="badge bg-light text-secondary border text-uppercase small">${c.type}</span>
-                        <span class="fw-semibold small text-dark">${c.code ? `[${c.code}] ` : ''}${c.name}</span>
+                        <span class="badge bg-light text-secondary border text-uppercase small">${escapeHtml(c.type)}</span>
+                        <span class="fw-semibold small text-dark">${c.code ? `[${escapeHtml(c.code)}] ` : ''}${escapeHtml(c.name)}</span>
                       </div>
                       <div class="d-flex align-items-center gap-2">
                         ${c.status ? this.getStatusBadge(c.status) : ''}
-                        <button class="btn btn-outline-secondary btn-xs py-0 px-1 text-xs" onclick="window.portalDeliveryModule.inspectTrace('${c.type}', '${c.id}')">
+                        <button class="btn btn-outline-secondary btn-xs py-0 px-1 text-xs" data-dv-action="inspectTrace" data-args="${dataArgs(c.type, c.id)}">
                           <i class="fa-solid fa-route"></i>
                         </button>
                       </div>
@@ -1024,6 +1025,14 @@ export const DeliveryModule = {
         </div>` : ''}`;
   },
 
+  /** Sprint 16: sets form values through the DOM ({ elementId: value }). */
+  fillFormValues(values) {
+    for (const [id, value] of Object.entries(values)) {
+      const el = document.getElementById(id);
+      if (el) el.value = value === undefined || value === null ? '' : String(value);
+    }
+  },
+
   fillJiraFields(prefix, record) {
     const key = document.getElementById(`${prefix}-jira-key`);
     const url = document.getElementById(`${prefix}-jira-url`);
@@ -1073,17 +1082,17 @@ export const DeliveryModule = {
       <form id="form-epic-modal" class="row g-3">
         <div class="col-12">
           <label class="form-label fw-semibold">Epic Name <span class="text-danger">*</span></label>
-          <input type="text" id="epic-name" class="form-control" required value="${epic ? epic.name : ''}" placeholder="e.g. Core Authentication & Identity Engine" />
+          <input type="text" id="epic-name" class="form-control" required placeholder="e.g. Core Authentication & Identity Engine" />
         </div>
         <div class="col-md-6">
           <label class="form-label fw-semibold">Target Project <span class="text-danger">*</span></label>
           <select id="epic-project" class="form-select" required>
-            ${this.projects.map((p) => `<option value="${p.id}" ${epic && epic.projectId === p.id ? 'selected' : (!epic && defaultProjectId === p.id ? 'selected' : '')}>${p.name || p.id}</option>`).join('')}
+            ${this.projects.map((p) => `<option value="${escapeHtml(p.id)}" ${epic && epic.projectId === p.id ? 'selected' : (!epic && defaultProjectId === p.id ? 'selected' : '')}>${escapeHtml(p.name || p.id)}</option>`).join('')}
           </select>
         </div>
         <div class="col-md-6">
           <label class="form-label fw-semibold">Target Release</label>
-          <input type="text" id="epic-release" class="form-control" value="${epic?.targetRelease || 'Q3-2026'}" placeholder="e.g. Release 2.5 / Sprint 14" />
+          <input type="text" id="epic-release" class="form-control" placeholder="e.g. Release 2.5 / Sprint 14" />
         </div>
         <div class="col-md-6">
           <label class="form-label fw-semibold">Status</label>
@@ -1107,7 +1116,7 @@ export const DeliveryModule = {
 ${this.jiraFieldsHtml('epic', epic)}
         <div class="col-12">
           <label class="form-label fw-semibold">Description & Objectives</label>
-          <textarea id="epic-desc" class="form-control" rows="3" placeholder="Strategic delivery goals and business requirements...">${epic?.description || ''}</textarea>
+          <textarea id="epic-desc" class="form-control" rows="3" placeholder="Strategic delivery goals and business requirements..."></textarea>
         </div>
       </form>
     `;
@@ -1146,6 +1155,12 @@ ${this.jiraFieldsHtml('epic', epic)}
       }
     })());
     this.fillJiraFields('epic', epic);
+    // Sprint 16: stored values are set as properties, never interpolated into markup.
+    this.fillFormValues({
+      'epic-name': epic ? epic.name : '',
+      'epic-release': epic?.targetRelease || 'Q3-2026',
+      'epic-desc': epic?.description || '',
+    });
   },
 
   async deleteEpic(id) {
@@ -1169,19 +1184,19 @@ ${this.jiraFieldsHtml('epic', epic)}
       <form id="form-feature-modal" class="row g-3">
         <div class="col-12">
           <label class="form-label fw-semibold">Feature Name <span class="text-danger">*</span></label>
-          <input type="text" id="feat-name" class="form-control" required value="${feature ? feature.name : ''}" placeholder="e.g. Multi-Factor Authentication (MFA)" />
+          <input type="text" id="feat-name" class="form-control" required placeholder="e.g. Multi-Factor Authentication (MFA)" />
         </div>
         <div class="col-md-6">
           <label class="form-label fw-semibold">Parent Epic</label>
           <select id="feat-epic" class="form-select">
             <option value="">-- No Epic (Unlinked) --</option>
-            ${this.epics.map((e) => `<option value="${e.id}" ${feature && feature.epicId === e.id ? 'selected' : (!feature && defaultEpicId === e.id ? 'selected' : '')}>[${e.code || 'EPC'}] ${e.name}</option>`).join('')}
+            ${this.epics.map((e) => `<option value="${escapeHtml(e.id)}" ${feature && feature.epicId === e.id ? 'selected' : (!feature && defaultEpicId === e.id ? 'selected' : '')}>[${escapeHtml(e.code || 'EPC')}] ${escapeHtml(e.name)}</option>`).join('')}
           </select>
         </div>
         <div class="col-md-6">
           <label class="form-label fw-semibold">Project <span class="text-danger">*</span></label>
           <select id="feat-project" class="form-select" required>
-            ${this.projects.map((p) => `<option value="${p.id}" ${feature && feature.projectId === p.id ? 'selected' : (!feature && defaultProjectId === p.id ? 'selected' : '')}>${p.name || p.id}</option>`).join('')}
+            ${this.projects.map((p) => `<option value="${escapeHtml(p.id)}" ${feature && feature.projectId === p.id ? 'selected' : (!feature && defaultProjectId === p.id ? 'selected' : '')}>${escapeHtml(p.name || p.id)}</option>`).join('')}
           </select>
         </div>
         <div class="col-md-4">
@@ -1213,7 +1228,7 @@ ${this.jiraFieldsHtml('epic', epic)}
 ${this.jiraFieldsHtml('feat', feature)}
         <div class="col-12">
           <label class="form-label fw-semibold">Description</label>
-          <textarea id="feat-desc" class="form-control" rows="3" placeholder="Technical specifications and criteria...">${feature?.description || ''}</textarea>
+          <textarea id="feat-desc" class="form-control" rows="3" placeholder="Technical specifications and criteria..."></textarea>
         </div>
       </form>
     `;
@@ -1253,6 +1268,11 @@ ${this.jiraFieldsHtml('feat', feature)}
       }
     })());
     this.fillJiraFields('feat', feature);
+    // Sprint 16: stored values are set as properties, never interpolated into markup.
+    this.fillFormValues({
+      'feat-name': feature ? feature.name : '',
+      'feat-desc': feature?.description || '',
+    });
   },
 
   async deleteFeature(id) {
@@ -1276,19 +1296,19 @@ ${this.jiraFieldsHtml('feat', feature)}
       <form id="form-story-modal" class="row g-3">
         <div class="col-12">
           <label class="form-label fw-semibold">Story Title <span class="text-danger">*</span></label>
-          <input type="text" id="story-title" class="form-control" required value="${story ? story.title : ''}" placeholder="e.g. As an Admin, I want to enforce MFA logins" />
+          <input type="text" id="story-title" class="form-control" required placeholder="e.g. As an Admin, I want to enforce MFA logins" />
         </div>
         <div class="col-md-6">
           <label class="form-label fw-semibold">Parent Feature</label>
           <select id="story-feature" class="form-select">
             <option value="">-- No Feature (Unlinked) --</option>
-            ${this.features.map((f) => `<option value="${f.id}" ${story && story.featureId === f.id ? 'selected' : (!story && defaultFeatureId === f.id ? 'selected' : '')}>[${f.code || 'FEAT'}] ${f.name}</option>`).join('')}
+            ${this.features.map((f) => `<option value="${escapeHtml(f.id)}" ${story && story.featureId === f.id ? 'selected' : (!story && defaultFeatureId === f.id ? 'selected' : '')}>[${escapeHtml(f.code || 'FEAT')}] ${escapeHtml(f.name)}</option>`).join('')}
           </select>
         </div>
         <div class="col-md-6">
           <label class="form-label fw-semibold">Project <span class="text-danger">*</span></label>
           <select id="story-project" class="form-select" required>
-            ${this.projects.map((p) => `<option value="${p.id}" ${story && story.projectId === p.id ? 'selected' : (!story && defaultProjectId === p.id ? 'selected' : '')}>${p.name || p.id}</option>`).join('')}
+            ${this.projects.map((p) => `<option value="${escapeHtml(p.id)}" ${story && story.projectId === p.id ? 'selected' : (!story && defaultProjectId === p.id ? 'selected' : '')}>${escapeHtml(p.name || p.id)}</option>`).join('')}
           </select>
         </div>
         <div class="col-12 p-3 bg-light rounded border">
@@ -1296,15 +1316,15 @@ ${this.jiraFieldsHtml('feat', feature)}
           <div class="row g-2">
             <div class="col-md-4">
               <label class="form-label small mb-1">As a (Persona):</label>
-              <input type="text" id="story-persona" class="form-control form-control-sm" value="${story?.userPersona || ''}" placeholder="e.g. System Administrator" />
+              <input type="text" id="story-persona" class="form-control form-control-sm" placeholder="e.g. System Administrator" />
             </div>
             <div class="col-md-4">
               <label class="form-label small mb-1">I want (Action):</label>
-              <input type="text" id="story-action" class="form-control form-control-sm" value="${story?.userAction || ''}" placeholder="e.g. to require TOTP verification" />
+              <input type="text" id="story-action" class="form-control form-control-sm" placeholder="e.g. to require TOTP verification" />
             </div>
             <div class="col-md-4">
               <label class="form-label small mb-1">So that (Benefit):</label>
-              <input type="text" id="story-benefit" class="form-control form-control-sm" value="${story?.userBenefit || ''}" placeholder="e.g. credential theft is prevented" />
+              <input type="text" id="story-benefit" class="form-control form-control-sm" placeholder="e.g. credential theft is prevented" />
             </div>
           </div>
         </div>
@@ -1334,13 +1354,13 @@ ${this.jiraFieldsHtml('feat', feature)}
           <label class="form-label fw-semibold">Assignee</label>
           <select id="story-assignee" class="form-select">
             <option value="">-- Unassigned --</option>
-            ${this.users.map((u) => `<option value="${u.id}" ${story?.assigneeId === u.id ? 'selected' : ''}>${u.firstName} ${u.lastName}</option>`).join('')}
+            ${this.users.map((u) => `<option value="${escapeHtml(u.id)}" ${story?.assigneeId === u.id ? 'selected' : ''}>${escapeHtml(u.firstName)} ${escapeHtml(u.lastName)}</option>`).join('')}
           </select>
         </div>
 ${this.jiraFieldsHtml('story', story)}
         <div class="col-12">
           <label class="form-label fw-semibold">Acceptance Criteria (One per line)</label>
-          <textarea id="story-criteria" class="form-control" rows="3" placeholder="User can scan QR code with authenticator app&#10;Invalid codes return 401 error">${story?.acceptanceCriteria ? story.acceptanceCriteria.join('\n') : ''}</textarea>
+          <textarea id="story-criteria" class="form-control" rows="3" placeholder="User can scan QR code with authenticator app&#10;Invalid codes return 401 error"></textarea>
         </div>
       </form>
     `;
@@ -1391,6 +1411,14 @@ ${this.jiraFieldsHtml('story', story)}
       }
     })());
     this.fillJiraFields('story', story);
+    // Sprint 16: stored values are set as properties, never interpolated into markup.
+    this.fillFormValues({
+      'story-title': story ? story.title : '',
+      'story-persona': story?.userPersona || '',
+      'story-action': story?.userAction || '',
+      'story-benefit': story?.userBenefit || '',
+      'story-criteria': story?.acceptanceCriteria ? story.acceptanceCriteria.join('\n') : '',
+    });
   },
 
   async deleteStory(id) {
@@ -1414,19 +1442,19 @@ ${this.jiraFieldsHtml('story', story)}
       <form id="form-task-modal" class="row g-3">
         <div class="col-12">
           <label class="form-label fw-semibold">Task Deliverable <span class="text-danger">*</span></label>
-          <input type="text" id="task-title" class="form-control" required value="${task ? task.title : ''}" placeholder="e.g. Implement TOTP verification endpoint" />
+          <input type="text" id="task-title" class="form-control" required placeholder="e.g. Implement TOTP verification endpoint" />
         </div>
         <div class="col-md-6">
           <label class="form-label fw-semibold">Parent User Story</label>
           <select id="task-story" class="form-select">
             <option value="">-- No Story (Unlinked) --</option>
-            ${this.stories.map((s) => `<option value="${s.id}" ${task && task.storyId === s.id ? 'selected' : (!task && defaultStoryId === s.id ? 'selected' : '')}>[${s.code || 'STR'}] ${s.title}</option>`).join('')}
+            ${this.stories.map((s) => `<option value="${escapeHtml(s.id)}" ${task && task.storyId === s.id ? 'selected' : (!task && defaultStoryId === s.id ? 'selected' : '')}>[${escapeHtml(s.code || 'STR')}] ${escapeHtml(s.title)}</option>`).join('')}
           </select>
         </div>
         <div class="col-md-6">
           <label class="form-label fw-semibold">Project <span class="text-danger">*</span></label>
           <select id="task-project" class="form-select" required>
-            ${this.projects.map((p) => `<option value="${p.id}" ${task && task.projectId === p.id ? 'selected' : (!task && defaultProjectId === p.id ? 'selected' : '')}>${p.name || p.id}</option>`).join('')}
+            ${this.projects.map((p) => `<option value="${escapeHtml(p.id)}" ${task && task.projectId === p.id ? 'selected' : (!task && defaultProjectId === p.id ? 'selected' : '')}>${escapeHtml(p.name || p.id)}</option>`).join('')}
           </select>
         </div>
         <div class="col-md-4">
@@ -1452,20 +1480,20 @@ ${this.jiraFieldsHtml('story', story)}
           <label class="form-label fw-semibold">Assignee</label>
           <select id="task-assignee" class="form-select">
             <option value="">-- Unassigned --</option>
-            ${this.users.map((u) => `<option value="${u.id}" ${task?.assigneeId === u.id ? 'selected' : ''}>${u.firstName} ${u.lastName}</option>`).join('')}
+            ${this.users.map((u) => `<option value="${escapeHtml(u.id)}" ${task?.assigneeId === u.id ? 'selected' : ''}>${escapeHtml(u.firstName)} ${escapeHtml(u.lastName)}</option>`).join('')}
           </select>
         </div>
         <div class="col-md-6">
           <label class="form-label fw-semibold">Estimated Hours</label>
-          <input type="number" id="task-esthours" class="form-control" value="${task?.estimatedHours || 8}" min="0" />
+          <input type="number" id="task-esthours" class="form-control" min="0" />
         </div>
         <div class="col-md-6">
           <label class="form-label fw-semibold">Spent Hours</label>
-          <input type="number" id="task-spent" class="form-control" value="${task?.spentHours || 0}" min="0" />
+          <input type="number" id="task-spent" class="form-control" min="0" />
         </div>
         <div class="col-12">
           <label class="form-label fw-semibold">Description & Acceptance Notes</label>
-          <textarea id="task-desc" class="form-control" rows="2" placeholder="Task execution details...">${task?.description || ''}</textarea>
+          <textarea id="task-desc" class="form-control" rows="2" placeholder="Task execution details..."></textarea>
         </div>
       </form>
     `;
@@ -1504,6 +1532,13 @@ ${this.jiraFieldsHtml('story', story)}
         this.app.showToast('Failed saving Task', 'danger');
       }
     });
+    // Sprint 16: stored values are set as properties, never interpolated into markup.
+    this.fillFormValues({
+      'task-title': task ? task.title : '',
+      'task-esthours': task?.estimatedHours || 8,
+      'task-spent': task?.spentHours || 0,
+      'task-desc': task?.description || '',
+    });
   },
 
   async deleteTask(id) {
@@ -1528,8 +1563,8 @@ ${this.jiraFieldsHtml('story', story)}
       <div>
         <div class="d-flex justify-content-between align-items-center mb-3">
           <div>
-            <h6 class="fw-bold mb-0">${task.title}</h6>
-            <span class="text-muted small">Parent Task: ${task.code || 'TSK'} | Progress: ${task.progress || 0}%</span>
+            <h6 class="fw-bold mb-0">${escapeHtml(task.title)}</h6>
+            <span class="text-muted small">Parent Task: ${escapeHtml(task.code || 'TSK')} | Progress: ${percent(task.progress)}%</span>
           </div>
         </div>
         
@@ -1551,14 +1586,14 @@ ${this.jiraFieldsHtml('story', story)}
                     (st) => `
                 <div class="list-group-item d-flex justify-content-between align-items-center">
                   <div class="form-check m-0 d-flex align-items-center gap-2">
-                    <input class="form-check-input" type="checkbox" id="chk-sub-${st.id}" ${st.status === 'done' ? 'checked' : ''} onchange="window.portalDeliveryModule.toggleSubtaskStatus('${st.id}', this.checked)" />
-                    <label class="form-check-label ${st.status === 'done' ? 'text-decoration-line-through text-muted' : 'fw-semibold'}" for="chk-sub-${st.id}">
-                      ${st.title}
+                    <input class="form-check-input" type="checkbox" id="chk-sub-${escapeHtml(st.id)}" ${st.status === 'done' ? 'checked' : ''} data-dv-toggle-subtask="${escapeHtml(st.id)}" />
+                    <label class="form-check-label ${st.status === 'done' ? 'text-decoration-line-through text-muted' : 'fw-semibold'}" for="chk-sub-${escapeHtml(st.id)}">
+                      ${escapeHtml(st.title)}
                     </label>
                   </div>
                   <div class="d-flex align-items-center gap-2">
-                    <span class="badge ${st.status === 'done' ? 'bg-success' : 'bg-light text-secondary'} small">${st.status}</span>
-                    <button class="btn btn-outline-danger btn-xs py-0 px-1 text-xs" onclick="window.portalDeliveryModule.deleteSubtask('${st.id}', '${taskId}')">
+                    <span class="badge ${st.status === 'done' ? 'bg-success' : 'bg-light text-secondary'} small">${escapeHtml(st.status)}</span>
+                    <button class="btn btn-outline-danger btn-xs py-0 px-1 text-xs" data-dv-action="deleteSubtask" data-args="${dataArgs(st.id, taskId)}">
                       <i class="fa-solid fa-xmark"></i>
                     </button>
                   </div>
@@ -1623,28 +1658,28 @@ ${this.jiraFieldsHtml('story', story)}
     const bodyHtml = `
       <div class="row g-3 text-center">
         <div class="col-6">
-          <div class="card p-3 border hover-shadow" style="cursor: pointer;" onclick="window.portalDeliveryModule.openEpicModal();">
+          <div class="card p-3 border hover-shadow" style="cursor: pointer;" data-dv-action="openEpicModal" data-args="${dataArgs()}">
             <i class="fa-solid fa-crown text-purple fa-2x mb-2" style="color: #7c3aed;"></i>
             <h6 class="fw-bold">Epic</h6>
             <span class="text-muted small">Major initiative spanning multiple sprints</span>
           </div>
         </div>
         <div class="col-6">
-          <div class="card p-3 border hover-shadow" style="cursor: pointer;" onclick="window.portalDeliveryModule.openFeatureModal();">
+          <div class="card p-3 border hover-shadow" style="cursor: pointer;" data-dv-action="openFeatureModal" data-args="${dataArgs()}">
             <i class="fa-solid fa-puzzle-piece text-info fa-2x mb-2"></i>
             <h6 class="fw-bold">Feature</h6>
             <span class="text-muted small">Distinct capability satisfying customer need</span>
           </div>
         </div>
         <div class="col-6">
-          <div class="card p-3 border hover-shadow" style="cursor: pointer;" onclick="window.portalDeliveryModule.openStoryModal();">
+          <div class="card p-3 border hover-shadow" style="cursor: pointer;" data-dv-action="openStoryModal" data-args="${dataArgs()}">
             <i class="fa-solid fa-book-open text-warning fa-2x mb-2"></i>
             <h6 class="fw-bold">User Story</h6>
             <span class="text-muted small">Deliverable described from end-user perspective</span>
           </div>
         </div>
         <div class="col-6">
-          <div class="card p-3 border hover-shadow" style="cursor: pointer;" onclick="window.portalDeliveryModule.openTaskModal();">
+          <div class="card p-3 border hover-shadow" style="cursor: pointer;" data-dv-action="openTaskModal" data-args="${dataArgs()}">
             <i class="fa-solid fa-list-check text-primary fa-2x mb-2"></i>
             <h6 class="fw-bold">Execution Task</h6>
             <span class="text-muted small">Engineering work unit with hours and subtasks</span>
@@ -1669,8 +1704,9 @@ ${this.jiraFieldsHtml('story', story)}
       blocked: 'bg-danger-subtle text-danger',
       'on-hold': 'bg-secondary-subtle text-muted',
     };
-    const cls = map[status] || 'bg-light text-dark';
-    return `<span class="badge ${cls} text-capitalize">${status || 'unknown'}</span>`;
+    // Sprint 16: class from the known map only; the label is escaped text.
+    const cls = Object.prototype.hasOwnProperty.call(map, status) ? map[status] : 'bg-light text-dark';
+    return `<span class="badge ${cls} text-capitalize">${escapeHtml(status || 'unknown')}</span>`;
   },
 
   getPriorityBadge(priority) {
@@ -1680,10 +1716,35 @@ ${this.jiraFieldsHtml('story', story)}
       medium: 'bg-warning-subtle text-warning',
       low: 'bg-info-subtle text-info',
     };
-    const cls = map[priority] || 'bg-light text-dark';
-    return `<span class="badge ${cls} text-capitalize">${priority || 'medium'}</span>`;
+    const cls = Object.prototype.hasOwnProperty.call(map, priority) ? map[priority] : 'bg-light text-dark';
+    return `<span class="badge ${cls} text-capitalize">${escapeHtml(priority || 'medium')}</span>`;
   },
 };
 
 // Expose globally for inline DOM click handlers
+/**
+ * Sprint 16: one delegated click handler for delivery actions. Buttons carry
+ * data-dv-action (an allowlisted method) and data-args (a JSON array written
+ * by dataArgs), so record ids travel as data and are never interpolated into
+ * inline JavaScript. Covers the delivery views and the project breakdown.
+ */
+const DELIVERY_ACTIONS = new Set([
+  'openEpicModal', 'openFeatureModal', 'openStoryModal', 'openTaskModal', 'openSubtasksManager',
+  'inspectTrace', 'deleteEpic', 'deleteFeature', 'deleteStory', 'deleteTask', 'deleteSubtask',
+]);
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  document.addEventListener('click', (event) => {
+    const el = event.target && event.target.closest ? event.target.closest('[data-dv-action]') : null;
+    if (!el) return;
+    const action = el.getAttribute('data-dv-action');
+    if (!DELIVERY_ACTIONS.has(action) || typeof DeliveryModule[action] !== 'function') return;
+    event.preventDefault();
+    DeliveryModule[action](...readDataArgs(el));
+  });
+  document.addEventListener('change', (event) => {
+    const el = event.target && event.target.closest ? event.target.closest('[data-dv-toggle-subtask]') : null;
+    if (el) DeliveryModule.toggleSubtaskStatus(el.getAttribute('data-dv-toggle-subtask'), el.checked);
+  });
+}
+
 window.portalDeliveryModule = DeliveryModule;

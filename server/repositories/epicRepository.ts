@@ -1,5 +1,6 @@
 import { Epic } from '../models/types';
 import { isDbConnected, query } from '../config/database';
+import { duplicateRecordError } from './recordConflict';
 import { FeatureRepository } from './featureRepository';
 import { calculateEpicProgress } from '../services/progressCalculator';
 
@@ -291,6 +292,8 @@ export const EpicRepository = {
   },
 
   async create(epic: Epic): Promise<Epic> {
+    // Sprint 16: never overwrite an existing record (both modes; findById reads PostgreSQL when connected).
+    if (await this.findById(epic.id)) throw duplicateRecordError('epic', epic.id);
     if (isDbConnected()) {
       const q = `
         INSERT INTO epics (

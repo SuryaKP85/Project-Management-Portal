@@ -4,6 +4,7 @@ import { TaskRepository } from '../repositories/taskRepository';
 import { SprintRepository } from '../repositories/sprintRepository';
 import { ActivityRepository } from '../repositories/activityRepository';
 import crypto from 'crypto';
+import { DeliveryGuards } from '../services/deliveryGuards';
 
 function getActor(req: Request) {
   if (!req.user) return { id: 'usr_dev_3', name: 'Bob Johnson' };
@@ -105,16 +106,19 @@ export const MyWorkController = {
         return res.status(400).json({ success: false, message: 'itemId, itemType, and status are required' });
       }
 
-      let updated: any = null;
-      if (itemType === 'story') {
-        updated = await StoryRepository.update(itemId, { status });
-      } else if (itemType === 'task') {
-        updated = await TaskRepository.update(itemId, { status });
-      } else {
+      if (itemType !== 'story' && itemType !== 'task') {
         return res.status(400).json({ success: false, message: 'Invalid itemType' });
       }
-
+      if (!req.user) return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } });
       const actor = getActor(req);
+      // Sprint 16: only the assignee or a member of the project may change the
+      // status, and only to a known status value.
+      const repo: any = itemType === 'story' ? StoryRepository : TaskRepository;
+      const existing = await repo.findById(itemId);
+      if (!existing) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Item not found' } });
+      const checkedStatus = await DeliveryGuards.assertStatusChange(itemType, existing, status, { id: req.user.userId, role: req.user.role });
+      const updated: any = await repo.update(itemId, { status: checkedStatus });
+
       await ActivityRepository.create({
         id: `act_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
         entityType: itemType,
@@ -122,13 +126,14 @@ export const MyWorkController = {
         action: 'status_change',
         actorId: actor.id,
         actorName: actor.name,
-        details: { newStatus: status, fromMyWork: true },
+        details: { newStatus: checkedStatus, fromMyWork: true },
         createdAt: new Date().toISOString(),
       });
 
       return res.json({ success: true, data: updated });
     } catch (err: any) {
-      return res.status(500).json({ success: false, message: err.message });
+      const status = Number(err?.status) >= 400 && Number(err?.status) < 500 ? Number(err.status) : 500;
+      return res.status(status).json({ success: false, error: { code: err?.code || 'INTERNAL_ERROR', message: err.message }, message: err.message });
     }
   },
 };

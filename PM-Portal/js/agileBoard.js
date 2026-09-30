@@ -4,6 +4,7 @@
  */
 
 import { SprintService } from './services/sprintService.js';
+import { escapeHtml } from './safeHtml.js';
 import { StoryService } from './services/storyService.js';
 import { TaskService } from './services/taskService.js';
 import { ProjectService } from './services/projectService.js';
@@ -195,9 +196,9 @@ export const AgileBoardModule = {
             <div class="dropdown">
               <button class="btn btn-outline-dark dropdown-toggle font-bold d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                 <i class="fa-solid fa-person-running text-primary"></i>
-                <span>${sprint.name}</span>
+                <span>${escapeHtml(sprint.name)}</span>
                 <span class="badge ${sprint.status === 'active' ? 'bg-success' : sprint.status === 'completed' ? 'bg-secondary' : 'bg-warning text-dark'} ms-1">
-                  ${sprint.status.toUpperCase()}
+                  ${escapeHtml(sprint.status.toUpperCase())}
                 </span>
               </button>
               <ul class="dropdown-menu shadow">
@@ -205,10 +206,10 @@ export const AgileBoardModule = {
                   .map(
                     (s) => `
                   <li>
-                    <a class="dropdown-item d-flex justify-content-between align-items-center ${s.id === sprint.id ? 'active' : ''}" href="#" data-action="switch-sprint" data-sprint-id="${s.id}">
-                      <span>${s.name} (${s.code})</span>
+                    <a class="dropdown-item d-flex justify-content-between align-items-center ${s.id === sprint.id ? 'active' : ''}" href="#" data-action="switch-sprint" data-sprint-id="${escapeHtml(s.id)}">
+                      <span>${escapeHtml(s.name)} (${escapeHtml(s.code)})</span>
                       <span class="badge ${s.status === 'active' ? 'bg-success' : s.status === 'completed' ? 'bg-secondary' : 'bg-warning text-dark'} ms-2" style="font-size: 0.65rem;">
-                        ${s.status}
+                        ${escapeHtml(s.status)}
                       </span>
                     </a>
                   </li>
@@ -244,7 +245,7 @@ export const AgileBoardModule = {
               <i class="fa-solid fa-chart-line me-1"></i> Burndown Chart
             </button>
             <button class="btn btn-sm btn-outline-info" data-action="view-capacity">
-              <i class="fa-solid fa-scale-balanced me-1"></i> Capacity (${sprint.capacityPoints || 40} pts)
+              <i class="fa-solid fa-scale-balanced me-1"></i> Capacity (${escapeHtml(sprint.capacityPoints || 40)} pts)
             </button>
             ${
               isSprintPlanning
@@ -271,13 +272,13 @@ export const AgileBoardModule = {
         <div class="row g-3 mt-2 pt-2 border-top align-items-center">
           <div class="col-md-5">
             <div class="d-flex align-items-center gap-2">
-              <span class="badge bg-light text-dark font-mono font-bold">${sprint.code}</span>
+              <span class="badge bg-light text-dark font-mono font-bold">${escapeHtml(sprint.code)}</span>
               <p class="mb-0 text-muted fst-italic" style="font-size: 0.9rem;">
-                <strong>Goal:</strong> ${sprint.goal || 'No goal set for this sprint.'}
+                <strong>Goal:</strong> ${escapeHtml(sprint.goal || 'No goal set for this sprint.')}
               </p>
             </div>
             <div class="text-muted mt-1" style="font-size: 0.75rem;">
-              <i class="fa-regular fa-calendar me-1"></i> ${sprint.startDate} to ${sprint.endDate} &bull; 
+              <i class="fa-regular fa-calendar me-1"></i> ${escapeHtml(sprint.startDate)} to ${escapeHtml(sprint.endDate)} &bull;
               <span class="font-semibold text-dark">${daysRemainingText}</span>
             </div>
           </div>
@@ -316,7 +317,7 @@ export const AgileBoardModule = {
         <div class="d-flex align-items-center gap-2 flex-wrap">
           <select class="form-select form-select-sm" id="agile-filter-assignee" style="width: 160px;">
             <option value="all">All Assignees</option>
-            ${this.users.map((u) => `<option value="${u.id}" ${this.filterAssignee === u.id ? 'selected' : ''}>${u.firstName} ${u.lastName}</option>`).join('')}
+            ${this.users.map((u) => `<option value="${u.id}" ${this.filterAssignee === u.id ? 'selected' : ''}>${escapeHtml(u.firstName)} ${escapeHtml(u.lastName)}</option>`).join('')}
           </select>
           <select class="form-select form-select-sm" id="agile-filter-priority" style="width: 140px;">
             <option value="all">All Priorities</option>
@@ -333,7 +334,7 @@ export const AgileBoardModule = {
         </div>
         <div class="search-bar" style="max-width: 220px;">
           <i class="fa-solid fa-magnifying-glass"></i>
-          <input type="text" id="agile-search-input" placeholder="Filter cards..." value="${this.searchQuery}" />
+          <input type="text" id="agile-search-input" placeholder="Filter cards..." value="${escapeHtml(this.searchQuery)}" />
         </div>
       </div>
 
@@ -377,16 +378,16 @@ export const AgileBoardModule = {
           <!-- Swimlane Story Header -->
           <div class="card-header bg-white d-flex justify-content-between align-items-center py-2 px-3 border-bottom">
             <div class="d-flex align-items-center gap-2">
-              <span class="badge bg-primary-subtle text-primary font-mono font-bold">${story.code}</span>
-              <a href="#" class="font-bold text-dark text-decoration-none" data-action="view-card" data-item-id="${story.id}" data-item-type="story">
-                ${story.title}
+              <span class="badge bg-primary-subtle text-primary font-mono font-bold">${escapeHtml(story.code)}</span>
+              <a href="#" class="font-bold text-dark text-decoration-none" data-action="view-card" data-item-id="${escapeHtml(story.id)}" data-item-type="story">
+                ${escapeHtml(story.title)}
               </a>
-              <span class="badge bg-secondary font-bold" style="font-size: 0.75rem;">${story.storyPoints || 0} pts</span>
-              ${story.featureName ? `<span class="badge bg-light text-muted border font-normal"><i class="fa-solid fa-puzzle-piece text-info me-1"></i>${story.featureName}</span>` : ''}
+              <span class="badge bg-secondary font-bold" style="font-size: 0.75rem;">${escapeHtml(story.storyPoints || 0)} pts</span>
+              ${story.featureName ? `<span class="badge bg-light text-muted border font-normal"><i class="fa-solid fa-puzzle-piece text-info me-1"></i>${escapeHtml(story.featureName)}</span>` : ''}
             </div>
             <div class="d-flex align-items-center gap-2">
-              <span class="badge ${this.getStatusBadge(story.status)}">${story.status}</span>
-              <span class="text-muted" style="font-size: 0.75rem;">${story.assigneeName || 'Unassigned'}</span>
+              <span class="badge ${this.getStatusBadge(story.status)}">${escapeHtml(story.status)}</span>
+              <span class="text-muted" style="font-size: 0.75rem;">${escapeHtml(story.assigneeName || 'Unassigned')}</span>
             </div>
           </div>
 
@@ -400,7 +401,7 @@ export const AgileBoardModule = {
 
                 return `
                   <div class="col-md" style="min-width: 200px;">
-                    <div class="p-2 bg-white rounded border h-100 agile-drop-target" data-column-id="${col.id}" data-story-id="${story.id}">
+                    <div class="p-2 bg-white rounded border h-100 agile-drop-target" data-column-id="${col.id}" data-story-id="${escapeHtml(story.id)}">
                       <div class="d-flex justify-content-between align-items-center mb-2 pb-1 border-bottom">
                         <span class="font-bold text-muted" style="font-size: 0.75rem;">
                           <i class="${col.icon} me-1 text-${col.color}"></i> ${col.label}
@@ -415,7 +416,7 @@ export const AgileBoardModule = {
                         ${colTasks.map((task) => this.renderCard(task, 'task')).join('')}
                       </div>
 
-                      <button class="btn btn-sm btn-link text-muted w-100 text-start p-1 mt-2 text-decoration-none font-semibold" style="font-size: 0.75rem;" data-action="quick-add" data-status="${col.id}" data-story-id="${story.id}">
+                      <button class="btn btn-sm btn-link text-muted w-100 text-start p-1 mt-2 text-decoration-none font-semibold" style="font-size: 0.75rem;" data-action="quick-add" data-status="${col.id}" data-story-id="${escapeHtml(story.id)}">
                         <i class="fa-solid fa-plus me-1"></i> Add Task
                       </button>
                     </div>
@@ -478,7 +479,7 @@ export const AgileBoardModule = {
     const assigneeMap = new Map();
     assigneeMap.set('unassigned', { name: 'Unassigned', items: [] });
     this.users.forEach((u) => {
-      assigneeMap.set(u.id, { name: `${u.firstName} ${u.lastName}`, items: [] });
+      assigneeMap.set(u.id, { name: `${escapeHtml(u.firstName)} ${escapeHtml(u.lastName)}`, items: [] });
     });
 
     allItems.forEach((item) => {
@@ -496,7 +497,7 @@ export const AgileBoardModule = {
         <div class="card mb-3 shadow-sm border-0 bg-light">
           <div class="card-header bg-white py-2 px-3 d-flex justify-content-between align-items-center">
             <span class="font-bold text-dark">
-              <i class="fa-solid fa-user-circle text-primary me-2"></i> ${data.name}
+              <i class="fa-solid fa-user-circle text-primary me-2"></i> ${escapeHtml(data.name)}
             </span>
             <span class="badge bg-secondary">${data.items.length} items</span>
           </div>
@@ -528,32 +529,32 @@ export const AgileBoardModule = {
     const code = item.code || (isStory ? 'STR' : 'TSK');
     const title = item.title || 'Untitled Item';
     const priority = item.priority || 'medium';
-    const pointsOrHours = isStory ? `${item.storyPoints || 0} pts` : `${item.estimatedEffortHrs || 0}h`;
+    const pointsOrHours = isStory ? `${escapeHtml(item.storyPoints || 0)} pts` : `${escapeHtml(item.estimatedEffortHrs || 0)}h`;
 
     const priorityBadgeClass =
       priority === 'critical' ? 'bg-danger' : priority === 'high' ? 'bg-warning text-dark' : priority === 'medium' ? 'bg-info text-dark' : 'bg-secondary';
 
     return `
-      <div class="card shadow-sm border rounded p-2 agile-card bg-white" draggable="true" data-item-id="${item.id}" data-item-type="${itemType}" style="cursor: grab; border-left: 3px solid ${isStory ? '#3b82f6' : '#10b981'} !important;">
+      <div class="card shadow-sm border rounded p-2 agile-card bg-white" draggable="true" data-item-id="${escapeHtml(item.id)}" data-item-type="${itemType}" style="cursor: grab; border-left: 3px solid ${isStory ? '#3b82f6' : '#10b981'} !important;">
         <div class="d-flex justify-content-between align-items-center mb-1">
           <div class="d-flex align-items-center gap-1">
             <span class="badge ${isStory ? 'bg-primary' : 'bg-success'}" style="font-size: 0.65rem;">
-              <i class="fa-solid ${isStory ? 'fa-book-open' : 'fa-list-check'} me-1"></i>${code}
+              <i class="fa-solid ${isStory ? 'fa-book-open' : 'fa-list-check'} me-1"></i>${escapeHtml(code)}
             </span>
-            <span class="badge ${priorityBadgeClass}" style="font-size: 0.6rem;">${priority}</span>
+            <span class="badge ${priorityBadgeClass}" style="font-size: 0.6rem;">${escapeHtml(priority)}</span>
           </div>
-          <span class="badge bg-light text-dark border font-mono" style="font-size: 0.65rem;">${pointsOrHours}</span>
+          <span class="badge bg-light text-dark border font-mono" style="font-size: 0.65rem;">${escapeHtml(pointsOrHours)}</span>
         </div>
 
-        <a href="#" class="font-bold text-dark text-decoration-none mb-1 text-truncate-2" style="font-size: 0.85rem;" data-action="view-card" data-item-id="${item.id}" data-item-type="${itemType}">
-          ${title}
+        <a href="#" class="font-bold text-dark text-decoration-none mb-1 text-truncate-2" style="font-size: 0.85rem;" data-action="view-card" data-item-id="${escapeHtml(item.id)}" data-item-type="${itemType}">
+          ${escapeHtml(title)}
         </a>
 
         ${
           item.featureName
             ? `
           <div class="text-muted text-truncate mb-2" style="font-size: 0.7rem;">
-            <i class="fa-solid fa-puzzle-piece text-info me-1"></i>${item.featureName}
+            <i class="fa-solid fa-puzzle-piece text-info me-1"></i>${escapeHtml(item.featureName)}
           </div>
         `
             : ''
@@ -562,9 +563,9 @@ export const AgileBoardModule = {
         <div class="d-flex justify-content-between align-items-center pt-2 border-top mt-1">
           <div class="d-flex align-items-center gap-1" style="font-size: 0.75rem;">
             <div class="avatar-circle-sm bg-secondary text-white rounded-circle d-flex align-items-center justify-content-center" style="width: 22px; height: 22px; font-size: 0.65rem;">
-              ${(item.assigneeName || 'U').charAt(0)}
+              ${escapeHtml((item.assigneeName || 'U').charAt(0))}
             </div>
-            <span class="text-muted text-truncate" style="max-width: 100px;">${item.assigneeName || 'Unassigned'}</span>
+            <span class="text-muted text-truncate" style="max-width: 100px;">${escapeHtml(item.assigneeName || 'Unassigned')}</span>
           </div>
 
           <!-- Quick Move Dropdown -->
@@ -576,7 +577,7 @@ export const AgileBoardModule = {
               ${this.COLUMNS.map(
                 (c) => `
                 <li>
-                  <a class="dropdown-item ${item.status === c.id ? 'active' : ''}" href="#" data-action="move-item" data-item-id="${item.id}" data-item-type="${itemType}" data-new-status="${c.id}">
+                  <a class="dropdown-item ${item.status === c.id ? 'active' : ''}" href="#" data-action="move-item" data-item-id="${escapeHtml(item.id)}" data-item-type="${itemType}" data-new-status="${c.id}">
                     <i class="${c.icon} me-1 text-${c.color}"></i> ${c.label}
                   </a>
                 </li>
@@ -701,7 +702,7 @@ export const AgileBoardModule = {
     const bodyHtml = `
       <div>
         <div class="alert alert-info py-2 mb-3">
-          <i class="fa-solid fa-flag-checkered me-1"></i> Completing sprint <strong>${sprint.name}</strong> (${sprint.code})
+          <i class="fa-solid fa-flag-checkered me-1"></i> Completing sprint <strong>${escapeHtml(sprint.name)}</strong> (${escapeHtml(sprint.code)})
         </div>
 
         <div class="row g-2 mb-3">
@@ -733,7 +734,7 @@ export const AgileBoardModule = {
             <select class="form-select form-select-sm ms-4" id="complete-target-sprint" style="max-width: 320px;">
               ${
                 otherSprints.length > 0
-                  ? otherSprints.map((s) => `<option value="${s.id}">${s.name} (${s.status})</option>`).join('')
+                  ? otherSprints.map((s) => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)} (${escapeHtml(s.status)})</option>`).join('')
                   : '<option value="">No other sprint (Will be unassigned)</option>'
               }
             </select>
@@ -784,8 +785,8 @@ export const AgileBoardModule = {
       <div>
         <div class="d-flex justify-content-between align-items-center mb-3">
           <div>
-            <h6 class="mb-0 font-bold">${sprint.name} Burndown</h6>
-            <span class="text-muted" style="font-size: 0.75rem;">${sprint.startDate} to ${sprint.endDate}</span>
+            <h6 class="mb-0 font-bold">${escapeHtml(sprint.name)} Burndown</h6>
+            <span class="text-muted" style="font-size: 0.75rem;">${escapeHtml(sprint.startDate)} to ${escapeHtml(sprint.endDate)}</span>
           </div>
           <div class="btn-group btn-group-sm" role="group">
             <button type="button" class="btn btn-outline-primary active" id="burndown-metric-points">Points</button>
@@ -881,8 +882,8 @@ export const AgileBoardModule = {
                   .map(
                     (m) => `
                   <tr>
-                    <td class="font-bold">${m.userName}</td>
-                    <td class="text-muted" style="font-size: 0.8rem;">${m.role}</td>
+                    <td class="font-bold">${escapeHtml(m.userName)}</td>
+                    <td class="text-muted" style="font-size: 0.8rem;">${escapeHtml(m.role)}</td>
                     <td>${m.availableHours}h</td>
                     <td>${m.committedHours}h</td>
                     <td>${m.remainingHours}h</td>
@@ -901,7 +902,7 @@ export const AgileBoardModule = {
         </div>
       `;
 
-      this.app?.openModal(`Sprint Capacity: ${sprint.name}`, bodyHtml);
+      this.app?.openModal(`Sprint Capacity: ${escapeHtml(sprint.name)}`, bodyHtml);
     } catch (err) {
       this.app?.showToast(`Failed loading capacity: ${err.message}`, 'danger');
     }
@@ -950,7 +951,7 @@ export const AgileBoardModule = {
           <label class="form-label font-bold">Assignee</label>
           <select class="form-select" id="quick-add-assignee">
             <option value="">Unassigned</option>
-            ${this.users.map((u) => `<option value="${u.id}">${u.firstName} ${u.lastName} (${u.role})</option>`).join('')}
+            ${this.users.map((u) => `<option value="${u.id}">${escapeHtml(u.firstName)} ${escapeHtml(u.lastName)} (${u.role})</option>`).join('')}
           </select>
         </div>
       </div>
@@ -1029,24 +1030,24 @@ export const AgileBoardModule = {
 
           <div class="d-flex justify-content-between align-items-center mb-3">
             <div>
-              <span class="badge ${itemType === 'story' ? 'bg-primary' : 'bg-success'} me-1">${item.code}</span>
-              <span class="badge bg-secondary">${item.status}</span>
-              <span class="badge bg-light text-dark border ms-1">${item.priority}</span>
+              <span class="badge ${itemType === 'story' ? 'bg-primary' : 'bg-success'} me-1">${escapeHtml(item.code)}</span>
+              <span class="badge bg-secondary">${escapeHtml(item.status)}</span>
+              <span class="badge bg-light text-dark border ms-1">${escapeHtml(item.priority)}</span>
             </div>
-            <span class="font-bold text-primary">${itemType === 'story' ? `${item.storyPoints || 0} pts` : `${item.estimatedEffortHrs || 0}h`}</span>
+            <span class="font-bold text-primary">${itemType === 'story' ? `${escapeHtml(item.storyPoints || 0)} pts` : `${escapeHtml(item.estimatedEffortHrs || 0)}h`}</span>
           </div>
 
-          <h5 class="font-bold mb-2">${item.title}</h5>
-          <p class="text-muted mb-3" style="font-size: 0.9rem;">${item.description || 'No description provided.'}</p>
+          <h5 class="font-bold mb-2">${escapeHtml(item.title)}</h5>
+          <p class="text-muted mb-3" style="font-size: 0.9rem;">${escapeHtml(item.description || 'No description provided.')}</p>
 
           ${
             item.userStory
               ? `
             <div class="card p-3 mb-3 bg-light border-0">
               <span class="font-bold text-primary mb-1" style="font-size: 0.75rem; text-transform: uppercase;">User Story Specification:</span>
-              <p class="mb-1" style="font-size: 0.85rem;"><strong>As a</strong> ${item.userStory.asA}</p>
-              <p class="mb-1" style="font-size: 0.85rem;"><strong>I want</strong> ${item.userStory.iWant}</p>
-              <p class="mb-0" style="font-size: 0.85rem;"><strong>So that</strong> ${item.userStory.soThat}</p>
+              <p class="mb-1" style="font-size: 0.85rem;"><strong>As a</strong> ${escapeHtml(item.userStory.asA)}</p>
+              <p class="mb-1" style="font-size: 0.85rem;"><strong>I want</strong> ${escapeHtml(item.userStory.iWant)}</p>
+              <p class="mb-0" style="font-size: 0.85rem;"><strong>So that</strong> ${escapeHtml(item.userStory.soThat)}</p>
             </div>
           `
               : ''
@@ -1056,20 +1057,20 @@ export const AgileBoardModule = {
             <div class="col-6">
               <label class="form-label font-bold" style="font-size: 0.75rem;">Assignee</label>
               <div class="p-2 border rounded bg-white text-muted" style="font-size: 0.85rem;">
-                <i class="fa-solid fa-user me-1"></i> ${item.assigneeName || 'Unassigned'}
+                <i class="fa-solid fa-user me-1"></i> ${escapeHtml(item.assigneeName || 'Unassigned')}
               </div>
             </div>
             <div class="col-6">
               <label class="form-label font-bold" style="font-size: 0.75rem;">Sprint</label>
               <div class="p-2 border rounded bg-white text-muted" style="font-size: 0.85rem;">
-                <i class="fa-solid fa-person-running me-1"></i> ${item.sprint || 'None'}
+                <i class="fa-solid fa-person-running me-1"></i> ${escapeHtml(item.sprint || 'None')}
               </div>
             </div>
           </div>
         </div>
       `;
 
-      this.app?.openModal(`Work Item Details: ${item.code}`, bodyHtml);
+      this.app?.openModal(`Work Item Details: ${escapeHtml(item.code)}`, bodyHtml);
     } catch (err) {
       this.app?.showToast(`Error opening item: ${err.message}`, 'danger');
     }

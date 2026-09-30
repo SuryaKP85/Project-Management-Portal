@@ -1,5 +1,6 @@
 import { Task } from '../models/types';
 import { isDbConnected, query } from '../config/database';
+import { duplicateRecordError } from './recordConflict';
 import { SubtaskRepository } from './subtaskRepository';
 import { calculateTaskProgress } from '../services/progressCalculator';
 
@@ -322,6 +323,8 @@ export const TaskRepository = {
   },
 
   async create(task: Task): Promise<Task> {
+    // Sprint 16: never overwrite an existing record (both modes; findById reads PostgreSQL when connected).
+    if (await this.findById(task.id)) throw duplicateRecordError('task', task.id);
     if (isDbConnected()) {
       const q = `
         INSERT INTO tasks (

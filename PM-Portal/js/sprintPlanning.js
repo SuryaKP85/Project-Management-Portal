@@ -4,6 +4,7 @@
  */
 
 import { BacklogService } from './services/backlogService.js';
+import { escapeHtml } from './safeHtml.js';
 import { SprintService } from './services/sprintService.js';
 import { StoryService } from './services/storyService.js';
 import { TaskService } from './services/taskService.js';
@@ -327,7 +328,7 @@ export const SprintPlanningModule = {
               </div>
               <div class="search-bar" style="max-width: 180px;">
                 <i class="fa-solid fa-magnifying-glass"></i>
-                <input type="text" id="backlog-search-input" placeholder="Search..." value="${this.searchQuery}" />
+                <input type="text" id="backlog-search-input" placeholder="Search..." value="${escapeHtml(this.searchQuery)}" />
               </div>
             </div>
 
@@ -360,16 +361,16 @@ export const SprintPlanningModule = {
                 </span>
                 <div class="dropdown">
                   <button class="btn btn-sm btn-outline-dark dropdown-toggle font-bold" type="button" data-bs-toggle="dropdown">
-                    ${sprint ? `${sprint.name} (${sprint.status})` : 'Select Sprint'}
+                    ${sprint ? `${escapeHtml(sprint.name)} (${escapeHtml(sprint.status)})` : 'Select Sprint'}
                   </button>
                   <ul class="dropdown-menu shadow">
                     ${this.sprints
                       .map(
                         (s) => `
                       <li>
-                        <a class="dropdown-item d-flex justify-content-between align-items-center ${sprint && s.id === sprint.id ? 'active' : ''}" href="#" data-action="switch-sprint" data-sprint-id="${s.id}">
-                          <span>${s.name}</span>
-                          <span class="badge ${s.status === 'active' ? 'bg-success' : s.status === 'completed' ? 'bg-secondary' : 'bg-warning text-dark'} ms-2" style="font-size: 0.65rem;">${s.status}</span>
+                        <a class="dropdown-item d-flex justify-content-between align-items-center ${sprint && s.id === sprint.id ? 'active' : ''}" href="#" data-action="switch-sprint" data-sprint-id="${escapeHtml(s.id)}">
+                          <span>${escapeHtml(s.name)}</span>
+                          <span class="badge ${s.status === 'active' ? 'bg-success' : s.status === 'completed' ? 'bg-secondary' : 'bg-warning text-dark'} ms-2" style="font-size: 0.65rem;">${escapeHtml(s.status)}</span>
                         </a>
                       </li>
                     `
@@ -398,16 +399,16 @@ export const SprintPlanningModule = {
               <div class="p-3 border-bottom bg-light">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                   <div>
-                    <span class="badge bg-light text-dark border font-mono font-bold">${sprint.code}</span>
+                    <span class="badge bg-light text-dark border font-mono font-bold">${escapeHtml(sprint.code)}</span>
                     <span class="badge ${sprint.status === 'active' ? 'bg-success' : sprint.status === 'completed' ? 'bg-secondary' : 'bg-warning text-dark'} ms-1">
-                      ${sprint.status.toUpperCase()}
+                      ${escapeHtml(sprint.status.toUpperCase())}
                     </span>
                     <span class="text-muted ms-2" style="font-size: 0.8rem;">
-                      <i class="fa-regular fa-calendar me-1"></i> ${sprint.startDate} to ${sprint.endDate}
+                      <i class="fa-regular fa-calendar me-1"></i> ${escapeHtml(sprint.startDate)} to ${escapeHtml(sprint.endDate)}
                     </span>
                   </div>
                   <div class="text-end font-mono font-bold" style="font-size: 0.85rem;">
-                    <span>Committed: <strong class="text-primary">${committedPoints}</strong> / ${sprint.capacityPoints || 40} pts</span>
+                    <span>Committed: <strong class="text-primary">${committedPoints}</strong> / ${escapeHtml(sprint.capacityPoints || 40)} pts</span>
                   </div>
                 </div>
 
@@ -420,14 +421,14 @@ export const SprintPlanningModule = {
                     ? `
                   <div class="alert alert-danger py-1 px-2 mb-0 d-flex align-items-center gap-2" style="font-size: 0.75rem;">
                     <i class="fa-solid fa-triangle-exclamation"></i>
-                    <span><strong>Over Capacity Warning:</strong> Committed points (${committedPoints}) exceed sprint target capacity (${sprint.capacityPoints || 40} pts).</span>
+                    <span><strong>Over Capacity Warning:</strong> Committed points (${committedPoints}) exceed sprint target capacity (${escapeHtml(sprint.capacityPoints || 40)} pts).</span>
                   </div>
                 `
                     : ''
                 }
 
                 <div class="d-flex justify-content-between mt-2 pt-2 border-top text-muted" style="font-size: 0.75rem;">
-                  <span><strong>Goal:</strong> ${sprint.goal || 'No goal set'}</span>
+                  <span><strong>Goal:</strong> ${escapeHtml(sprint.goal || 'No goal set')}</span>
                   <span><strong>Hours:</strong> ${committedHours} / ${sprint.capacityHours || 160}h</span>
                 </div>
               </div>
@@ -462,7 +463,7 @@ export const SprintPlanningModule = {
     const isStory = item.itemType === 'story';
     const code = item.code || (isStory ? 'STR' : 'TSK');
     const priority = item.priority || 'medium';
-    const pointsOrHours = isStory ? `${item.storyPoints || 0} pts` : `${item.estimatedEffortHrs || 0}h`;
+    const pointsOrHours = isStory ? `${escapeHtml(item.storyPoints || 0)} pts` : `${escapeHtml(item.estimatedEffortHrs || 0)}h`;
 
     const priorityBadgeClass =
       priority === 'critical' ? 'bg-danger' : priority === 'high' ? 'bg-warning text-dark' : priority === 'medium' ? 'bg-info text-dark' : 'bg-secondary';
@@ -471,13 +472,13 @@ export const SprintPlanningModule = {
       <div class="card p-2 shadow-sm border rounded bg-white backlog-item-card">
         <div class="d-flex align-items-center gap-2">
           <!-- Reorder & Selection controls -->
-          <input type="checkbox" class="form-check-input backlog-select-checkbox" data-item-id="${item.id}" ${this.selectedBacklogIds.has(item.id) ? 'checked' : ''} />
+          <input type="checkbox" class="form-check-input backlog-select-checkbox" data-item-id="${escapeHtml(item.id)}" ${this.selectedBacklogIds.has(item.id) ? 'checked' : ''} />
           
           <div class="d-flex flex-column">
-            <button class="btn btn-sm btn-link p-0 text-muted" data-action="move-backlog-up" data-item-id="${item.id}" ${index === 0 ? 'disabled' : ''} title="Move Up">
+            <button class="btn btn-sm btn-link p-0 text-muted" data-action="move-backlog-up" data-item-id="${escapeHtml(item.id)}" ${index === 0 ? 'disabled' : ''} title="Move Up">
               <i class="fa-solid fa-caret-up"></i>
             </button>
-            <button class="btn btn-sm btn-link p-0 text-muted" data-action="move-backlog-down" data-item-id="${item.id}" ${index === totalLength - 1 ? 'disabled' : ''} title="Move Down">
+            <button class="btn btn-sm btn-link p-0 text-muted" data-action="move-backlog-down" data-item-id="${escapeHtml(item.id)}" ${index === totalLength - 1 ? 'disabled' : ''} title="Move Down">
               <i class="fa-solid fa-caret-down"></i>
             </button>
           </div>
@@ -485,22 +486,22 @@ export const SprintPlanningModule = {
           <div class="flex-grow-1 ms-1">
             <div class="d-flex justify-content-between align-items-center mb-1">
               <div class="d-flex align-items-center gap-1">
-                <span class="badge ${isStory ? 'bg-primary' : 'bg-success'}" style="font-size: 0.65rem;">${code}</span>
-                <span class="badge ${priorityBadgeClass}" style="font-size: 0.6rem;">${priority}</span>
+                <span class="badge ${isStory ? 'bg-primary' : 'bg-success'}" style="font-size: 0.65rem;">${escapeHtml(code)}</span>
+                <span class="badge ${priorityBadgeClass}" style="font-size: 0.6rem;">${escapeHtml(priority)}</span>
               </div>
-              <span class="badge bg-light text-dark border font-mono" style="font-size: 0.65rem;">${pointsOrHours}</span>
+              <span class="badge bg-light text-dark border font-mono" style="font-size: 0.65rem;">${escapeHtml(pointsOrHours)}</span>
             </div>
 
-            <div class="font-bold text-dark" style="font-size: 0.85rem;">${item.title}</div>
+            <div class="font-bold text-dark" style="font-size: 0.85rem;">${escapeHtml(item.title)}</div>
             
             <div class="d-flex justify-content-between align-items-center mt-1 text-muted" style="font-size: 0.7rem;">
-              <span>${item.featureName ? `<i class="fa-solid fa-puzzle-piece text-info me-1"></i>${item.featureName}` : 'No Feature'}</span>
-              <span><i class="fa-solid fa-user me-1"></i>${item.assigneeName || 'Unassigned'}</span>
+              <span>${item.featureName ? `<i class="fa-solid fa-puzzle-piece text-info me-1"></i>${escapeHtml(item.featureName)}` : 'No Feature'}</span>
+              <span><i class="fa-solid fa-user me-1"></i>${escapeHtml(item.assigneeName || 'Unassigned')}</span>
             </div>
           </div>
 
           <!-- Add to sprint button -->
-          <button class="btn btn-sm btn-outline-primary ms-2" data-action="add-to-sprint" data-item-id="${item.id}" data-item-type="${item.itemType}" title="Move to Sprint">
+          <button class="btn btn-sm btn-outline-primary ms-2" data-action="add-to-sprint" data-item-id="${escapeHtml(item.id)}" data-item-type="${escapeHtml(item.itemType)}" title="Move to Sprint">
             <i class="fa-solid fa-plus"></i>
           </button>
         </div>
@@ -512,22 +513,22 @@ export const SprintPlanningModule = {
     const isStory = itemType === 'story';
     const code = item.code || (isStory ? 'STR' : 'TSK');
     const priority = item.priority || 'medium';
-    const pointsOrHours = isStory ? `${item.storyPoints || 0} pts` : `${item.estimatedEffortHrs || 0}h`;
+    const pointsOrHours = isStory ? `${escapeHtml(item.storyPoints || 0)} pts` : `${escapeHtml(item.estimatedEffortHrs || 0)}h`;
 
     return `
       <div class="card p-2 shadow-sm border rounded bg-white">
         <div class="d-flex justify-content-between align-items-center">
           <div class="d-flex align-items-center gap-2">
-            <span class="badge ${isStory ? 'bg-primary' : 'bg-success'}" style="font-size: 0.65rem;">${code}</span>
+            <span class="badge ${isStory ? 'bg-primary' : 'bg-success'}" style="font-size: 0.65rem;">${escapeHtml(code)}</span>
             <div>
-              <div class="font-bold text-dark" style="font-size: 0.85rem;">${item.title}</div>
-              <span class="text-muted" style="font-size: 0.7rem;">${item.assigneeName || 'Unassigned'} &bull; Status: ${item.status}</span>
+              <div class="font-bold text-dark" style="font-size: 0.85rem;">${escapeHtml(item.title)}</div>
+              <span class="text-muted" style="font-size: 0.7rem;">${escapeHtml(item.assigneeName || 'Unassigned')} &bull; Status: ${escapeHtml(item.status)}</span>
             </div>
           </div>
 
           <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-light text-dark border font-mono">${pointsOrHours}</span>
-            <button class="btn btn-sm btn-outline-danger p-1" data-action="remove-from-sprint" data-item-id="${item.id}" data-item-type="${itemType}" title="Return to Backlog">
+            <span class="badge bg-light text-dark border font-mono">${escapeHtml(pointsOrHours)}</span>
+            <button class="btn btn-sm btn-outline-danger p-1" data-action="remove-from-sprint" data-item-id="${escapeHtml(item.id)}" data-item-type="${itemType}" title="Return to Backlog">
               <i class="fa-solid fa-xmark"></i>
             </button>
           </div>

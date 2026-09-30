@@ -17,6 +17,7 @@ import { RiskService } from './services/riskService.js';
 import { IssueService } from './services/issueService.js';
 import { DependencyService } from './services/dependencyService.js';
 import { AIInsightsModule } from './aiInsights.js';
+import { escapeHtml, safeHttpsUrl, cssToken, percent, dataArgs } from './safeHtml.js';
 import { jiraLinkHtml, loadJiraLinkConfig, projectLinkReference, isValidProjectJiraLink, resolveJiraReference } from './jiraLinks.js';
 
 export const ProjectsModule = {
@@ -794,7 +795,7 @@ export const ProjectsModule = {
       const currentVal = el.value || 'all';
       el.innerHTML = `<option value="all">${label}</option>`;
       values.forEach(v => {
-        el.innerHTML += `<option value="${v}">${v}</option>`;
+        el.innerHTML += `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`;
       });
       el.value = currentVal;
     };
@@ -996,7 +997,7 @@ export const ProjectsModule = {
       // Build HD / Links
       let linksHtml = '';
       if (p.hd) {
-        linksHtml += `<div style="font-size: 0.75rem;"><span class="badge bg-light text-dark border font-mono me-1"><i class="fa-solid fa-headset text-primary me-1"></i>${p.hd}</span></div>`;
+        linksHtml += `<div style="font-size: 0.75rem;"><span class="badge bg-light text-dark border font-mono me-1"><i class="fa-solid fa-headset text-primary me-1"></i>${escapeHtml(p.hd)}</span></div>`;
       }
       const jiraArr = Array.isArray(p.jiraLinks) ? p.jiraLinks : (p.jiraLinks ? [p.jiraLinks] : []);
       if (jiraArr.length > 0) {
@@ -1016,49 +1017,53 @@ export const ProjectsModule = {
         linksHtml += `</div>`;
       }
       if (p.confluenceLink) {
-        linksHtml += `<div class="mt-1"><a href="${p.confluenceLink}" target="_blank" class="badge bg-info-subtle text-info-emphasis text-decoration-none" style="font-size: 0.7rem;" title="${p.confluenceLink}"><i class="fa-brands fa-confluence me-1"></i>Confluence</a></div>`;
+        // Sprint 16: only an https link is clickable (escaped, new tab, noopener); anything else is inert text.
+        const confluence = safeHttpsUrl(String(p.confluenceLink));
+        linksHtml += confluence
+          ? `<div class="mt-1"><a href="${escapeHtml(confluence)}" target="_blank" rel="noopener noreferrer" class="badge bg-info-subtle text-info-emphasis text-decoration-none" style="font-size: 0.7rem;" title="${escapeHtml(confluence)}"><i class="fa-brands fa-confluence me-1"></i>Confluence</a></div>`
+          : '<div class="mt-1"><span class="badge bg-light text-secondary border" style="font-size: 0.7rem;" title="Not an https link, so it is not opened."><i class="fa-brands fa-confluence me-1"></i>Confluence link blocked</span></div>';
       }
       if (!linksHtml) linksHtml = '<span class="text-muted" style="font-size: 0.75rem;">-</span>';
 
       tr.innerHTML = `
         <td class="row-checkbox-cell" style="padding: 14px 10px 14px 20px;">
-          <input type="checkbox" class="form-check-input project-row-checkbox" data-id="${p.id}" ${isSelected ? 'checked' : ''} />
+          <input type="checkbox" class="form-check-input project-row-checkbox" data-id="${escapeHtml(p.id)}" ${isSelected ? 'checked' : ''} />
         </td>
-        <td class="clickable-project-cell" data-id="${p.id}"><div class="table-project-title text-primary font-bold" style="font-size: 0.85rem;">${p.sow || p.id}</div></td>
-        <td class="clickable-project-cell" data-id="${p.id}">
+        <td class="clickable-project-cell" data-id="${escapeHtml(p.id)}"><div class="table-project-title text-primary font-bold" style="font-size: 0.85rem;">${escapeHtml(p.sow || p.id)}</div></td>
+        <td class="clickable-project-cell" data-id="${escapeHtml(p.id)}">
           <div class="table-project-cell">
-            <span class="table-project-title font-semibold" style="font-size: 0.9rem;">${p.name}</span>
+            <span class="table-project-title font-semibold" style="font-size: 0.9rem;">${escapeHtml(p.name)}</span>
             <div class="d-flex align-items-center gap-1 flex-wrap">
-              <span class="table-project-client" style="font-size: 0.75rem;"><i class="fa-solid fa-building me-1"></i> ${p.client}</span>
-              ${p.productName || p.productId ? `<span class="badge bg-light text-primary border" style="font-size: 0.68rem;"><i class="fa-solid fa-cube me-1"></i>${p.productName || p.productId}</span>` : ''}
+              <span class="table-project-client" style="font-size: 0.75rem;"><i class="fa-solid fa-building me-1"></i> ${escapeHtml(p.client)}</span>
+              ${p.productName || p.productId ? `<span class="badge bg-light text-primary border" style="font-size: 0.68rem;"><i class="fa-solid fa-cube me-1"></i>${escapeHtml(p.productName || p.productId)}</span>` : ''}
             </div>
           </div>
         </td>
-        <td class="clickable-project-cell" data-id="${p.id}"><span class="text-secondary-custom font-semibold">${p.manager || 'Surya Prashanth'}</span></td>
-        <td class="clickable-project-cell" data-id="${p.id}"><span class="text-secondary-custom font-semibold">${p.productManager || '-'}</span></td>
-        <td class="clickable-project-cell" data-id="${p.id}">${linksHtml}</td>
-        <td class="clickable-project-cell" data-id="${p.id}"><span class="badge ${riskClass}" style="font-size: 0.725rem; font-weight: 600; padding: 4px 8px;">${p.risk || 'Low'}</span></td>
-        <td class="clickable-project-cell" data-id="${p.id}">
+        <td class="clickable-project-cell" data-id="${escapeHtml(p.id)}"><span class="text-secondary-custom font-semibold">${escapeHtml(p.manager || 'Surya Prashanth')}</span></td>
+        <td class="clickable-project-cell" data-id="${escapeHtml(p.id)}"><span class="text-secondary-custom font-semibold">${escapeHtml(p.productManager || '-')}</span></td>
+        <td class="clickable-project-cell" data-id="${escapeHtml(p.id)}">${linksHtml}</td>
+        <td class="clickable-project-cell" data-id="${escapeHtml(p.id)}"><span class="badge ${riskClass}" style="font-size: 0.725rem; font-weight: 600; padding: 4px 8px;">${escapeHtml(p.risk || 'Low')}</span></td>
+        <td class="clickable-project-cell" data-id="${escapeHtml(p.id)}">
           <div class="d-flex align-items-center gap-2">
             <span class="table-progress-bar" style="width: 80px;">
-              <span class="table-progress-fill" style="width: ${p.progress}%; background-color: ${fillCol}"></span>
+              <span class="table-progress-fill" style="width: ${percent(p.progress)}%; background-color: ${fillCol}"></span>
             </span>
-            <span class="font-bold text-secondary" style="font-size: 0.75rem;">${p.progress}%</span>
+            <span class="font-bold text-secondary" style="font-size: 0.75rem;">${percent(p.progress)}%</span>
           </div>
         </td>
-        <td class="clickable-project-cell font-semibold" data-id="${p.id}">$${Number(p.budget || 0).toLocaleString()}</td>
-        <td class="clickable-project-cell" data-id="${p.id}"><span class="status-badge ${p.status}">${p.status === 'awaiting-sow-sign-off' ? 'Awaiting SOW sign off' : (p.status || '').replace(/-/g, ' ')}</span></td>
+        <td class="clickable-project-cell font-semibold" data-id="${escapeHtml(p.id)}">$${Number(p.budget || 0).toLocaleString()}</td>
+        <td class="clickable-project-cell" data-id="${escapeHtml(p.id)}"><span class="status-badge ${cssToken(p.status)}">${p.status === 'awaiting-sow-sign-off' ? 'Awaiting SOW sign off' : escapeHtml((p.status || '').replace(/-/g, ' '))}</span></td>
         <td style="text-align: right; white-space: nowrap;">
-          <button class="btn btn-sm btn-light border p-1 px-2 btn-row-edit" data-id="${p.id}" title="Edit Project Details">
+          <button class="btn btn-sm btn-light border p-1 px-2 btn-row-edit" data-id="${escapeHtml(p.id)}" title="Edit Project Details">
             <i class="fa-solid fa-pencil text-secondary" style="font-size: 0.8rem;"></i>
           </button>
-          <button class="btn btn-sm btn-light border p-1 px-2 btn-row-duplicate" data-id="${p.id}" title="Duplicate Project">
+          <button class="btn btn-sm btn-light border p-1 px-2 btn-row-duplicate" data-id="${escapeHtml(p.id)}" title="Duplicate Project">
             <i class="fa-regular fa-copy text-secondary" style="font-size: 0.8rem;"></i>
           </button>
-          <button class="btn btn-sm btn-light border p-1 px-2 btn-row-archive" data-id="${p.id}" title="Archive Project">
+          <button class="btn btn-sm btn-light border p-1 px-2 btn-row-archive" data-id="${escapeHtml(p.id)}" title="Archive Project">
             <i class="fa-solid fa-box-archive text-secondary" style="font-size: 0.8rem;"></i>
           </button>
-          <button class="btn btn-sm btn-light border p-1 px-2 btn-row-delete" data-id="${p.id}" title="Delete Project">
+          <button class="btn btn-sm btn-light border p-1 px-2 btn-row-delete" data-id="${escapeHtml(p.id)}" title="Delete Project">
             <i class="fa-regular fa-trash-can text-danger" style="font-size: 0.8rem;"></i>
           </button>
         </td>
@@ -1478,7 +1483,7 @@ export const ProjectsModule = {
             <div class="mb-2"><i class="fa-solid fa-crown fa-2x text-secondary" style="opacity: 0.4;"></i></div>
             <h6 class="fw-bold">No Epics Created for This Project Yet</h6>
             <p class="small text-muted mb-3">Epics group large feature capabilities and establish the delivery management hierarchy.</p>
-            <button type="button" class="btn btn-primary btn-sm" onclick="window.portalDeliveryModule && window.portalDeliveryModule.openEpicModal(null, '${projectId}')">
+            <button type="button" class="btn btn-primary btn-sm" data-dv-action="openEpicModal" data-args="${dataArgs(null, projectId)}">
               <i class="fa-solid fa-plus me-1"></i> Add First Epic
             </button>
           </div>
@@ -1495,25 +1500,25 @@ export const ProjectsModule = {
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                   <div class="d-flex align-items-center gap-2">
                     <span class="badge bg-purple-subtle text-purple fw-bold font-monospace" style="background-color: rgba(139, 92, 246, 0.15); color: #7c3aed;">
-                      <i class="fa-solid fa-crown me-1"></i>${epic.code || 'EPIC'}
+                      <i class="fa-solid fa-crown me-1"></i>${escapeHtml(epic.code || 'EPIC')}
                     </span>
-                    <strong class="text-dark">${epic.name}</strong>
-                    <span class="badge bg-light text-secondary border small text-capitalize">${epic.status}</span>
-                    <span class="badge bg-light text-secondary border small text-capitalize">${epic.priority}</span>
+                    <strong class="text-dark">${escapeHtml(epic.name)}</strong>
+                    <span class="badge bg-light text-secondary border small text-capitalize">${escapeHtml(epic.status)}</span>
+                    <span class="badge bg-light text-secondary border small text-capitalize">${escapeHtml(epic.priority)}</span>
                     ${jiraLinkHtml(epic, { prefix: false })}
                   </div>
                   <div class="d-flex align-items-center gap-3">
                     <div class="d-flex align-items-center gap-2" style="width: 140px;">
                       <div class="progress flex-grow-1" style="height: 6px;">
-                        <div class="progress-bar bg-success" style="width: ${epic.progress || 0}%"></div>
+                        <div class="progress-bar bg-success" style="width: ${percent(epic.progress)}%"></div>
                       </div>
-                      <span class="small fw-bold text-muted">${epic.progress || 0}%</span>
+                      <span class="small fw-bold text-muted">${percent(epic.progress)}%</span>
                     </div>
                     <div class="btn-group btn-group-sm">
-                      <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" title="Add Feature" onclick="window.portalDeliveryModule && window.portalDeliveryModule.openFeatureModal(null, '${epic.id}', '${projectId}')">
+                      <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" title="Add Feature" data-dv-action="openFeatureModal" data-args="${dataArgs(null, epic.id, projectId)}">
                         <i class="fa-solid fa-plus"></i> Feature
                       </button>
-                      <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" title="Trace Lineage" onclick="window.portalDeliveryModule && window.portalDeliveryModule.inspectTrace('epic', '${epic.id}')">
+                      <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" title="Trace Lineage" data-dv-action="inspectTrace" data-args="${dataArgs('epic', epic.id)}">
                         <i class="fa-solid fa-route"></i>
                       </button>
                     </div>
@@ -1529,17 +1534,17 @@ export const ProjectsModule = {
                         <div class="border-start border-3 border-info ps-2.5 mb-2 py-1 bg-light rounded">
                           <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                             <div class="d-flex align-items-center gap-2">
-                              <span class="badge bg-info-subtle text-info fw-bold font-monospace"><i class="fa-solid fa-puzzle-piece me-1"></i>${feature.code || 'FEAT'}</span>
-                              <span class="fw-semibold small">${feature.name}</span>
-                              <span class="badge bg-white text-secondary border small text-capitalize">${feature.status}</span>
+                              <span class="badge bg-info-subtle text-info fw-bold font-monospace"><i class="fa-solid fa-puzzle-piece me-1"></i>${escapeHtml(feature.code || 'FEAT')}</span>
+                              <span class="fw-semibold small">${escapeHtml(feature.name)}</span>
+                              <span class="badge bg-white text-secondary border small text-capitalize">${escapeHtml(feature.status)}</span>
                               ${jiraLinkHtml(feature, { prefix: false })}
                             </div>
                             <div class="d-flex align-items-center gap-2">
-                              <span class="small text-muted">${feature.progress || 0}%</span>
-                              <button type="button" class="btn btn-outline-primary btn-xs py-0 px-1.5 text-xs" onclick="window.portalDeliveryModule && window.portalDeliveryModule.openStoryModal(null, '${feature.id}', '${projectId}')">
+                              <span class="small text-muted">${percent(feature.progress)}%</span>
+                              <button type="button" class="btn btn-outline-primary btn-xs py-0 px-1.5 text-xs" data-dv-action="openStoryModal" data-args="${dataArgs(null, feature.id, projectId)}">
                                 <i class="fa-solid fa-plus"></i> Story
                               </button>
-                              <button type="button" class="btn btn-outline-secondary btn-xs py-0 px-1.5 text-xs" onclick="window.portalDeliveryModule && window.portalDeliveryModule.inspectTrace('feature', '${feature.id}')">
+                              <button type="button" class="btn btn-outline-secondary btn-xs py-0 px-1.5 text-xs" data-dv-action="inspectTrace" data-args="${dataArgs('feature', feature.id)}">
                                 <i class="fa-solid fa-route"></i>
                               </button>
                             </div>
@@ -1553,17 +1558,17 @@ export const ProjectsModule = {
                                 return `
                                   <div class="d-flex justify-content-between align-items-center py-1 border-bottom border-light">
                                     <div class="d-flex align-items-center gap-2">
-                                      <span class="badge bg-warning-subtle text-warning font-monospace small">${story.code || 'STR'}</span>
-                                      <span class="small fw-semibold text-dark">${story.title}</span>
-                                      ${story.storyPoints ? `<span class="badge bg-white text-secondary border small">${story.storyPoints} pts</span>` : ''}
+                                      <span class="badge bg-warning-subtle text-warning font-monospace small">${escapeHtml(story.code || 'STR')}</span>
+                                      <span class="small fw-semibold text-dark">${escapeHtml(story.title)}</span>
+                                      ${story.storyPoints ? `<span class="badge bg-white text-secondary border small">${escapeHtml(story.storyPoints)} pts</span>` : ''}
                                       ${jiraLinkHtml(story, { prefix: false })}
                                     </div>
                                     <div class="d-flex align-items-center gap-2">
                                       <span class="small text-muted">${storyTasks.length} tasks</span>
-                                      <button type="button" class="btn btn-outline-primary btn-xs py-0 px-1 text-xs" onclick="window.portalDeliveryModule && window.portalDeliveryModule.openTaskModal(null, '${story.id}', '${projectId}')">
+                                      <button type="button" class="btn btn-outline-primary btn-xs py-0 px-1 text-xs" data-dv-action="openTaskModal" data-args="${dataArgs(null, story.id, projectId)}">
                                         <i class="fa-solid fa-plus"></i> Task
                                       </button>
-                                      <button type="button" class="btn btn-outline-secondary btn-xs py-0 px-1 text-xs" onclick="window.portalDeliveryModule && window.portalDeliveryModule.inspectTrace('story', '${story.id}')">
+                                      <button type="button" class="btn btn-outline-secondary btn-xs py-0 px-1 text-xs" data-dv-action="inspectTrace" data-args="${dataArgs('story', story.id)}">
                                         <i class="fa-solid fa-route"></i>
                                       </button>
                                     </div>
@@ -1727,7 +1732,7 @@ export const ProjectsModule = {
       container.innerHTML = `
         <div class="p-3 text-center rounded" style="background-color: var(--bg-light); border: 1px dashed var(--border-color);" role="alert">
           <i class="fa-solid ${icon} me-1"></i>
-          <span class="text-xs text-secondary">${message}</span>
+          <span class="text-xs text-secondary">${escapeHtml(message)}</span>
         </div>
       `;
     }
@@ -1798,26 +1803,26 @@ export const ProjectsModule = {
                 const sev = severityStyles[r.severity] || severityStyles.Low;
                 return `
                   <tr>
-                    <td><span class="badge bg-secondary-subtle text-secondary font-monospace">${r.code || 'RSK-?'}</span></td>
+                    <td><span class="badge bg-secondary-subtle text-secondary font-monospace">${escapeHtml(r.code || 'RSK-?')}</span></td>
                     <td>
-                      <div class="fw-bold">${r.title}</div>
-                      ${r.mitigationPlan ? `<div class="text-xs text-secondary text-truncate" style="max-width: 300px;">Plan: ${r.mitigationPlan}</div>` : ''}
+                      <div class="fw-bold">${escapeHtml(r.title)}</div>
+                      ${r.mitigationPlan ? `<div class="text-xs text-secondary text-truncate" style="max-width: 300px;">Plan: ${escapeHtml(r.mitigationPlan)}</div>` : ''}
                     </td>
-                    <td><span class="badge bg-light text-dark border">${r.category}</span></td>
-                    <td style="text-align: center;"><span class="fw-semibold">${r.probability} × ${r.impact}</span></td>
+                    <td><span class="badge bg-light text-dark border">${escapeHtml(r.category)}</span></td>
+                    <td style="text-align: center;"><span class="fw-semibold">${escapeHtml(r.probability)} × ${escapeHtml(r.impact)}</span></td>
                     <td style="text-align: center;">
                       <span class="badge" style="background-color: ${sev.bg}; color: ${sev.text}; border: 1px solid ${sev.border};">
-                        ${r.riskScore} — ${r.severity}
+                        ${escapeHtml(r.riskScore)} — ${escapeHtml(r.severity)}
                       </span>
                     </td>
-                    <td style="text-align: center;"><span class="badge bg-secondary">${r.status}</span></td>
-                    <td><span class="text-xs text-secondary">${r.targetResolutionDate ? r.targetResolutionDate.split('T')[0] : '—'}</span></td>
+                    <td style="text-align: center;"><span class="badge bg-secondary">${escapeHtml(r.status)}</span></td>
+                    <td><span class="text-xs text-secondary">${r.targetResolutionDate ? escapeHtml(String(r.targetResolutionDate).split('T')[0]) : '—'}</span></td>
                     <td style="text-align: center;">
                       <div class="btn-group btn-group-sm">
-                        <button class="btn btn-outline-secondary btn-proj-view-risk" data-id="${r.id}" title="View Risk">
+                        <button class="btn btn-outline-secondary btn-proj-view-risk" data-id="${escapeHtml(r.id)}" title="View Risk">
                           <i class="fa-solid fa-eye"></i>
                         </button>
-                        <button class="btn btn-outline-secondary btn-proj-edit-risk" data-id="${r.id}" title="Edit Risk">
+                        <button class="btn btn-outline-secondary btn-proj-edit-risk" data-id="${escapeHtml(r.id)}" title="Edit Risk">
                           <i class="fa-solid fa-pen-to-square"></i>
                         </button>
                       </div>
@@ -1848,7 +1853,7 @@ export const ProjectsModule = {
     } catch (err) {
       container.innerHTML = `
         <div class="p-3 text-danger text-center">
-          <i class="fa-solid fa-triangle-exclamation me-1"></i> Error loading project risks: ${err.message}
+          <i class="fa-solid fa-triangle-exclamation me-1"></i> Error loading project risks: ${escapeHtml(err && err.message)}
         </div>
       `;
     }
@@ -1939,22 +1944,22 @@ export const ProjectsModule = {
                 const targetDate = i.targetResolutionDate ? i.targetResolutionDate.split('T')[0] : (i.dueDate ? i.dueDate.split('T')[0] : '—');
                 return `
                   <tr>
-                    <td><span class="badge bg-secondary-subtle text-secondary font-monospace">${i.code || 'ISS-?'}</span></td>
+                    <td><span class="badge bg-secondary-subtle text-secondary font-monospace">${escapeHtml(i.code || 'ISS-?')}</span></td>
                     <td>
-                      <div class="fw-bold text-primary" style="cursor: pointer;" onclick="window.GovernanceModule && window.GovernanceModule.openIssueDetails('${i.id}')">${i.title}</div>
-                      ${i.description ? `<div class="text-xs text-secondary text-truncate" style="max-width: 280px;">${i.description}</div>` : ''}
+                      <div class="fw-bold text-primary btn-proj-view-issue" style="cursor: pointer;" data-id="${escapeHtml(i.id)}">${escapeHtml(i.title)}</div>
+                      ${i.description ? `<div class="text-xs text-secondary text-truncate" style="max-width: 280px;">${escapeHtml(i.description)}</div>` : ''}
                     </td>
-                    <td style="text-align: center;"><span class="badge ${sevClass}">${i.severity}</span></td>
-                    <td style="text-align: center;"><span class="text-xs font-semibold">${i.priority}</span></td>
-                    <td style="text-align: center;"><span class="badge ${statClass}">${i.status}</span></td>
-                    <td><span class="badge bg-info-subtle text-info text-truncate" style="max-width: 120px;">${rootDisplay}</span></td>
-                    <td><span class="text-xs text-secondary">${targetDate}</span></td>
+                    <td style="text-align: center;"><span class="badge ${sevClass}">${escapeHtml(i.severity)}</span></td>
+                    <td style="text-align: center;"><span class="text-xs font-semibold">${escapeHtml(i.priority)}</span></td>
+                    <td style="text-align: center;"><span class="badge ${statClass}">${escapeHtml(i.status)}</span></td>
+                    <td><span class="badge bg-info-subtle text-info text-truncate" style="max-width: 120px;">${escapeHtml(rootDisplay)}</span></td>
+                    <td><span class="text-xs text-secondary">${escapeHtml(targetDate)}</span></td>
                     <td style="text-align: center;">
                       <div class="btn-group btn-group-sm">
-                        <button class="btn btn-outline-secondary btn-proj-view-issue" data-id="${i.id}" title="View Details">
+                        <button class="btn btn-outline-secondary btn-proj-view-issue" data-id="${escapeHtml(i.id)}" title="View Details">
                           <i class="fa-solid fa-eye"></i>
                         </button>
-                        <button class="btn btn-outline-secondary btn-proj-edit-issue" data-id="${i.id}" title="Edit Issue">
+                        <button class="btn btn-outline-secondary btn-proj-edit-issue" data-id="${escapeHtml(i.id)}" title="Edit Issue">
                           <i class="fa-solid fa-pen-to-square"></i>
                         </button>
                       </div>
@@ -1985,7 +1990,7 @@ export const ProjectsModule = {
     } catch (err) {
       container.innerHTML = `
         <div class="p-3 text-danger text-center">
-          <i class="fa-solid fa-triangle-exclamation me-1"></i> Error loading project issues: ${err.message}
+          <i class="fa-solid fa-triangle-exclamation me-1"></i> Error loading project issues: ${escapeHtml(err && err.message)}
         </div>
       `;
     }
@@ -2083,24 +2088,24 @@ export const ProjectsModule = {
                   const isCritPath = d.isCritical || d.isCriticalPath;
                   return `
                     <tr>
-                      <td class="fw-bold text-primary">${d.code || d.id}</td>
+                      <td class="fw-bold text-primary">${escapeHtml(d.code || d.id)}</td>
                       <td>
-                        <div class="fw-semibold">${d.sourceEntityName}</div>
-                        <div class="small text-muted"><i class="fa-solid fa-arrow-right text-secondary me-1"></i>${d.targetEntityName}</div>
+                        <div class="fw-semibold">${escapeHtml(d.sourceEntityName)}</div>
+                        <div class="small text-muted"><i class="fa-solid fa-arrow-right text-secondary me-1"></i>${escapeHtml(d.targetEntityName)}</div>
                       </td>
-                      <td class="text-center"><span class="badge bg-secondary-subtle text-dark border">${d.dependencyType}</span></td>
-                      <td class="text-center"><span class="badge ${critBadge}">${d.criticality || 'Medium'}</span></td>
-                      <td class="text-center"><span class="badge ${statBadge}">${d.status}</span></td>
-                      <td>${d.targetDate || d.dueDate || '—'}</td>
+                      <td class="text-center"><span class="badge bg-secondary-subtle text-dark border">${escapeHtml(d.dependencyType)}</span></td>
+                      <td class="text-center"><span class="badge ${critBadge}">${escapeHtml(d.criticality || 'Medium')}</span></td>
+                      <td class="text-center"><span class="badge ${statBadge}">${escapeHtml(d.status)}</span></td>
+                      <td>${escapeHtml(d.targetDate || d.dueDate || '—')}</td>
                       <td class="text-center">
                         ${isCritPath ? '<span class="badge bg-danger-subtle text-danger"><i class="fa-solid fa-bolt me-1"></i>Yes</span>' : '<span class="text-muted small">No</span>'}
                       </td>
                       <td class="text-center">
                         <div class="btn-group btn-group-sm">
-                          <button class="btn btn-outline-secondary btn-proj-view-dep" data-id="${d.id}" title="View Details">
+                          <button class="btn btn-outline-secondary btn-proj-view-dep" data-id="${escapeHtml(d.id)}" title="View Details">
                             <i class="fa-solid fa-eye"></i>
                           </button>
-                          <button class="btn btn-outline-primary btn-proj-edit-dep" data-id="${d.id}" title="Edit Dependency">
+                          <button class="btn btn-outline-primary btn-proj-edit-dep" data-id="${escapeHtml(d.id)}" title="Edit Dependency">
                             <i class="fa-solid fa-pen"></i>
                           </button>
                         </div>
@@ -2157,7 +2162,7 @@ export const ProjectsModule = {
     } catch (err) {
       container.innerHTML = `
         <div class="p-3 text-danger text-center">
-          <i class="fa-solid fa-triangle-exclamation me-1"></i> Error loading project dependencies: ${err.message}
+          <i class="fa-solid fa-triangle-exclamation me-1"></i> Error loading project dependencies: ${escapeHtml(err && err.message)}
         </div>
       `;
     }
@@ -2326,7 +2331,7 @@ export const ProjectsModule = {
     if (clientSelect) {
       clientSelect.innerHTML = '';
       clients.forEach(c => {
-        clientSelect.innerHTML += `<option value="${c}">${c}</option>`;
+        clientSelect.innerHTML += `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`;
       });
       if (activeProj && activeProj.client) {
         clientSelect.value = activeProj.client;
@@ -2350,10 +2355,10 @@ export const ProjectsModule = {
     if (pmSelect) {
       pmSelect.innerHTML = `<option value="">Select Project Manager...</option>`;
       pmMembers.forEach(m => {
-        pmSelect.innerHTML += `<option value="${m.name}">${m.name} (${m.role})</option>`;
+        pmSelect.innerHTML += `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)} (${escapeHtml(m.role)})</option>`;
       });
       if (activeProj?.manager && !pmMembers.some(m => m.name === activeProj.manager)) {
-        pmSelect.innerHTML += `<option value="${activeProj.manager}">${activeProj.manager}</option>`;
+        pmSelect.innerHTML += `<option value="${escapeHtml(activeProj.manager)}">${escapeHtml(activeProj.manager)}</option>`;
       }
       if (activeProj?.manager) pmSelect.value = activeProj.manager;
     }
@@ -2361,10 +2366,10 @@ export const ProjectsModule = {
     if (prodMSelect) {
       prodMSelect.innerHTML = `<option value="">Select Product Manager...</option>`;
       prodMembers.forEach(m => {
-        prodMSelect.innerHTML += `<option value="${m.name}">${m.name} (${m.role})</option>`;
+        prodMSelect.innerHTML += `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)} (${escapeHtml(m.role)})</option>`;
       });
       if (activeProj?.productManager && !prodMembers.some(m => m.name === activeProj.productManager)) {
-        prodMSelect.innerHTML += `<option value="${activeProj.productManager}">${activeProj.productManager}</option>`;
+        prodMSelect.innerHTML += `<option value="${escapeHtml(activeProj.productManager)}">${escapeHtml(activeProj.productManager)}</option>`;
       }
       if (activeProj?.productManager) prodMSelect.value = activeProj.productManager;
     }
@@ -2372,10 +2377,10 @@ export const ProjectsModule = {
     if (baSelect) {
       baSelect.innerHTML = `<option value="">Select BA...</option>`;
       baMembers.forEach(m => {
-        baSelect.innerHTML += `<option value="${m.name}">${m.name} (${m.role})</option>`;
+        baSelect.innerHTML += `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)} (${escapeHtml(m.role)})</option>`;
       });
       if (activeProj?.ba && !baMembers.some(m => m.name === activeProj.ba)) {
-        baSelect.innerHTML += `<option value="${activeProj.ba}">${activeProj.ba}</option>`;
+        baSelect.innerHTML += `<option value="${escapeHtml(activeProj.ba)}">${escapeHtml(activeProj.ba)}</option>`;
       }
       if (activeProj?.ba) baSelect.value = activeProj.ba;
     }
@@ -2383,10 +2388,10 @@ export const ProjectsModule = {
     if (devSelect) {
       devSelect.innerHTML = `<option value="">Select Developer...</option>`;
       devMembers.forEach(m => {
-        devSelect.innerHTML += `<option value="${m.name}">${m.name} (${m.role})</option>`;
+        devSelect.innerHTML += `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)} (${escapeHtml(m.role)})</option>`;
       });
       if (activeProj?.developer && !devMembers.some(m => m.name === activeProj.developer)) {
-        devSelect.innerHTML += `<option value="${activeProj.developer}">${activeProj.developer}</option>`;
+        devSelect.innerHTML += `<option value="${escapeHtml(activeProj.developer)}">${escapeHtml(activeProj.developer)}</option>`;
       }
       if (activeProj?.developer) devSelect.value = activeProj.developer;
     }
@@ -2394,10 +2399,10 @@ export const ProjectsModule = {
     if (qaSelect) {
       qaSelect.innerHTML = `<option value="">Select QA...</option>`;
       qaMembers.forEach(m => {
-        qaSelect.innerHTML += `<option value="${m.name}">${m.name} (${m.role})</option>`;
+        qaSelect.innerHTML += `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)} (${escapeHtml(m.role)})</option>`;
       });
       if (activeProj?.qa && !qaMembers.some(m => m.name === activeProj.qa)) {
-        qaSelect.innerHTML += `<option value="${activeProj.qa}">${activeProj.qa}</option>`;
+        qaSelect.innerHTML += `<option value="${escapeHtml(activeProj.qa)}">${escapeHtml(activeProj.qa)}</option>`;
       }
       if (activeProj?.qa) qaSelect.value = activeProj.qa;
     }
@@ -2493,6 +2498,14 @@ export const ProjectsModule = {
       }
     } else {
       estEndInput.classList.remove('is-invalid');
+    }
+
+    // Sprint 16: the Confluence link must be an https URL.
+    const confluenceInput = document.getElementById('edit-confluence');
+    if (confluenceInput) {
+      const unsafe = !!confluenceLink.trim() && !safeHttpsUrl(confluenceLink.trim());
+      confluenceInput.classList.toggle('is-invalid', unsafe);
+      if (unsafe) isValid = false;
     }
 
     // Sprint 15A: each entry is a Jira key or an https link to a recognised Jira site.
@@ -2600,12 +2613,12 @@ export const ProjectsModule = {
     const allMembers = this.getTeamMembersList();
     
     const clientOptions = clients.length > 0 
-      ? clients.map(c => `<option value="${c}">${c}</option>`).join('')
+      ? clients.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')
       : `<option value="Enterprise Corp.">Enterprise Corp.</option>`;
-    const pmOptions = allMembers.map(m => `<option value="${m.name}">${m.name} (${m.role})</option>`).join('');
-    const devOptions = allMembers.map(m => `<option value="${m.name}">${m.name} (${m.role})</option>`).join('');
-    const baOptions = allMembers.map(m => `<option value="${m.name}">${m.name} (${m.role})</option>`).join('');
-    const qaOptions = allMembers.map(m => `<option value="${m.name}">${m.name} (${m.role})</option>`).join('');
+    const pmOptions = allMembers.map(m => `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)} (${escapeHtml(m.role)})</option>`).join('');
+    const devOptions = allMembers.map(m => `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)} (${escapeHtml(m.role)})</option>`).join('');
+    const baOptions = allMembers.map(m => `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)} (${escapeHtml(m.role)})</option>`).join('');
+    const qaOptions = allMembers.map(m => `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)} (${escapeHtml(m.role)})</option>`).join('');
 
     const bodyHtml = `
       <form id="modal-project-create-form" class="row g-3 needs-validation" novalidate>
@@ -2753,7 +2766,7 @@ export const ProjectsModule = {
       const prodSelect = document.getElementById('mod-product');
       if (prodSelect && Array.isArray(prods) && prods.length > 0) {
         prodSelect.innerHTML = '<option value="">No Product (Standalone)</option>' +
-          prods.map(p => `<option value="${p.id}" data-name="${p.name}">${p.name} (${p.code})</option>`).join('');
+          prods.map(p => `<option value="${escapeHtml(p.id)}" data-name="${escapeHtml(p.name)}">${escapeHtml(p.name)} (${escapeHtml(p.code)})</option>`).join('');
       }
     }).catch(() => {});
   }

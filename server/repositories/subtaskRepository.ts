@@ -1,5 +1,6 @@
 import { Subtask } from '../models/types';
 import { isDbConnected, query } from '../config/database';
+import { duplicateRecordError } from './recordConflict';
 
 const memorySubtasks: Map<string, Subtask> = new Map();
 
@@ -138,6 +139,8 @@ export const SubtaskRepository = {
   },
 
   async create(subtask: Subtask): Promise<Subtask> {
+    // Sprint 16: never overwrite an existing record (both modes; findById reads PostgreSQL when connected).
+    if (await this.findById(subtask.id)) throw duplicateRecordError('subtask', subtask.id);
     if (isDbConnected()) {
       const q = `
         INSERT INTO subtasks (id, task_id, title, assignee_id, status, priority, estimate_hrs, due_date, completed_at, created_at, updated_at)

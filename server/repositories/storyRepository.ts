@@ -1,5 +1,6 @@
 import { UserStory } from '../models/types';
 import { isDbConnected, query } from '../config/database';
+import { duplicateRecordError } from './recordConflict';
 import { TaskRepository } from './taskRepository';
 import { calculateStoryProgress } from '../services/progressCalculator';
 
@@ -339,6 +340,8 @@ export const StoryRepository = {
   },
 
   async create(story: UserStory): Promise<UserStory> {
+    // Sprint 16: never overwrite an existing record (both modes; findById reads PostgreSQL when connected).
+    if (await this.findById(story.id)) throw duplicateRecordError('story', story.id);
     if (isDbConnected()) {
       const q = `
         INSERT INTO stories (

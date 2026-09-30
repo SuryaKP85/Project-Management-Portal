@@ -5190,7 +5190,7 @@ async function runTests() {
     assert(/data-page="meetings"/.test(indexHtml44) && /id="page-meetings"/.test(indexHtml44) && /id="meetings-workspace"/.test(indexHtml44), 'The sidebar and page container for Meetings & Follow-through exist');
     assert(/import \{ MeetingsModule \} from '\.\/meetings\.js'/.test(appJs44) && /pageId === 'meetings'\) \{\s*MeetingsModule\.init\(this\)/.test(appJs44), 'The app router loads the Meetings module');
     assert(!/localStorage|sessionStorage|Storage\./.test(meetingsJs44) && ['MeetingService', 'ActionItemService', 'WaitingForService', 'FollowUpService'].every((s) => meetingsJs44.includes(`from './services/${s.charAt(0).toLowerCase() + s.slice(1)}.js'`)), 'The page uses only the V2 services, never browser storage');
-    assert(['esc(m.title)', 'esc(a.title)', 'esc(w.title)', 'esc(f.title)', 'esc(meeting.agenda)', 'esc(meeting.notes)', 'esc(a.description)'].every((s) => meetingsJs44.includes(s)) && /toast\(message, type = 'info'\) \{ this\.app\?\.showToast\(esc\(message\), type\)/.test(meetingsJs44), 'User-authored text and toast messages are escaped before rendering');
+    assert(['esc(m.title)', 'esc(a.title)', 'esc(w.title)', 'esc(f.title)', 'esc(meeting.agenda)', 'esc(meeting.notes)', 'esc(a.description)'].every((s) => meetingsJs44.includes(s)) && /toast\(message, type = 'info'\) \{ this\.app\?\.showToast\(message, type\)/.test(meetingsJs44), 'User-authored text is escaped before rendering; toast messages pass through unescaped because the toast renders text (Sprint 16)');
     assert(/\/\^https\?:\\\/\\\/\/i\.test\(meeting\.meetingLink\)/.test(meetingsJs44) && /rel="noopener noreferrer"/.test(meetingsJs44), 'Meeting links render only for http(s) URLs, opened with noopener');
     const svc44: any = await import('../PM-Portal/js/services/meetingService.js');
     let svcThrew44 = false;
@@ -5377,11 +5377,12 @@ async function runTests() {
 
     // --- project Jira links: persisted in memory and PostgreSQL alike ---
     const p45 = (handler: any, body: any, params: any = {}) => run41(handler, reqAs40(adminUser40, { url: '/api/v1/sprint-15a', body, params }));
-    const projId45 = `PRJ-S15A-${Date.now()}`;
     const createdProj45 = await p45(ProjCtl45.create, {
-      id: projId45, code: projId45, name: 'Sprint 15A linked project', client: 'Client',
+      name: 'Sprint 15A linked project', client: 'Client',
       jiraLinks: ['proj-11', 'https://company.atlassian.net/browse/PROJ-11', 'javascript:alert(1)', 'http://company.atlassian.net/browse/X-1', 'PROJ-11', '  ', 'https://u:p@company.atlassian.net/'],
     });
+    // Sprint 16: project ids are server-generated, so the test uses the returned id.
+    const projId45 = createdProj45.body.data.project.id;
     created45.projects.push(projId45);
     assert(createdProj45.statusCode === 201 && JSON.stringify(createdProj45.body.data.project.jiraLinks) === JSON.stringify(['PROJ-11', 'https://company.atlassian.net/browse/PROJ-11']), 'Creating a project stores its Jira links: keys upper-cased, https links kept, unsafe and duplicate entries dropped');
     assert(JSON.stringify((await ProjRepo24.findById(projId45))!.jiraLinks) === JSON.stringify(['PROJ-11', 'https://company.atlassian.net/browse/PROJ-11']), 'Reading the project returns the same Jira links');
@@ -5394,9 +5395,8 @@ async function runTests() {
     const csvLinks45 = await p45(ProjCtl45.update, { jiraLinks: 'ABC-1, https://x.atlassian.net/browse/ABC-1\nABC-2' }, { id: projId45 });
     const manyLinks45 = await p45(ProjCtl45.update, { jiraLinks: Array.from({ length: 30 }, (_, i) => `MANY-${i + 1}`) }, { id: projId45 });
     assert(JSON.stringify(csvLinks45.body.data.project.jiraLinks) === JSON.stringify(['ABC-1', 'https://x.atlassian.net/browse/ABC-1', 'ABC-2']) && manyLinks45.body.data.project.jiraLinks.length === 20, 'Comma/newline text from the V1.1 importer is accepted, and a project keeps at most 20 links');
-    const plainProjId45 = `PRJ-S15A-PLAIN-${Date.now()}`;
-    const plainProj45 = await p45(ProjCtl45.create, { id: plainProjId45, code: plainProjId45, name: 'Sprint 15A plain project', client: 'Client' });
-    created45.projects.push(plainProjId45);
+    const plainProj45 = await p45(ProjCtl45.create, { name: 'Sprint 15A plain project', client: 'Client' });
+    created45.projects.push(plainProj45.body.data.project.id);
     const seedProj45 = await ProjRepo24.findById('PRJ-101');
     assert(plainProj45.statusCode === 201 && JSON.stringify(plainProj45.body.data.project.jiraLinks) === '[]' && Array.isArray(seedProj45!.jiraLinks), 'Projects without Jira links keep working and read back an empty list, as PostgreSQL returns');
     const migId45 = `PRJ-S15A-MIG-${Date.now()}`;
@@ -5445,6 +5445,291 @@ async function runTests() {
     for (const id of created45.epics) await EpicRepo45.delete(id);
   }
   assert(!(await EpicRepo45.findAll()).some((e: any) => /^Sprint 15A/.test(e.name)), 'Sprint 15A fixtures are removed after §45');
+
+  // 46. Security & input hardening (Sprint 16)
+  // Server-controlled ids, project-scoped writes, no self-assignment escalation,
+  // field allowlists, value validation, and inert rendering of stored values in
+  // the project and delivery views (escaping, safe URLs, no inline handlers).
+  console.log('\n--- 46. Security & Input Hardening (Sprint 16) ---');
+  const { ProjectController: ProjCtl46 } = await import('../server/controllers/projectController');
+  const { DeliveryController: DelCtl46 } = await import('../server/controllers/deliveryController');
+  const { MyWorkController: MyWorkCtl46 } = await import('../server/controllers/myWorkController');
+  const { EpicRepository: EpicRepo46 } = await import('../server/repositories/epicRepository');
+  const { FeatureRepository: FeatRepo46 } = await import('../server/repositories/featureRepository');
+  const { StoryRepository: StoryRepo46 } = await import('../server/repositories/storyRepository');
+  const { TaskRepository: TaskRepo46 } = await import('../server/repositories/taskRepository');
+  const { SubtaskRepository: SubRepo46 } = await import('../server/repositories/subtaskRepository');
+  const { canWriteProject: canWrite46, DELIVERY_STATUSES: STATUSES46 } = await import('../server/services/deliveryGuards');
+  const { ProjectAccessService: Access46 } = await import('../server/services/followThroughSupport');
+  const Safe46: any = await import('../PM-Portal/js/safeHtml.js');
+
+  const stamp46 = Date.now();
+  const XSS46 = '<img src=x onerror=alert(1)>"\'';
+  const mk46 = (key: string, role: any) => Auth40.register({ email: `s16.${key}.${stamp46}@company.com`, password: 'Sprint16@12345', firstName: key === 'evil' ? XSS46 : `U${key}`, lastName: 'S16', role }, login40.user);
+  const pmA46 = await mk46('pma', 'project-manager');
+  const pmB46 = await mk46('pmb', 'project-manager');
+  const pmC46 = await mk46('pmc', 'project-manager');
+  const member46 = await mk46('member', 'team-member');
+  const outsider46 = await mk46('outsider', 'team-member');
+  const inactive46 = await mk46('inactive', 'team-member');
+  await UserRepo40.update(inactive46.id, { isActive: false });
+  const call46 = (handler: any, user: any, body: any = {}, params: any = {}) => run41(handler, reqAs40(user, { url: '/api/v1/sprint-16', body, params }));
+  const code46 = (r: any) => r.body?.error?.code;
+  const cleanup46: Array<() => Promise<unknown>> = [];
+
+  try {
+    // --- A. Server-controlled ids: no overwrite ---
+    const seedProject46 = JSON.stringify(await ProjRepo24.findById('PRJ-101'));
+    const projA46res = await call46(ProjCtl46.create, pmA46, { id: 'PRJ-101', name: 'S16 Project A', client: 'Client A' });
+    const projA46 = projA46res.body?.data?.project;
+    cleanup46.push(() => ProjRepo24.delete(projA46.id));
+    assert(projA46res.statusCode === 201 && projA46.id !== 'PRJ-101' && /^PRJ-\d+$/.test(projA46.id) && JSON.stringify(await ProjRepo24.findById('PRJ-101')) === seedProject46, 'Creating a project with an existing id gets a new server id; the existing project is untouched');
+    assert(projA46.managerId === pmA46.id, 'A project created without a manager is managed by its creator');
+    const codeClash46 = await call46(ProjCtl46.create, pmA46, { code: 'PRJ-101', name: 'Clash', client: 'Client' });
+    const badCode46 = await call46(ProjCtl46.create, pmA46, { code: "x'); alert(1); ('", name: 'Bad code', client: 'Client' });
+    assert(codeClash46.statusCode === 409 && code46(codeClash46) === 'CONFLICT' && badCode46.statusCode === 400 && JSON.stringify(await ProjRepo24.findById('PRJ-101')) === seedProject46, 'A proposed code already in use is a 409, a malformed code a 400, and nothing is overwritten');
+    const projB46res = await call46(ProjCtl46.create, pmB46, { name: 'S16 Project B', client: 'Client B' });
+    const projB46 = projB46res.body.data.project;
+    cleanup46.push(() => ProjRepo24.delete(projB46.id));
+    await call46(ProjCtl46.update, pmA46, { members: [{ userId: member46.id, name: 'Member', role: 'Developer' }, { userId: pmC46.id, name: 'PM C', role: 'Deputy PM' }] }, { id: projA46.id });
+
+    const seedEpic46 = JSON.stringify(await EpicRepo46.findById('epic_1'));
+    const epicRes46 = await call46(DelCtl46.createEpic, pmA46, { id: 'epic_1', code: 'EPC-HACK', name: 'S16 epic', projectId: projA46.id, progress: 500 });
+    const epic46 = epicRes46.body?.data?.epic;
+    cleanup46.push(() => EpicRepo46.delete(epic46.id));
+    assert(epicRes46.statusCode === 201 && epic46.id !== 'epic_1' && epic46.code !== 'EPC-HACK' && epic46.progress === 0 && JSON.stringify(await EpicRepo46.findById('epic_1')) === seedEpic46, 'Delivery creates ignore client id, code and progress; the seed epic is untouched');
+    const seedStory46 = JSON.stringify(await StoryRepo46.findById('story_1'));
+    const storyRes46 = await call46(DelCtl46.createStory, pmA46, { id: 'story_1', title: 'S16 story', projectId: projA46.id, assigneeId: member46.id });
+    const story46 = storyRes46.body?.data?.story;
+    cleanup46.push(() => StoryRepo46.delete(story46.id));
+    assert(storyRes46.statusCode === 201 && story46.id !== 'story_1' && JSON.stringify(await StoryRepo46.findById('story_1')) === seedStory46, 'A story created with an existing id gets a new id; the existing story is untouched');
+    const taskRes46 = await call46(DelCtl46.createTask, pmA46, { id: 'task_1', title: 'S16 task', projectId: projA46.id, storyId: story46.id, assigneeId: member46.id });
+    const task46 = taskRes46.body?.data?.task;
+    cleanup46.push(() => TaskRepo46.delete(task46.id));
+    const subRes46 = await call46(DelCtl46.createSubtask, pmA46, { id: 'sub_1', title: 'S16 subtask', taskId: task46.id });
+    const sub46 = subRes46.body?.data?.subtask;
+    cleanup46.push(() => SubRepo46.delete(sub46.id));
+    assert(taskRes46.statusCode === 201 && task46.id !== 'task_1' && subRes46.statusCode === 201 && sub46.id !== 'sub_1', 'Tasks and subtasks also get server ids');
+    const dupErr46 = await (async () => { try { await EpicRepo46.create({ ...(await EpicRepo46.findById('epic_1'))!, name: 'Overwritten' }); return null; } catch (e: any) { return e; } })();
+    const dupProj46 = await (async () => { try { await ProjRepo24.create({ id: 'PRJ-101', name: 'Overwritten' }); return null; } catch (e: any) { return e; } })();
+    assert(dupErr46?.status === 409 && dupProj46?.status === 409 && (await EpicRepo46.findById('epic_1'))!.name !== 'Overwritten' && (await ProjRepo24.findById('PRJ-101'))!.name !== 'Overwritten', 'Repository backstop: creating a record with an id in use throws 409 instead of overwriting');
+    const migNewId46 = `PRJ-S16-MIG-${stamp46}`;
+    const mig46 = await ProjRepo24.migrateFromLocal([{ id: 'PRJ-101', name: 'Legacy overwrite attempt' } as any, { id: `X-${stamp46}`, code: 'PRJ-101', name: 'Legacy code clash' } as any, { id: migNewId46, name: 'Legacy import' } as any]);
+    cleanup46.push(() => ProjRepo24.delete(migNewId46));
+    assert(mig46.imported === 1 && mig46.skipped === 2 && JSON.stringify(await ProjRepo24.findById('PRJ-101')) === seedProject46 && !!(await ProjRepo24.findById(migNewId46)), 'The legacy V1.1 import keeps its ids but skips any id or code already in use');
+
+    // --- B. Project writes: access and membership ---
+    const snapB46 = JSON.stringify(await ProjRepo24.findById(projB46.id));
+    const crossPatch46 = await call46(ProjCtl46.update, pmA46, { name: 'Hijacked' }, { id: projB46.id });
+    const selfAdd46 = await call46(ProjCtl46.update, pmA46, { members: [{ userId: pmA46.id, name: 'Me', role: 'PM' }] }, { id: projB46.id });
+    assert(crossPatch46.statusCode === 403 && selfAdd46.statusCode === 403 && JSON.stringify(await ProjRepo24.findById(projB46.id)) === snapB46, 'A manager cannot change, or add themselves to, another manager\'s project');
+    const memberPatch46 = await call46(ProjCtl46.update, member46, { name: 'Team member edit' }, { id: projA46.id });
+    assert(memberPatch46.statusCode === 403, 'A team member cannot change project settings, even through a direct service call');
+    // Project administration (admin or current manager) is separate from membership (participation).
+    const prodMgr46 = await mk46('prodmgr', 'product-manager');
+    cleanup46.push(() => UserRepo40.update(prodMgr46.id, { isActive: false }));
+    const currentA46 = (await ProjRepo24.findById(projA46.id))!;
+    const withProd46 = await call46(ProjCtl46.update, pmA46, { members: [...currentA46.members!, { userId: prodMgr46.id, name: 'Prod', role: 'Product Manager' }] }, { id: projA46.id });
+    const listedA46 = (await ProjRepo24.findById(projA46.id))!;
+    const snapListedA46 = JSON.stringify(listedA46);
+    const memberAttempts46 = await Promise.all([
+      call46(ProjCtl46.update, pmC46, { managerId: pmC46.id }, { id: projA46.id }),
+      call46(ProjCtl46.update, pmC46, { members: [...listedA46.members!, { userId: outsider46.id, name: 'Outsider', role: 'Dev' }] }, { id: projA46.id }),
+      call46(ProjCtl46.update, pmC46, { budget: 1 }, { id: projA46.id }),
+      call46(ProjCtl46.update, pmC46, { status: 'on-hold', risk: 'Critical', remarks: 'member edit' }, { id: projA46.id }),
+      call46(ProjCtl46.update, pmC46, { name: listedA46.name, managerId: listedA46.managerId, members: listedA46.members }, { id: projA46.id }),
+      call46(ProjCtl46.update, prodMgr46, { managerId: prodMgr46.id }, { id: projA46.id }),
+      call46(ProjCtl46.update, prodMgr46, { members: [{ userId: prodMgr46.id, name: 'Prod', role: 'Owner' }] }, { id: projA46.id }),
+    ]);
+    assert(withProd46.statusCode === 200 && memberAttempts46.every((r) => r.statusCode === 403) && JSON.stringify(await ProjRepo24.findById(projA46.id)) === snapListedA46, `Listed members — including project and product managers — cannot take over the manager, change members, budget, status, risk or metadata, or even save unchanged (${memberAttempts46.map((r) => r.statusCode).join(',')})`);
+    const memberEpic46 = await call46(DelCtl46.createEpic, pmC46, { name: 'S16 member epic', projectId: projA46.id });
+    if (memberEpic46.body?.data?.epic) cleanup46.push(() => EpicRepo46.delete(memberEpic46.body.data.epic.id));
+    assert(memberEpic46.statusCode === 201, 'Membership still grants participation: a listed member adds delivery work');
+    const adminAdmin46 = await call46(ProjCtl46.update, adminUser40, { budget: 250000, status: 'in-progress', risk: 'High', remarks: 'admin review' }, { id: projA46.id });
+    const managerAdmin46 = await call46(ProjCtl46.update, pmA46, { budget: 260000, status: 'on-hold', risk: 'Medium', sprint: 'S16-1' }, { id: projA46.id });
+    const afterAdmin46 = (await ProjRepo24.findById(projA46.id))!;
+    assert(adminAdmin46.statusCode === 200 && managerAdmin46.statusCode === 200 && afterAdmin46.budget === 260000 && afterAdmin46.status === 'on-hold' && afterAdmin46.risk === 'Medium', 'Admins and the current manager administer the project (budget, status, risk, metadata)');
+    const handOver46 = await call46(ProjCtl46.update, pmA46, { managerId: pmC46.id }, { id: projA46.id });
+    const formerManager46 = await call46(ProjCtl46.update, pmA46, { remarks: 'no longer mine' }, { id: projA46.id });
+    const newManager46 = await call46(ProjCtl46.update, pmC46, { managerId: pmA46.id }, { id: projA46.id });
+    assert(handOver46.statusCode === 200 && formerManager46.statusCode === 403 && newManager46.statusCode === 200 && (await ProjRepo24.findById(projA46.id))!.managerId === pmA46.id, 'Administration follows managerId: the manager can hand over, the former manager loses it, the new manager can hand back');
+    const inactiveMgr46 = await call46(ProjCtl46.update, pmA46, { managerId: inactive46.id }, { id: projA46.id });
+    const adminMgr46 = await call46(ProjCtl46.update, adminUser40, { managerId: pmA46.id, members: [...currentA46.members!, { userId: outsider46.id, name: 'Temp', role: 'Dev' }] }, { id: projA46.id });
+    await call46(ProjCtl46.update, pmA46, { members: currentA46.members }, { id: projA46.id });
+    assert(inactiveMgr46.statusCode === 400 && adminMgr46.statusCode === 200, 'The manager must be an active user; admins and the manager can change membership');
+
+    // --- C. Delivery writes: project scope, immutable project, parents, people ---
+    const crossEpic46 = await call46(DelCtl46.createEpic, pmA46, { name: 'Intrusion', projectId: projB46.id });
+    const outsiderStory46 = await call46(DelCtl46.createStory, outsider46, { title: 'Intrusion', projectId: projA46.id });
+    const missingProject46 = await call46(DelCtl46.createEpic, pmA46, { name: 'Nowhere', projectId: 'PRJ-NOPE' });
+    assert(crossEpic46.statusCode === 403 && outsiderStory46.statusCode === 403 && missingProject46.statusCode === 404, 'Delivery records can only be created in an existing project the user manages or belongs to');
+    const epicB46 = (await call46(DelCtl46.createEpic, pmB46, { name: 'S16 epic B', projectId: projB46.id })).body.data.epic;
+    cleanup46.push(() => EpicRepo46.delete(epicB46.id));
+    const taskB46 = (await call46(DelCtl46.createTask, pmB46, { title: 'S16 task B', projectId: projB46.id, assigneeId: pmB46.id })).body.data.task;
+    cleanup46.push(() => TaskRepo46.delete(taskB46.id));
+    const foreignParent46 = await call46(DelCtl46.createFeature, pmA46, { name: 'Wrong parent', projectId: projA46.id, epicId: epicB46.id });
+    const foreignStory46 = await call46(DelCtl46.createTask, pmA46, { title: 'Wrong story', projectId: projA46.id, storyId: 'story_1' });
+    const foreignSub46 = await call46(DelCtl46.createSubtask, pmA46, { title: 'Wrong task', taskId: taskB46.id });
+    assert(foreignParent46.statusCode === 400 && foreignStory46.statusCode === 400 && foreignSub46.statusCode === 403, 'Parents must belong to the same project, and a subtask needs access to its task\'s project');
+    const snapEpic46 = JSON.stringify(await EpicRepo46.findById(epic46.id));
+    const move46 = await call46(DelCtl46.updateEpic, pmA46, { projectId: projB46.id, name: 'Moved and renamed' }, { id: epic46.id });
+    const moveStory46 = await call46(DelCtl46.updateStory, pmA46, { projectId: 'PRJ-101' }, { id: story46.id });
+    assert(move46.statusCode === 400 && moveStory46.statusCode === 400 && JSON.stringify(await EpicRepo46.findById(epic46.id)) === snapEpic46, 'projectId is immutable: a move is rejected and nothing else in the request is applied');
+    const badPeople46 = await Promise.all([
+      call46(DelCtl46.createStory, pmA46, { title: 'x', projectId: projA46.id, assigneeId: 'usr_nope' }),
+      call46(DelCtl46.createStory, pmA46, { title: 'x', projectId: projA46.id, assigneeId: inactive46.id }),
+      call46(DelCtl46.updateEpic, pmA46, { ownerId: inactive46.id }, { id: epic46.id }),
+    ]);
+    assert(badPeople46.every((r) => r.statusCode === 400), 'Owners and assignees must be existing, active users');
+
+    // --- D. Self-assignment escalation ---
+    const taskCountA46 = (await TaskRepo46.findAll({ projectId: projA46.id })).length;
+    const selfAssign46 = await call46(DelCtl46.createTask, outsider46, { title: 'Let me in', projectId: projA46.id, assigneeId: outsider46.id });
+    const snapTaskB46 = JSON.stringify(await TaskRepo46.findById(taskB46.id));
+    const hijackTask46 = await call46(DelCtl46.updateTask, outsider46, { assigneeId: outsider46.id }, { id: taskB46.id });
+    assert(selfAssign46.statusCode === 403 && hijackTask46.statusCode === 403 && (await TaskRepo46.findAll({ projectId: projA46.id })).length === taskCountA46 && JSON.stringify(await TaskRepo46.findById(taskB46.id)) === snapTaskB46, 'A user cannot create or take over a task in a project they cannot reach');
+    assert(!(await Access46.canAccess({ userId: outsider46.id, role: 'team-member' }, projA46.id)) && !(await Access46.canAccess({ userId: outsider46.id, role: 'team-member' }, projB46.id)), 'The failed assignment gives the user no project access');
+    const assignedToOutsider46 = (await call46(DelCtl46.createTask, pmB46, { title: 'S16 assigned by manager', projectId: projB46.id, assigneeId: outsider46.id })).body.data.task;
+    cleanup46.push(() => TaskRepo46.delete(assignedToOutsider46.id));
+    const ownStatus46 = await call46(DelCtl46.updateTask, outsider46, { status: 'done' }, { id: assignedToOutsider46.id });
+    const ownTitle46 = await call46(DelCtl46.updateTask, outsider46, { title: 'Renamed' }, { id: assignedToOutsider46.id });
+    const ownReassign46 = await call46(DelCtl46.updateTask, outsider46, { assigneeId: pmC46.id }, { id: assignedToOutsider46.id });
+    assert(ownStatus46.statusCode === 200 && ownStatus46.body.data.task.status === 'done' && ownTitle46.statusCode === 403 && ownReassign46.statusCode === 403, 'An assignee outside the project can change only the status of their own item');
+    // The assignee exception never becomes project access.
+    const storyB46 = (await call46(DelCtl46.createStory, pmB46, { title: 'S16 story B', projectId: projB46.id, assigneeId: outsider46.id })).body.data.story;
+    cleanup46.push(() => StoryRepo46.delete(storyB46.id));
+    const snapAssigned46 = JSON.stringify(await TaskRepo46.findById(assignedToOutsider46.id));
+    const assigneeBoundary46 = await Promise.all([
+      call46(DelCtl46.updateTask, outsider46, { priority: 'critical' }, { id: assignedToOutsider46.id }),
+      call46(DelCtl46.updateTask, outsider46, { description: 'rewritten' }, { id: assignedToOutsider46.id }),
+      call46(DelCtl46.updateTask, outsider46, { storyId: storyB46.id }, { id: assignedToOutsider46.id }),
+      call46(DelCtl46.updateTask, outsider46, { assigneeId: outsider46.id }, { id: assignedToOutsider46.id }),
+      call46(DelCtl46.updateTask, outsider46, { status: 'blocked', priority: 'critical' }, { id: assignedToOutsider46.id }),
+      call46(DelCtl46.updateStory, outsider46, { featureId: '' }, { id: storyB46.id }),
+      call46(DelCtl46.updateStory, outsider46, { epicId: epicB46.id }, { id: storyB46.id }),
+      call46(DelCtl46.updateStory, outsider46, { title: 'Mine now' }, { id: storyB46.id }),
+    ]);
+    const assigneeMove46 = await call46(DelCtl46.updateTask, outsider46, { projectId: projA46.id, status: 'blocked' }, { id: assignedToOutsider46.id });
+    assert(assigneeBoundary46.every((r) => r.statusCode === 403) && assigneeMove46.statusCode === 400 && JSON.stringify(await TaskRepo46.findById(assignedToOutsider46.id)) === snapAssigned46, `The assignee cannot change priority, description, parents, the assignee or the project — alone or combined with status — and nothing is partly applied (${assigneeBoundary46.map((r) => r.statusCode).join(',')},${assigneeMove46.statusCode})`);
+    const stillNoCreate46 = await call46(DelCtl46.createTask, outsider46, { title: 'Now I am in', projectId: projB46.id });
+    const otherItem46 = await call46(DelCtl46.updateTask, outsider46, { status: 'done' }, { id: taskB46.id });
+    const otherDelete46 = await call46(DelCtl46.deleteTask, outsider46, {}, { id: assignedToOutsider46.id });
+    assert(stillNoCreate46.statusCode === 403 && otherItem46.statusCode === 403 && otherDelete46.statusCode === 403 && !canWrite46({ id: outsider46.id, role: 'team-member' }, projB46 as any), 'Being assigned grants no project write access: no creating, no changing other items, no deleting');
+    const managerAssigns46 = await call46(DelCtl46.updateTask, pmB46, { assigneeId: outsider46.id }, { id: taskB46.id });
+    const newAssigneeStatus46 = await call46(DelCtl46.updateTask, outsider46, { status: 'in-progress' }, { id: taskB46.id });
+    await call46(DelCtl46.updateTask, pmB46, { assigneeId: pmB46.id }, { id: taskB46.id });
+    const unassignedAgain46 = await call46(DelCtl46.updateTask, outsider46, { status: 'done' }, { id: taskB46.id });
+    assert(managerAssigns46.statusCode === 200 && newAssigneeStatus46.statusCode === 200 && unassignedAgain46.statusCode === 403, 'An authorised manager can assign someone; the status right follows the assignment and ends when it is removed');
+    const deleteSub46 = await call46(DelCtl46.deleteSubtask, outsider46, {}, { id: sub46.id });
+    assert(deleteSub46.statusCode === 403 && !!(await SubRepo46.findById(sub46.id)), 'Deleting needs project write access');
+
+    // --- E. /my-work/status ---
+    const mw46 = (user: any, body: any) => call46(MyWorkCtl46.updateItemStatus, user, body);
+    const mwForeign46 = await mw46(outsider46, { itemId: story46.id, itemType: 'story', status: 'done' });
+    const mwBad46 = await mw46(member46, { itemId: story46.id, itemType: 'story', status: XSS46 });
+    const mwOk46 = await mw46(member46, { itemId: story46.id, itemType: 'story', status: 'in-progress' });
+    assert(mwForeign46.statusCode === 403 && mwBad46.statusCode === 400 && mwOk46.statusCode === 200 && (await StoryRepo46.findById(story46.id))!.status === 'in-progress', 'My Work status changes need the assignee or a project member, and a known status');
+
+    // --- F. Field allowlists ---
+    const inject46 = await call46(DelCtl46.updateEpic, pmA46, { name: 'S16 epic renamed', id: 'hijack', code: 'EPC-HIJACK', createdAt: '2000-01-01T00:00:00Z', createdBy: outsider46.id, progress: 77, projectName: 'Fake', featureCount: 999, isAdmin: true }, { id: epic46.id });
+    const afterInject46: any = await EpicRepo46.findById(epic46.id);
+    assert(inject46.statusCode === 200 && afterInject46.name === 'S16 epic renamed' && afterInject46.id === epic46.id && afterInject46.code === epic46.code && afterInject46.createdAt === epic46.createdAt && afterInject46.progress !== 77 && !('createdBy' in afterInject46) && !('isAdmin' in afterInject46) && afterInject46.featureCount !== 999, 'Delivery updates store only allowlisted fields: id, code, createdAt, createdBy, progress and extras are ignored');
+    const projInject46 = await call46(ProjCtl46.update, pmA46, { name: 'S16 Project A', id: 'PRJ-HIJACK', code: 'HIJACK', createdAt: '2000-01-01T00:00:00Z', isAdmin: true, hd: 'HD-77', estimatedStart: '2026-01-05', confluenceLink: 'javascript:alert(1)' }, { id: projA46.id });
+    const afterProj46: any = await ProjRepo24.findById(projA46.id);
+    assert(projInject46.statusCode === 200 && afterProj46.id === projA46.id && afterProj46.code === projA46.code && afterProj46.createdAt === projA46.createdAt && !('isAdmin' in afterProj46), 'Project updates ignore id, code, createdAt and unknown fields');
+    assert(afterProj46.hd === 'HD-77' && afterProj46.estimatedStart === '2026-01-05' && afterProj46.confluenceLink === '', 'V1.1 display fields still round-trip; a non-https Confluence link is not stored');
+    await call46(ProjCtl46.update, pmA46, { confluenceLink: 'https://confluence.example.com/display/S16' }, { id: projA46.id });
+    assert((await ProjRepo24.findById(projA46.id) as any).confluenceLink === 'https://confluence.example.com/display/S16', 'An https Confluence link on a company host is stored');
+
+    // --- G. Value validation ---
+    const values46 = await Promise.all([
+      call46(DelCtl46.updateEpic, pmA46, { status: 'shipped' }, { id: epic46.id }),
+      call46(DelCtl46.updateEpic, pmA46, { status: XSS46 }, { id: epic46.id }),
+      call46(DelCtl46.updateEpic, pmA46, { priority: 'urgent' }, { id: epic46.id }),
+      call46(DelCtl46.updateEpic, pmA46, { health: 'fine' }, { id: epic46.id }),
+      call46(DelCtl46.updateStory, pmA46, { storyPoints: -1 }, { id: story46.id }),
+      call46(DelCtl46.updateTask, pmA46, { estimatedEffortHrs: 'lots' }, { id: task46.id }),
+      call46(DelCtl46.updateEpic, pmA46, { name: '   ' }, { id: epic46.id }),
+      call46(DelCtl46.updateTask, pmA46, { dueDate: 'next week' }, { id: task46.id }),
+    ]);
+    assert(values46.every((r) => r.statusCode === 400 && code46(r) === 'VALIDATION_ERROR'), `Unknown status/priority/health, negative points, non-numeric effort, blank names and bad dates are rejected (${values46.map((r) => r.statusCode).join(',')})`);
+    const legacyStatus46 = await call46(DelCtl46.updateStory, pmA46, { status: 'review' }, { id: story46.id });
+    assert(legacyStatus46.statusCode === 200 && STATUSES46.includes('review' as any) && STATUSES46.includes('in-review' as any), 'Status values the existing forms send (e.g. review) stay valid');
+    const progressAttempt46 = await call46(DelCtl46.updateTask, pmA46, { progress: 'abc' }, { id: task46.id });
+    assert(progressAttempt46.statusCode === 200 && typeof (await TaskRepo46.findById(task46.id))!.progress === 'number' && (await TaskRepo46.findById(task46.id))!.progress !== ('abc' as any), 'Progress is owned by the rollups: client values are never stored');
+    const projValues46 = await Promise.all([
+      call46(ProjCtl46.update, pmA46, { status: 'launched' }, { id: projA46.id }),
+      call46(ProjCtl46.update, pmA46, { risk: 'Extreme' }, { id: projA46.id }),
+      call46(ProjCtl46.update, pmA46, { progress: 150 }, { id: projA46.id }),
+      call46(ProjCtl46.update, pmA46, { budget: -5 }, { id: projA46.id }),
+    ]);
+    await ProjRepo24.update(projA46.id, { status: 'legacy-status' as any });
+    const legacyProj46 = await call46(ProjCtl46.update, pmA46, { status: 'legacy-status', remarks: 'sync' }, { id: projA46.id });
+    assert(projValues46.every((r) => r.statusCode === 400) && legacyProj46.statusCode === 200, 'Project status, risk, progress and budget are validated when they change; an unchanged legacy value does not block a sync');
+    assert(canWrite46({ id: 'x', role: 'viewer' }, projA46 as any) === false && canWrite46({ id: adminUser40.id, role: 'admin' }, projB46 as any) === true, 'Viewers never write; admins keep their bypass');
+
+    // --- H. Browser: shared helpers ---
+    assert(Safe46.escapeHtml(XSS46) === '&lt;img src=x onerror=alert(1)&gt;&quot;&#39;' && Safe46.escapeHtml(null) === '', 'escapeHtml escapes markup and both quote characters');
+    const urlCases46: Array<[string, boolean]> = [
+      ['https://confluence.example.com/display/X', true], ['https://company.atlassian.net/wiki/x', true], ['javascript:alert(1)', false],
+      ['data:text/html,x', false], ['vbscript:x', false], ['//evil.example', false], ['http://confluence.example.com', false],
+      ['https://user:pw@example.com', false], ['https://', false], ['not a url', false],
+    ];
+    assert(urlCases46.every(([u, ok]) => (Safe46.safeHttpsUrl(u) !== null) === ok), 'safeHttpsUrl accepts https company links and rejects javascript:, data:, vbscript:, protocol-relative, http, credential and malformed URLs');
+    assert(Safe46.cssToken('in-progress" onmouseover="x') === 'in-progressonmouseoverx' && Safe46.percent('150') === 100 && Safe46.percent('abc') === 0 && Safe46.percent(-3) === 0, 'cssToken and percent keep class and style values inert');
+    const fakeEl46 = { getAttribute: (_: string) => Safe46.dataArgs(null, "x'); alert(1); ('", 'story').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&') };
+    assert(!/'/.test(Safe46.dataArgs("x'); alert(1); ('")) && JSON.stringify(Safe46.readDataArgs(fakeEl46)) === JSON.stringify([null, "x'); alert(1); ('", 'story']), 'Handler arguments travel as escaped JSON data and come back unchanged');
+
+    // --- I. Browser: rendered delivery views with hostile records ---
+    const hadWindow46 = 'window' in globalThis;
+    const hadDocument46 = 'document' in globalThis;
+    if (!hadWindow46) (globalThis as any).window = {};
+    // The tree view looks up its expand/collapse buttons; a stub document has none.
+    if (!hadDocument46) (globalThis as any).document = { getElementById: () => null, querySelector: () => null, querySelectorAll: () => [] };
+    const { DeliveryModule: DelMod46 } = await import('../PM-Portal/js/delivery.js');
+    const saved46 = { epics: DelMod46.epics, features: DelMod46.features, stories: DelMod46.stories, tasks: DelMod46.tasks, projects: DelMod46.projects, users: DelMod46.users };
+    try {
+      const evilId46 = "evil'); alert(1); ('";
+      DelMod46.projects = [{ id: 'P-1', code: XSS46, name: XSS46 }];
+      DelMod46.users = [{ id: 'u-1', firstName: XSS46, lastName: XSS46 }];
+      DelMod46.epics = [{ id: evilId46, code: XSS46, name: XSS46, description: XSS46, projectId: 'P-1', status: XSS46, priority: XSS46, progress: '50%;background:url(javascript:x)', targetRelease: XSS46 }];
+      DelMod46.features = [{ id: evilId46, code: XSS46, name: XSS46, description: XSS46, projectId: 'P-1', epicId: evilId46, status: XSS46, priority: 'high', complexity: XSS46, progress: 10 }];
+      DelMod46.stories = [{ id: evilId46, code: XSS46, title: XSS46, projectId: 'P-1', featureId: evilId46, status: XSS46, priority: 'low', storyPoints: XSS46, userPersona: XSS46, userAction: XSS46, userBenefit: XSS46, assigneeId: 'u-1' }];
+      DelMod46.tasks = [{ id: evilId46, code: XSS46, title: XSS46, description: XSS46, projectId: 'P-1', storyId: evilId46, status: XSS46, priority: 'low', assigneeId: 'u-1', progress: 5 }];
+      const rendered46: string[] = [];
+      for (const view of ['renderEpicsView', 'renderFeaturesView', 'renderStoriesView', 'renderTasksView', 'renderHierarchyTree']) {
+        const container: any = { innerHTML: '', querySelectorAll: () => [], querySelector: () => null, addEventListener: () => {} };
+        (DelMod46 as any)[view](container);
+        rendered46.push(container.innerHTML);
+      }
+      const all46 = rendered46.join('\n');
+      assert(rendered46.every((h) => h.length > 0) && !/<img/i.test(all46) && /&lt;img src=x onerror=alert\(1\)&gt;/.test(all46), 'Delivery tree, tables and cards render hostile names, codes, descriptions and statuses as inert text');
+      assert(!/onclick=/i.test(all46) && !all46.includes("('evil'); alert(1)") && /data-dv-action="openEpicModal" data-args="\[&quot;evil&#39;\); alert\(1\); \(&#39;&quot;/.test(all46), 'No inline handlers: record ids travel in escaped data-args');
+      assert(!/width: 50%;background/.test(all46) && /width: 0%/.test(all46), 'A hostile progress value cannot inject styles');
+      assert(DelMod46.getStatusBadge(XSS46).includes('&lt;img') && DelMod46.getStatusBadge('constructor').includes('bg-light text-dark') && DelMod46.getPriorityBadge(XSS46).includes('&lt;img'), 'Status and priority badges escape unknown values and ignore prototype keys');
+    } finally {
+      Object.assign(DelMod46, saved46);
+      if (!hadWindow46) delete (globalThis as any).window;
+      if (!hadDocument46) delete (globalThis as any).document;
+    }
+
+    // --- J. Browser sources ---
+    const src46 = (f: string) => fs35.readFileSync(`PM-Portal/js/${f}`, 'utf8');
+    const delivery46 = src46('delivery.js'); const projectsSrc46 = src46('projects.js'); const app46 = src46('app.js');
+    assert(!/onclick="window\.portalDeliveryModule/.test(delivery46 + projectsSrc46) && !/onchange="window\.portalDeliveryModule/.test(delivery46) && !/openIssueDetails\('\$\{/.test(projectsSrc46), 'No delivery or issue ids are interpolated into inline JavaScript');
+    assert(/const DELIVERY_ACTIONS = new Set\(\[/.test(delivery46) && /DeliveryModule\[action\]\(\.\.\.readDataArgs\(el\)\)/.test(delivery46), 'A delegated listener dispatches only allowlisted delivery actions with data arguments');
+    assert(!/value="\$\{(epic|feature|story|task)/.test(delivery46) && !/>\$\{(epic|feature|story|task)\?\.(description|acceptanceCriteria)/.test(delivery46) && ['epic-name', 'feat-desc', 'story-criteria', 'task-desc'].every((id) => delivery46.includes(`'${id}':`)), 'Edit modals fill values through the DOM, not markup');
+    assert(!/href="\$\{p\.confluenceLink\}"/.test(projectsSrc46) && /safeHttpsUrl\(String\(p\.confluenceLink\)\)/.test(projectsSrc46) && /rel="noopener noreferrer" class="badge bg-info-subtle/.test(projectsSrc46), 'Confluence links render only as safe https links opened with noopener');
+    assert(/\$\{escapeHtml\(p\.name\)\}/.test(projectsSrc46) && /status-badge \$\{cssToken\(p\.status\)\}/.test(projectsSrc46) && /width: \$\{percent\(p\.progress\)\}%/.test(projectsSrc46) && /data-id="\$\{escapeHtml\(p\.id\)\}"/.test(projectsSrc46), 'The project list escapes text, tokenises the status class and clamps progress');
+    assert((projectsSrc46.match(/<option value="\$\{escapeHtml\(m\.name\)\}">\$\{escapeHtml\(m\.name\)\} \(\$\{escapeHtml\(m\.role\)\}\)<\/option>/g) || []).length >= 9, 'Project editor people lists escape user names');
+    assert(/toast\.querySelector\('\.toast-message'\)\.textContent = String\(message \?\? ''\)/.test(app46) && !/<div class="toast-message">\$\{message\}<\/div>/.test(app46), 'showToast renders its message as text');
+    assert(['agileBoard.js', 'sprintPlanning.js', 'myWork.js'].every((f) => /\$\{escapeHtml\(item\.title\)\}/.test(src46(f)) && !/\$\{item\.title\}/.test(src46(f))), 'Agile board, sprint planning and My Work escape item titles');
+    assert(/import \{ escapeHtml \} from '\.\/safeHtml\.js';/.test(src46('jiraLinks.js')) && !/const escapeHtml = /.test(src46('jiraLinks.js')), 'Jira links share the one escaping helper');
+  } finally {
+    for (const fn of cleanup46.reverse()) { try { await fn(); } catch { /* already removed */ } }
+    for (const u of [pmA46, pmB46, pmC46, member46, outsider46, inactive46]) await UserRepo40.update(u.id, { isActive: false });
+  }
+  assert(!(await EpicRepo46.findAll()).some((e: any) => /^S16 /.test(e.name)) && (await ProjRepo24.findById('PRJ-101'))!.name !== 'Overwritten', 'Sprint 16 fixtures are removed after §46');
 
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

@@ -1,5 +1,6 @@
 import { Feature } from '../models/types';
 import { isDbConnected, query } from '../config/database';
+import { duplicateRecordError } from './recordConflict';
 import { StoryRepository } from './storyRepository';
 import { calculateFeatureProgress } from '../services/progressCalculator';
 
@@ -258,6 +259,8 @@ export const FeatureRepository = {
   },
 
   async create(feature: Feature): Promise<Feature> {
+    // Sprint 16: never overwrite an existing record (both modes; findById reads PostgreSQL when connected).
+    if (await this.findById(feature.id)) throw duplicateRecordError('feature', feature.id);
     if (isDbConnected()) {
       const q = `
         INSERT INTO features (

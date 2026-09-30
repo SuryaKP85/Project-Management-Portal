@@ -3,6 +3,7 @@ import { ActivityRepository } from '../repositories/activityRepository';
 import { NotificationRepository } from '../repositories/notificationRepository';
 import { Project, SafeUser } from '../models/types';
 import crypto from 'crypto';
+import { ProjectGuards } from './projectGuards';
 
 export const ProjectService = {
   async getAllProjects(): Promise<Project[]> {
@@ -14,11 +15,8 @@ export const ProjectService = {
   },
 
   async createProject(data: Partial<Project>, actorUser: SafeUser): Promise<Project> {
-    const newProject: Partial<Project> = {
-      ...data,
-      id: data.id || data.code || `PRJ-${Date.now().toString().slice(-4)}`,
-      code: data.code || data.id || `PRJ-${Date.now().toString().slice(-4)}`,
-    };
+    // Sprint 16: allowlisted, validated fields; the id is always server-generated.
+    const newProject: Partial<Project> = await ProjectGuards.prepareCreate(data as Record<string, any>, actorUser);
 
     const created = await ProjectRepository.create(newProject);
 
@@ -60,7 +58,9 @@ export const ProjectService = {
     const existing = await ProjectRepository.findById(id);
     if (!existing) return null;
 
-    const updated = await ProjectRepository.update(id, updates);
+    // Sprint 16: write access, membership rule, allowlisted and validated fields only.
+    updates = await ProjectGuards.prepareUpdate(existing, updates as Record<string, any>, actorUser);
+    const updated = await ProjectRepository.update(existing.id, updates);
     if (updated) {
       const isStatusChange = updates.status && updates.status !== existing.status;
       const isOwnerChange = updates.managerId && updates.managerId !== existing.managerId;

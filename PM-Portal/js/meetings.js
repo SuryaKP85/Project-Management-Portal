@@ -123,8 +123,8 @@ export const MeetingsModule = {
     await this.loadTab();
   },
 
-  /** The shared toast renders HTML, so every message is escaped first. */
-  toast(message, type = 'info') { this.app?.showToast(esc(message), type); },
+  /** The shared toast renders its message as text (Sprint 16), so it is passed through unescaped. */
+  toast(message, type = 'info') { this.app?.showToast(message, type); },
 
   canWrite() { return !!this.me && WRITE_ROLES.includes(this.me.role); },
   canDelete() { return !!this.me && DELETE_ROLES.includes(this.me.role); },

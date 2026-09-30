@@ -1,6 +1,7 @@
 import { Project } from '../models/types';
 import { isDbConnected, query } from '../config/database';
 import { cleanProjectJiraLinks } from '../services/jiraReference';
+import { duplicateRecordError } from './recordConflict';
 
 const memoryProjects: Map<string, Project> = new Map();
 
@@ -231,6 +232,8 @@ export const ProjectRepository = {
   async create(project: Partial<Project>): Promise<Project> {
     const id = project.id || project.code || `PRJ-${Date.now().toString().slice(-4)}`;
     const code = project.code || id;
+    // Sprint 16: never overwrite. Lookups match a project by id or code, so both must be unused.
+    if (await this.isIdOrCodeInUse([id, code])) throw duplicateRecordError('project', id === code ? id : `${id}/${code}`);
     const now = new Date().toISOString();
 
     const newProject: Project = {
@@ -307,6 +310,16 @@ export const ProjectRepository = {
     }
     memoryProjects.set(newProject.id, newProject);
     return newProject;
+  },
+
+  /** True when any of the values is already a project id or code. */
+  async isIdOrCodeInUse(values: string[]): Promise<boolean> {
+    const wanted = values.filter(Boolean);
+    if (isDbConnected()) {
+      const res = await query('SELECT 1 FROM projects WHERE id = ANY($1::text[]) OR code = ANY($1::text[]) LIMIT 1', [wanted]);
+      return res.rows.length > 0;
+    }
+    return Array.from(memoryProjects.values()).some((p) => wanted.includes(p.id) || wanted.includes(p.code));
   },
 
   async update(id: string, updates: Partial<Project>): Promise<Project | null> {
@@ -400,8 +413,17 @@ export const ProjectRepository = {
         }
       }
 
-      await this.create(proj);
-      imported++;
+      try {
+        await this.create(proj);
+        imported++;
+      } catch (err: any) {
+        // Sprint 16: an id or code already in use is skipped, never overwritten.
+        if (err && err.status === 409) {
+          skipped++;
+          continue;
+        }
+        throw err;
+      }
     }
 
     const all = await this.findAll();

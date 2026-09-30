@@ -122,6 +122,8 @@ class EnterprisePortalApp {
     const container = document.getElementById('toast-container');
     if (!container) return;
 
+    // Sprint 16: the message is text, never HTML, and the type is one of the known styles.
+    type = ['info', 'success', 'warning', 'danger'].includes(type) ? type : 'info';
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
     
@@ -132,9 +134,10 @@ class EnterprisePortalApp {
 
     toast.innerHTML = `
       <i class="fa-solid ${icon} text-${type}-custom" style="color: var(--brand-${type}); font-size: 1.1rem;"></i>
-      <div class="toast-message">${message}</div>
+      <div class="toast-message"></div>
       <button class="toast-close" type="button"><i class="fa-solid fa-xmark"></i></button>
     `;
+    toast.querySelector('.toast-message').textContent = String(message ?? '');
 
     container.appendChild(toast);
 

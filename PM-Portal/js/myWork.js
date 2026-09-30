@@ -4,6 +4,7 @@
  */
 
 import { MyWorkService } from './services/myWorkService.js';
+import { escapeHtml } from './safeHtml.js';
 import { DeliveryService } from './services/deliveryService.js';
 import { StoryService } from './services/storyService.js';
 import { TaskService } from './services/taskService.js';
@@ -219,7 +220,7 @@ export const MyWorkModule = {
 
           <div class="search-bar" style="max-width: 240px;">
             <i class="fa-solid fa-magnifying-glass"></i>
-            <input type="text" id="my-work-search" placeholder="Search my items..." value="${this.searchQuery}" />
+            <input type="text" id="my-work-search" placeholder="Search my items..." value="${escapeHtml(this.searchQuery)}" />
           </div>
         </div>
       </div>
@@ -262,49 +263,49 @@ export const MyWorkModule = {
     const isSubtask = item.itemType === 'subtask';
     const code = item.code || (isStory ? 'STR' : isSubtask ? 'SUB' : 'TSK');
     const badgeType = isStory ? 'bg-primary' : isSubtask ? 'bg-info text-dark' : 'bg-success';
-    const effort = isStory ? `${item.storyPoints || 0} pts` : `${item.actualEffortHrs || 0}/${item.estimatedEffortHrs || 0}h`;
+    const effort = isStory ? `${escapeHtml(item.storyPoints || 0)} pts` : `${escapeHtml(item.actualEffortHrs || 0)}/${escapeHtml(item.estimatedEffortHrs || 0)}h`;
 
     const nextStatuses = this.getNextStatusTransitions(item.status);
 
     return `
       <tr>
         <td>
-          <span class="badge ${badgeType} font-mono">${code}</span>
+          <span class="badge ${badgeType} font-mono">${escapeHtml(code)}</span>
         </td>
         <td>
           <div class="font-bold text-dark">
-            <a href="#" class="text-decoration-none text-dark" data-action="view-details" data-item-id="${item.id}" data-item-type="${item.itemType}">
-              ${item.title}
+            <a href="#" class="text-decoration-none text-dark" data-action="view-details" data-item-id="${escapeHtml(item.id)}" data-item-type="${escapeHtml(item.itemType)}">
+              ${escapeHtml(item.title)}
             </a>
           </div>
           ${
             item.featureName || item.storyTitle
-              ? `<div class="text-muted" style="font-size: 0.75rem;"><i class="fa-solid fa-puzzle-piece text-info me-1"></i>${item.featureName || item.storyTitle}</div>`
+              ? `<div class="text-muted" style="font-size: 0.75rem;"><i class="fa-solid fa-puzzle-piece text-info me-1"></i>${escapeHtml(item.featureName || item.storyTitle)}</div>`
               : ''
           }
         </td>
         <td>
           ${
             item.sprint
-              ? `<span class="badge bg-light text-dark border font-mono"><i class="fa-solid fa-person-running text-primary me-1"></i>${item.sprint}</span>`
+              ? `<span class="badge bg-light text-dark border font-mono"><i class="fa-solid fa-person-running text-primary me-1"></i>${escapeHtml(item.sprint)}</span>`
               : `<span class="text-muted" style="font-size: 0.8rem;">Backlog</span>`
           }
         </td>
         <td>
-          <span class="badge ${this.getPriorityBadge(item.priority)}" style="font-size: 0.7rem;">${item.priority || 'medium'}</span>
+          <span class="badge ${this.getPriorityBadge(item.priority)}" style="font-size: 0.7rem;">${escapeHtml(item.priority || 'medium')}</span>
         </td>
         <td>
-          <span class="font-mono font-semibold" style="font-size: 0.85rem;">${effort}</span>
+          <span class="font-mono font-semibold" style="font-size: 0.85rem;">${escapeHtml(effort)}</span>
         </td>
         <td>
-          <span class="badge ${this.getStatusBadge(item.status)}">${item.status}</span>
+          <span class="badge ${this.getStatusBadge(item.status)}">${escapeHtml(item.status)}</span>
         </td>
         <td class="text-end">
           <div class="d-inline-flex gap-1">
             ${nextStatuses
               .map(
                 (ns) => `
-              <button class="btn btn-sm btn-outline-${ns.color} py-1 px-2" data-action="update-status" data-item-id="${item.id}" data-item-type="${item.itemType}" data-new-status="${ns.status}" title="Move to ${ns.label}">
+              <button class="btn btn-sm btn-outline-${ns.color} py-1 px-2" data-action="update-status" data-item-id="${escapeHtml(item.id)}" data-item-type="${escapeHtml(item.itemType)}" data-new-status="${escapeHtml(ns.status)}" title="Move to ${ns.label}">
                 <i class="${ns.icon}"></i> ${ns.label}
               </button>
             `
@@ -400,19 +401,19 @@ export const MyWorkModule = {
 
           <div class="d-flex justify-content-between align-items-center mb-2">
             <div>
-              <span class="badge bg-primary me-1">${item.code}</span>
-              <span class="badge bg-secondary">${item.status}</span>
-              <span class="badge bg-light text-dark border ms-1">${item.priority}</span>
+              <span class="badge bg-primary me-1">${escapeHtml(item.code)}</span>
+              <span class="badge bg-secondary">${escapeHtml(item.status)}</span>
+              <span class="badge bg-light text-dark border ms-1">${escapeHtml(item.priority)}</span>
             </div>
-            <span class="font-bold text-primary">${itemType === 'story' ? `${item.storyPoints || 0} pts` : `${item.estimatedEffortHrs || 0}h`}</span>
+            <span class="font-bold text-primary">${itemType === 'story' ? `${escapeHtml(item.storyPoints || 0)} pts` : `${escapeHtml(item.estimatedEffortHrs || 0)}h`}</span>
           </div>
 
-          <h5 class="font-bold mb-2">${item.title}</h5>
-          <p class="text-muted" style="font-size: 0.9rem;">${item.description || 'No detailed description.'}</p>
+          <h5 class="font-bold mb-2">${escapeHtml(item.title)}</h5>
+          <p class="text-muted" style="font-size: 0.9rem;">${escapeHtml(item.description || 'No detailed description.')}</p>
         </div>
       `;
 
-      this.app?.openModal(`Work Item: ${item.code}`, bodyHtml);
+      this.app?.openModal(`Work Item: ${escapeHtml(item.code)}`, bodyHtml);
     } catch (err) {
       this.app?.showToast(`Error opening item: ${err.message}`, 'danger');
     }

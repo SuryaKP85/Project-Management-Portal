@@ -17,6 +17,7 @@
  */
 
 import { apiClient } from './services/apiClient.js';
+import { escapeHtml } from './safeHtml.js';
 
 export const JIRA_KEY_PATTERN = /^[A-Z][A-Z0-9_]{0,49}-[1-9][0-9]{0,11}$/;
 export const JIRA_CLOUD_HOST_SUFFIXES = ['atlassian.net', 'jira.com'];
@@ -25,9 +26,8 @@ const MAX_URL_LENGTH = 2048;
 let jiraBase = null;
 let configRequest = null;
 
-export const escapeHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
-  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-));
+// Sprint 16: one shared escaping helper for the whole browser app (re-exported for existing callers).
+export { escapeHtml };
 
 /** The key upper-cased, or null when it is not a syntactically valid Jira key. */
 export function normalizeJiraKey(value) {

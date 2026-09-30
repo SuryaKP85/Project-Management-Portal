@@ -16,7 +16,8 @@ import { SubtaskRepository } from '../repositories/subtaskRepository';
 import { TraceabilityRepository } from '../repositories/traceabilityRepository';
 import { ActivityRepository } from '../repositories/activityRepository';
 import { NotificationRepository } from '../repositories/notificationRepository';
-import { applyJiraReference, cleanJiraReference } from './jiraReference';
+import { cleanJiraReference } from './jiraReference';
+import { DeliveryGuards } from './deliveryGuards';
 
 export const DeliveryService = {
   // ==========================================
@@ -63,8 +64,10 @@ export const DeliveryService = {
   },
 
   async createEpic(data: Partial<Epic>, actor: SafeUser): Promise<Epic> {
-    const id = data.id || `epic_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
-    const code = data.code || `EPC-${Math.floor(100 + Math.random() * 900)}`;
+    // Sprint 16: access, allowlisted fields and validated values; the id and code are always server-generated.
+    data = (await DeliveryGuards.prepareCreate('epic', data as Record<string, any>, actor)) as Partial<Epic>;
+    const id = `epic_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const code = `EPC-${Math.floor(100 + Math.random() * 900)}`;
 
     const epic: Epic = {
       id,
@@ -121,8 +124,8 @@ export const DeliveryService = {
     const existing = await EpicRepository.findById(id);
     if (!existing) return null;
 
-    // Sprint 15A: only validated Jira reference fields reach the repository.
-    applyJiraReference(updates, existing);
+    // Sprint 16: access, immutable projectId, allowlisted fields and validated values (incl. Sprint 15A Jira rules).
+    updates = (await DeliveryGuards.prepareUpdate('epic', existing, updates as Record<string, any>, actor)) as Partial<Epic>;
     const updated = await EpicRepository.update(id, updates);
     if (!updated) return null;
 
@@ -164,6 +167,8 @@ export const DeliveryService = {
     const existing = await EpicRepository.findById(id);
     if (!existing) return false;
 
+    // Sprint 16: deleting needs write access to the record's project.
+    await DeliveryGuards.assertCanDelete('epic', existing, actor);
     const deleted = await EpicRepository.delete(id);
     if (deleted) {
       await ActivityRepository.create({
@@ -192,8 +197,10 @@ export const DeliveryService = {
   },
 
   async createFeature(data: Partial<Feature>, actor: SafeUser): Promise<Feature> {
-    const id = data.id || `feat_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
-    const code = data.code || `FEAT-${Math.floor(100 + Math.random() * 900)}`;
+    // Sprint 16: access, allowlisted fields and validated values; the id and code are always server-generated.
+    data = (await DeliveryGuards.prepareCreate('feature', data as Record<string, any>, actor)) as Partial<Feature>;
+    const id = `feat_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const code = `FEAT-${Math.floor(100 + Math.random() * 900)}`;
 
     const feature: Feature = {
       id,
@@ -253,8 +260,8 @@ export const DeliveryService = {
     const existing = await FeatureRepository.findById(id);
     if (!existing) return null;
 
-    // Sprint 15A: only validated Jira reference fields reach the repository.
-    applyJiraReference(updates, existing);
+    // Sprint 16: access, immutable projectId, allowlisted fields and validated values (incl. Sprint 15A Jira rules).
+    updates = (await DeliveryGuards.prepareUpdate('feature', existing, updates as Record<string, any>, actor)) as Partial<Feature>;
     const updated = await FeatureRepository.update(id, updates);
     if (!updated) return null;
 
@@ -300,6 +307,8 @@ export const DeliveryService = {
     const existing = await FeatureRepository.findById(id);
     if (!existing) return false;
 
+    // Sprint 16: deleting needs write access to the record's project.
+    await DeliveryGuards.assertCanDelete('feature', existing, actor);
     const deleted = await FeatureRepository.delete(id);
     if (deleted) {
       if (existing.epicId) {
@@ -331,8 +340,10 @@ export const DeliveryService = {
   },
 
   async createStory(data: Partial<UserStory>, actor: SafeUser): Promise<UserStory> {
-    const id = data.id || `story_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
-    const code = data.code || `STR-${Math.floor(100 + Math.random() * 900)}`;
+    // Sprint 16: access, allowlisted fields and validated values; the id and code are always server-generated.
+    data = (await DeliveryGuards.prepareCreate('story', data as Record<string, any>, actor)) as Partial<UserStory>;
+    const id = `story_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const code = `STR-${Math.floor(100 + Math.random() * 900)}`;
 
     const story: UserStory = {
       id,
@@ -399,8 +410,8 @@ export const DeliveryService = {
     const existing = await StoryRepository.findById(id);
     if (!existing) return null;
 
-    // Sprint 15A: only validated Jira reference fields reach the repository.
-    applyJiraReference(updates, existing);
+    // Sprint 16: access, immutable projectId, allowlisted fields and validated values (incl. Sprint 15A Jira rules).
+    updates = (await DeliveryGuards.prepareUpdate('story', existing, updates as Record<string, any>, actor)) as Partial<UserStory>;
     const updated = await StoryRepository.update(id, updates);
     if (!updated) return null;
 
@@ -448,6 +459,8 @@ export const DeliveryService = {
     const existing = await StoryRepository.findById(id);
     if (!existing) return false;
 
+    // Sprint 16: deleting needs write access to the record's project.
+    await DeliveryGuards.assertCanDelete('story', existing, actor);
     const deleted = await StoryRepository.delete(id);
     if (deleted) {
       if (existing.featureId) {
@@ -481,8 +494,10 @@ export const DeliveryService = {
   },
 
   async createTask(data: Partial<Task>, actor: SafeUser): Promise<Task> {
-    const id = data.id || `task_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
-    const code = data.code || `TSK-${Math.floor(100 + Math.random() * 900)}`;
+    // Sprint 16: access, allowlisted fields and validated values; the id and code are always server-generated.
+    data = (await DeliveryGuards.prepareCreate('task', data as Record<string, any>, actor)) as Partial<Task>;
+    const id = `task_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const code = `TSK-${Math.floor(100 + Math.random() * 900)}`;
 
     const task: Task = {
       id,
@@ -545,6 +560,8 @@ export const DeliveryService = {
     const existing = await TaskRepository.findById(id);
     if (!existing) return null;
 
+    // Sprint 16: access, immutable projectId, allowlisted fields and validated values.
+    updates = (await DeliveryGuards.prepareUpdate('task', existing, updates as Record<string, any>, actor)) as Partial<Task>;
     const updated = await TaskRepository.update(id, updates);
     if (!updated) return null;
 
@@ -590,6 +607,8 @@ export const DeliveryService = {
     const existing = await TaskRepository.findById(id);
     if (!existing) return false;
 
+    // Sprint 16: deleting needs write access to the record's project.
+    await DeliveryGuards.assertCanDelete('task', existing, actor);
     const deleted = await TaskRepository.delete(id);
     if (deleted) {
       if (existing.storyId) {
@@ -621,7 +640,9 @@ export const DeliveryService = {
   },
 
   async createSubtask(data: Partial<Subtask>, actor: SafeUser): Promise<Subtask> {
-    const id = data.id || `sub_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    // Sprint 16: access, allowlisted fields and validated values; the id are always server-generated.
+    data = (await DeliveryGuards.prepareCreate('subtask', data as Record<string, any>, actor)) as Partial<Subtask>;
+    const id = `sub_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
 
     const subtask: Subtask = {
       id,
@@ -670,6 +691,8 @@ export const DeliveryService = {
     const existing = await SubtaskRepository.findById(id);
     if (!existing) return null;
 
+    // Sprint 16: access, immutable projectId, allowlisted fields and validated values.
+    updates = (await DeliveryGuards.prepareUpdate('subtask', existing, updates as Record<string, any>, actor)) as Partial<Subtask>;
     const updated = await SubtaskRepository.update(id, updates);
     if (!updated) return null;
 
@@ -698,6 +721,8 @@ export const DeliveryService = {
     const existing = await SubtaskRepository.findById(id);
     if (!existing) return false;
 
+    // Sprint 16: deleting needs write access to the record's project.
+    await DeliveryGuards.assertCanDelete('subtask', existing, actor);
     const deleted = await SubtaskRepository.delete(id);
     if (deleted) {
       await this.rollupFromSubtask(existing.taskId);
