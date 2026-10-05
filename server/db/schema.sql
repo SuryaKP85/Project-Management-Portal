@@ -813,3 +813,20 @@ CREATE INDEX IF NOT EXISTS idx_requirement_links_requirement ON requirement_link
 CREATE INDEX IF NOT EXISTS idx_requirement_links_project ON requirement_links(project_id);
 CREATE INDEX IF NOT EXISTS idx_requirement_links_target ON requirement_links(target_id, target_type);
 CREATE INDEX IF NOT EXISTS idx_requirement_links_decomposition ON requirement_links(decomposition_id);
+
+-- ====================================================================
+-- Sprint 20: sprint assignment, backlog order and sprint completion
+-- ====================================================================
+-- The repositories have always read and written these fields; they were
+-- missing from PostgreSQL, so sprint and backlog work failed or was lost.
+-- Idempotent: safe on new and existing databases (the server applies this
+-- whole file at startup in PostgreSQL mode).
+ALTER TABLE stories ADD COLUMN IF NOT EXISTS sprint_id VARCHAR(64) REFERENCES sprints(id) ON DELETE SET NULL;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS sprint_id VARCHAR(64) REFERENCES sprints(id) ON DELETE SET NULL;
+ALTER TABLE stories ADD COLUMN IF NOT EXISTS backlog_order INTEGER;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS backlog_order INTEGER;
+ALTER TABLE features ADD COLUMN IF NOT EXISTS backlog_order INTEGER;
+ALTER TABLE epics ADD COLUMN IF NOT EXISTS backlog_order INTEGER;
+ALTER TABLE sprints ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP WITH TIME ZONE;
+CREATE INDEX IF NOT EXISTS idx_stories_sprint_id ON stories(sprint_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_sprint_id ON tasks(sprint_id);

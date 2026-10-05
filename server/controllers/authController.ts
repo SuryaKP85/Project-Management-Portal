@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthService } from '../services/authService';
 import { config } from '../config/env';
+import { clearLoginFailures, loginRetryAfter, recordLoginFailure } from '../middleware/rateLimit';
 
 export const AuthController = {
   async login(req: Request, res: Response, next: NextFunction) {
@@ -8,7 +9,25 @@ export const AuthController = {
       const { email, password } = req.body;
       const ip = req.ip || req.socket.remoteAddress;
 
-      const result = await AuthService.login(email, password, ip);
+      // Sprint 20: repeated failed sign-ins from one address are slowed down (429 until the window ends).
+      const limitKey = { ip: String(ip || 'unknown'), email: String(email || '') };
+      const retryAfter = loginRetryAfter(limitKey.ip, limitKey.email);
+      if (retryAfter > 0) {
+        res.setHeader('Retry-After', String(retryAfter));
+        return res.status(429).json({
+          success: false,
+          error: { code: 'RATE_LIMITED', message: `Too many failed sign-in attempts. Try again in ${Math.ceil(retryAfter / 60)} minute(s).` },
+        });
+      }
+
+      let result;
+      try {
+        result = await AuthService.login(email, password, ip);
+      } catch (err) {
+        recordLoginFailure(limitKey.ip, limitKey.email);
+        throw err;
+      }
+      clearLoginFailures(limitKey.ip, limitKey.email);
 
       // Set secure HTTP-only cookie
       res.cookie('auth_token', result.token, {

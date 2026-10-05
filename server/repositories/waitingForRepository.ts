@@ -1,4 +1,5 @@
 import { FollowThroughRelatedType, WaitingForItem, WaitingForStatus } from '../models/types';
+import { persistentMap } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 import {
   byDueThenCreated, matchesSearch, matchesValue, newId, toDateOnly, toIso, toOptional, toOptionalIso,
@@ -9,7 +10,8 @@ import {
  * because a person, team or external party is expected to act.
  */
 
-const memoryWaitingFor: Map<string, WaitingForItem> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryWaitingFor = persistentMap<WaitingForItem>('waitingFor');
 
 /** Statuses that mean the project is still waiting. */
 export const OPEN_WAITING_FOR_STATUSES: WaitingForStatus[] = ['Waiting', 'Follow-up Needed'];

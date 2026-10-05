@@ -1,12 +1,14 @@
 import { Project } from '../models/types';
+import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 import { cleanProjectJiraLinks } from '../services/jiraReference';
 import { duplicateRecordError } from './recordConflict';
 
-const memoryProjects: Map<string, Project> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryProjects = persistentMap<Project>('projects');
 
 function seedDefaultProjects() {
-  if (memoryProjects.size > 0) return;
+  if (memoryProjects.size > 0 || snapshotRestored()) return;
   const defaultProjects: Project[] = [
     {
       id: 'PRJ-101',

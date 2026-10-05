@@ -1,6 +1,7 @@
 /**
  * Automated Verification Test Suite for Surya PM Portal V2.0 Foundation
  */
+import './testEnv'; // Sprint 20: temporary-memory mode, before any repository loads
 import { hashPassword, verifyPassword } from '../server/auth/password';
 import { generateToken, verifyToken } from '../server/auth/jwt';
 import { hasPermission } from '../server/auth/rbac';
@@ -5358,7 +5359,7 @@ async function runTests() {
     const table45 = (t: string) => (new RegExp(`CREATE TABLE IF NOT EXISTS ${t} \\(([\\s\\S]*?)\\n\\);`).exec(schema45) || [])[1] || '';
     assert(['epics', 'features', 'stories'].every((t) => /jira_key VARCHAR\(64\)/.test(table45(t)) && /jira_url VARCHAR\(2048\)/.test(table45(t)) && new RegExp(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS jira_key VARCHAR\\(64\\);`).test(schema45) && new RegExp(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS jira_url VARCHAR\\(2048\\);`).test(schema45)), 'Schema: nullable jira_key/jira_url on epics, features and stories, with idempotent ALTERs for existing databases');
     assert(!/CREATE TABLE IF NOT EXISTS jira/i.test(schema45) && !/(jira_status|jira_summary|jira_assignee)/i.test(schema45), 'No Jira issue tables or Jira metadata columns');
-    assert(['epic', 'feature', 'story'].every((r) => { const src = fs35.readFileSync(`server/repositories/${r}Repository.ts`, 'utf8'); return /created_at, updated_at, jira_key, jira_url\n/.test(src.replace(/\r/g, '')) && /jira_key = \$\d+, jira_url = \$\d+/.test(src) && (src.match(/jiraKey: r\.jira_key \|\| undefined/g) || []).length === 2; }), 'Repositories read and write jira_key/jira_url in PostgreSQL mode (insert, update and both row mappings)');
+    assert(['epic', 'feature', 'story'].every((r) => { const src = fs35.readFileSync(`server/repositories/${r}Repository.ts`, 'utf8'); return /created_at, updated_at, jira_key, jira_url(\n|, )/.test(src.replace(/\r/g, '')) && /jira_key = \$\d+, jira_url = \$\d+/.test(src) && (src.match(/jiraKey: r\.jira_key \|\| undefined/g) || []).length === 2; }), 'Repositories read and write jira_key/jira_url in PostgreSQL mode (insert, update and both row mappings)');
 
     // --- browser sources ---
     const projectsSrc45 = fs35.readFileSync('PM-Portal/js/projects.js', 'utf8');
@@ -7160,6 +7161,433 @@ async function runTests() {
     for (const u of users49) await UserRepo40.update(u.id, { isActive: false });
   }
   assert(!(await StoryRepo49.findAll()).some((s: any) => /^S19 /.test(s.title)), 'Sprint 19 fixtures are removed after §49');
+
+  // 50. Durable V2 data & first-run readiness (Sprint 20)
+  // Embedded persistence (atomic snapshots, restore before seeds, rollback never
+  // saved), data modes, fail-fast PostgreSQL startup with schema and first-admin
+  // bootstrap, sprint/backlog columns, CORS allowlist, login rate limit and the
+  // production secret guard. Real restarts run in child processes against
+  // temporary files; the suite itself stays in temporary-memory mode.
+  console.log('\n--- 50. Durable V2 Data & First-Run Readiness (Sprint 20) ---');
+  const os50 = await import('os');
+  const path50 = await import('path');
+  const cp50 = await import('child_process');
+  const url50 = await import('url');
+  const Persist50 = await import('../server/config/persistence');
+  const Db50 = await import('../server/config/database');
+  const { config: config50, assertProductionSecrets: guard50, DEFAULT_JWT_SECRET: DEFAULT_SECRET50 } = await import('../server/config/env');
+  const { ensureFirstAdmin: bootstrap50, bootstrapCredentialProblems: credProblems50 } = await import('../server/config/bootstrapAdmin');
+  const { allowedOrigins: origins50, corsPolicy: corsPolicy50 } = await import('../server/middleware/corsPolicy');
+  const RateLimit50 = await import('../server/middleware/rateLimit');
+  const { AuthController: AuthCtl50 } = await import('../server/controllers/authController');
+  const { HealthController: HealthCtl50 } = await import('../server/controllers/healthController');
+  const { StoryRepository: StoryRepo50 } = await import('../server/repositories/storyRepository');
+  const { TaskRepository: TaskRepo50 } = await import('../server/repositories/taskRepository');
+  const { SprintRepository: SprintRepo50 } = await import('../server/repositories/sprintRepository');
+  const { verifyPassword: verify50 } = await import('../server/auth/password');
+
+  const root50 = process.cwd();
+  const tmp50 = fs35.mkdtempSync(path50.join(os50.tmpdir(), 'pm-portal-s20-'));
+  const tsx50 = path50.join(root50, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+  const mod50 = (rel: string) => url50.pathToFileURL(path50.join(root50, rel)).href;
+  // One child script, driven by S20_STEP; each run is a fresh server process.
+  const childFile50 = path50.join(tmp50, 'child.mts');
+  fs35.writeFileSync(childFile50, `
+const step = process.env.S20_STEP;
+const out = (v) => console.log('S20RESULT:' + JSON.stringify(v));
+const P = await import(${JSON.stringify(mod50('server/config/persistence.ts'))});
+const Users = (await import(${JSON.stringify(mod50('server/repositories/userRepository.ts'))})).UserRepository;
+const Projects = (await import(${JSON.stringify(mod50('server/repositories/projectRepository.ts'))})).ProjectRepository;
+const Epics = (await import(${JSON.stringify(mod50('server/repositories/epicRepository.ts'))})).EpicRepository;
+const Reqs = (await import(${JSON.stringify(mod50('server/repositories/requirementRepository.ts'))})).RequirementRepository;
+const Meetings = (await import(${JSON.stringify(mod50('server/repositories/meetingRepository.ts'))})).MeetingRepository;
+const Activity = (await import(${JSON.stringify(mod50('server/repositories/activityRepository.ts'))})).ActivityRepository;
+const Db = await import(${JSON.stringify(mod50('server/config/database.ts'))});
+const users = await Users.findAll();
+const state = async () => ({
+  mode: P.dataMode(), restored: P.snapshotRestored(), users: users.length,
+  projects: (await Projects.findAll()).length, epics: (await Epics.findAll()).map((e) => e.id).sort(),
+  requirements: (await Reqs.findAll()).map((r) => ({ id: r.id, code: r.code, revision: r.revision, title: r.title })),
+  meetings: (await Meetings.findAll()).map((m) => m.title), activity: (await Activity.findRecent(10)).map((a) => a.entityId),
+});
+const epicData = (name) => ({ id: 'epic_s20_' + Math.random().toString(36).slice(2), code: '', name, description: '', projectId: 'PRJ-101', status: 'backlog', priority: 'medium', health: 'on-track', progress: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+const reqData = (title) => ({ projectId: 'PRJ-101', title, type: 'functional', status: 'draft', priority: 'high', createdBy: 'usr_admin_1', updatedBy: 'usr_admin_1' });
+if (step === 'fresh') {
+  const r = await Reqs.create(reqData('S20 Durable requirement'));
+  await Reqs.update(r.id, { title: 'S20 Durable requirement (edited)', revision: 2, updatedBy: 'usr_admin_1' });
+  await Meetings.create({ projectId: 'PRJ-101', title: 'S20 Durable meeting', scheduledAt: '2026-10-06T09:00:00.000Z', durationMinutes: 30, organizerId: 'usr_admin_1', participantIds: [], status: 'Scheduled', createdBy: 'usr_admin_1', updatedBy: 'usr_admin_1' });
+  await Epics.delete('epic_1');
+  await Activity.create({ id: 'act_s20_1', entityType: 'requirement', entityId: r.id, action: 'create', actorId: 'usr_admin_1', actorName: 'Admin', details: {}, createdAt: new Date('2026-10-05T10:00:00Z').toISOString() });
+  P.flushNow();
+  out({ ...(await state()), created: r.code });
+} else if (step === 'deleteReq') {
+  const all = await Reqs.findAll();
+  await Reqs.delete(all.find((r) => r.title.startsWith('S20 Durable')).id);
+  P.flushNow();
+  out(await state());
+} else if (step === 'createReq') {
+  const r = await Reqs.create(reqData('S20 After restart'));
+  P.flushNow();
+  out({ ...(await state()), created: r.code });
+} else if (step === 'tx') {
+  const file = process.env.PM_PORTAL_DATA_FILE;
+  const fs = await import('fs');
+  let insideSaved = null;
+  await Db.withTransaction(async () => {
+    await Epics.create(epicData('S20 Rolled back'));
+    P.flushNow();
+    insideSaved = fs.readFileSync(file, 'utf8').includes('S20 Rolled back');
+    throw new Error('rollback');
+  }).catch(() => {});
+  P.flushNow();
+  const afterRollback = fs.readFileSync(file, 'utf8').includes('S20 Rolled back');
+  await Db.withTransaction(async () => { await Epics.create(epicData('S20 Committed')); });
+  P.flushNow();
+  out({ insideSaved, afterRollback, committedSaved: fs.readFileSync(file, 'utf8').includes('S20 Committed'), status: P.persistenceStatus() });
+} else if (step === 'saveFail') {
+  const fs = (await import('fs')).default;
+  const file = process.env.PM_PORTAL_DATA_FILE;
+  const before = fs.readFileSync(file, 'utf8');
+  const realRename = fs.renameSync;
+  fs.renameSync = () => { throw new Error('disk full (simulated)'); };
+  await Reqs.create(reqData('S20 Unsaved'));
+  const ok = P.flushNow();
+  fs.renameSync = realRename;
+  const leftovers = fs.readdirSync((await import('path')).dirname(file)).filter((f) => f.endsWith('.tmp'));
+  const H = (await import(${JSON.stringify(mod50('server/controllers/healthController.ts'))})).HealthController;
+  let health = null;
+  await H.status({}, { json: (b) => { health = b.data.storage; } });
+  out({ ok, unchanged: fs.readFileSync(file, 'utf8') === before, lastError: P.persistenceStatus().lastError, leftovers, health });
+} else if (step === 'durable') {
+  const fs = (await import('fs')).default;
+  const file = process.env.PM_PORTAL_DATA_FILE;
+  const request = (method, status, run) => new Promise((resolve) => {
+    const res = { statusCode: 200, status(c) { this.statusCode = c; return this; }, json(b) { resolve({ status: this.statusCode, body: b }); return this; } };
+    P.durableResponses({ method }, res, async () => { await run(); res.status(status).json({ success: true, data: { ok: true } }); });
+  });
+  const r1 = await request('POST', 201, () => Reqs.create(reqData('S20 Durable POST')));
+  const onDisk1 = fs.readFileSync(file, 'utf8').includes('S20 Durable POST');
+  const realRename = fs.renameSync;
+  fs.renameSync = () => { throw new Error('disk full (simulated)'); };
+  const before = fs.readFileSync(file, 'utf8');
+  const r2 = await request('POST', 201, () => Reqs.create(reqData('S20 Unsaved POST')));
+  const r3 = await request('PATCH', 200, () => Reqs.create(reqData('S20 Second unsaved')));
+  const unchanged = fs.readFileSync(file, 'utf8') === before;
+  const inMemory = (await Reqs.findAll()).some((r) => r.title === 'S20 Unsaved POST');
+  const healthError = P.persistenceStatus().lastError;
+  fs.renameSync = realRename;
+  const r4 = await request('DELETE', 200, () => Reqs.create(reqData('S20 After recovery')));
+  const text = fs.readFileSync(file, 'utf8');
+  const r5 = await request('POST', 404, async () => {});
+  const r6 = await request('GET', 200, () => Reqs.create(reqData('S20 Via GET')));
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const tx = Db.withTransaction(async () => { await Epics.create(epicData('S20 Pending tx')); await gate; throw new Error('rollback'); }).catch(() => {});
+  await new Promise((r) => setTimeout(r, 20));
+  const pending = request('POST', 201, () => Reqs.create(reqData('S20 During tx')));
+  const early = await Promise.race([pending.then(() => 'sent'), new Promise((r) => setTimeout(() => r('waiting'), 150))]);
+  release();
+  await tx;
+  const r7 = await pending;
+  const text2 = fs.readFileSync(file, 'utf8');
+  out({ r1, onDisk1, r2, r3, unchanged, inMemory, healthError, r4,
+    recovered: ['S20 Unsaved POST', 'S20 Second unsaved', 'S20 After recovery'].every((t) => text.includes(t)), r5, r6, early, r7,
+    duringTxSaved: text2.includes('S20 During tx'), rolledBackSaved: text2.includes('S20 Pending tx') });
+} else if (step === 'demo') {
+  const admin = await Users.findByEmail('admin@company.com');
+  await Users.updatePassword(admin.id, 'changed-by-owner');
+  await Users.update(admin.id, { isActive: false });
+  P.flushNow();
+  out({ emails: users.map((u) => u.email), admins: users.filter((u) => u.role === 'admin').length });
+} else if (step === 'demoState') {
+  const admin = await Users.findByEmail('admin@company.com');
+  out({ users: users.length, adminActive: admin.isActive, adminHash: admin.passwordHash });
+} else if (step === 'prodEmbedded') {
+  const B = await import(${JSON.stringify(mod50('server/config/bootstrapAdmin.ts'))});
+  const before = { users: users.length, projects: (await Projects.findAll()).length };
+  const missing = await B.ensureFirstAdmin({}).then(() => null, (e) => e.message);
+  const created = await B.ensureFirstAdmin({ BOOTSTRAP_ADMIN_EMAIL: 'owner@example.com', BOOTSTRAP_ADMIN_PASSWORD: process.env.S20_PASSWORD });
+  const admins = (await Users.findAll()).filter((u) => u.role === 'admin');
+  P.flushNow();
+  out({ before, missing, created, admins: admins.map((a) => a.email) });
+} else if (step === 'prodEmbeddedState') {
+  const B = await import(${JSON.stringify(mod50('server/config/bootstrapAdmin.ts'))});
+  out({ again: await B.ensureFirstAdmin({}), emails: (await Users.findAll()).map((u) => u.email) });
+} else if (step === 'health') {
+  const H = (await import(${JSON.stringify(mod50('server/controllers/healthController.ts'))})).HealthController;
+  let body = null;
+  await H.status({}, { json: (b) => { body = b; } });
+  out({ storage: body.data.storage, text: JSON.stringify(body) });
+} else {
+  out(await state());
+}
+`);
+  const runChild50 = (step: string, env: Record<string, string>) => {
+    const r = cp50.spawnSync(process.execPath, [tsx50, childFile50], {
+      cwd: root50, encoding: 'utf8', timeout: 120000,
+      env: { ...process.env, PM_PORTAL_DATA_MODE: '', DATABASE_URL: '', S20_STEP: step, ...env },
+    });
+    const line = (r.stdout || '').split(/\r?\n/).find((l) => l.startsWith('S20RESULT:'));
+    return { code: r.status, out: line ? JSON.parse(line.slice('S20RESULT:'.length)) : null, err: `${r.stderr || ''}${r.stdout || ''}` };
+  };
+
+  try {
+    // --- A. Modes and configuration ---
+    assert(Persist50.resolveDataMode({}, '') === 'persistent-embedded' && Persist50.resolveDataMode({ PM_PORTAL_DATA_MODE: 'memory' }, '') === 'temporary-memory' && Persist50.resolveDataMode({}, 'postgresql://x') === 'postgresql', 'Modes: persistent-embedded by default, temporary-memory only when asked for, postgresql when DATABASE_URL is set');
+    const modeErr50 = (env: any, url: string) => { try { Persist50.resolveDataMode(env, url); return null; } catch (e: any) { return e; } };
+    assert(modeErr50({ PM_PORTAL_DATA_MODE: 'memory' }, 'postgresql://x') instanceof Persist50.PersistenceConfigError && modeErr50({ PM_PORTAL_DATA_MODE: 'sqlite' }, '') instanceof Persist50.PersistenceConfigError, 'Mixing PostgreSQL with an embedded mode, or an unknown mode, is a configuration error (no mixed state)');
+    assert(Persist50.dataMode() === 'temporary-memory' && Persist50.persistenceStatus().active === false, 'The test suite itself runs in explicit temporary-memory mode and writes no data file');
+    const fileErr50 = (env: any) => { try { Persist50.resolveDataFile(env, root50); return null; } catch (e: any) { return e; } };
+    assert(fileErr50({ PM_PORTAL_DATA_FILE: path50.join(root50, 'data', 'x.json') }) instanceof Persist50.PersistenceConfigError && fileErr50({ PM_PORTAL_DATA_FILE: path50.join(root50, 'PM-Portal', 'x.json') }) instanceof Persist50.PersistenceConfigError, 'A data file inside the application folder (which can be served to browsers) is refused');
+    const def50 = Persist50.resolveDataFile({ LOCALAPPDATA: path50.join(tmp50, 'LocalAppData') }, root50);
+    assert(def50 === path50.join(tmp50, 'LocalAppData', 'PM-Portal', 'pm-portal-data.json') && Persist50.defaultDataFile({ LOCALAPPDATA: '', APPDATA: '' } as any).endsWith(path50.join('.pm-portal', 'pm-portal-data.json')), 'The default data file is in the per-user application data folder (LOCALAPPDATA on Windows, ~/.pm-portal elsewhere), never a hard-coded path');
+    let health50: any = null;
+    await HealthCtl50.status({} as any, { json: (b: any) => { health50 = b; } } as any);
+    assert(health50.data.storage.mode === 'temporary-memory' && health50.data.storage.durable === false && !/PM_PORTAL_DATA_FILE|password|secret|token/i.test(JSON.stringify(health50.data.storage)), 'Health reports the data mode (temporary-memory here) without paths, secrets or data');
+
+    // --- B. Serialisation and atomic writes ---
+    const typed50 = { when: new Date('2026-10-05T12:00:00.000Z'), nested: new Map([['k', { n: 1 }]]), tags: new Set(['a', 'b']), json: { criteria: [{ id: 'crit_1', text: 'x', completed: true }] }, token: 'v1:iv:tag:ct==' };
+    const round50: any = Persist50.decode(Persist50.encode(typed50));
+    assert(round50.when instanceof Date && round50.when.toISOString() === '2026-10-05T12:00:00.000Z' && round50.nested instanceof Map && round50.nested.get('k').n === 1 && round50.tags instanceof Set && round50.tags.has('b') && JSON.stringify(round50.json) === JSON.stringify(typed50.json) && round50.token === typed50.token, 'Dates, nested Maps/Sets, JSON-shaped fields and encrypted token strings survive a round trip exactly');
+    const atomic50 = path50.join(tmp50, 'atomic', 'data.json');
+    Persist50.writeSnapshotAtomic(atomic50, '{"v":1}');
+    const fsDefault50: any = (fs35 as any).default || fs35;
+    const realRename50 = fsDefault50.renameSync;
+    let writeErr50: any = null;
+    fsDefault50.renameSync = () => { throw new Error('rename failed (simulated)'); };
+    try {
+      Persist50.writeSnapshotAtomic(atomic50, '{"v":2}');
+    } catch (e: any) {
+      writeErr50 = e;
+    } finally {
+      fsDefault50.renameSync = realRename50;
+    }
+    assert(!!writeErr50 && fs35.readFileSync(atomic50, 'utf8') === '{"v":1}' && fs35.readdirSync(path50.dirname(atomic50)).every((f: string) => !f.endsWith('.tmp')), 'A failed replacement leaves the previous snapshot intact and no temporary file behind');
+    const parseErr50 = (t: string) => { try { Persist50.parseSnapshot(t); return null; } catch (e: any) { return e; } };
+    assert(['{not json', '[]', '{"format":"other","version":1,"stores":{}}', '{"format":"pm-portal-embedded-store","version":99,"stores":{}}', '{"format":"pm-portal-embedded-store","version":1,"stores":{"users":{"kind":"map","entries":"x"}}}'].every((t) => parseErr50(t) instanceof Persist50.PersistenceLoadError), 'Malformed, foreign, future-version and structurally damaged snapshots are rejected');
+
+    // --- C. Real restarts (child processes, temporary data files) ---
+    const dataFile50 = path50.join(tmp50, 'store', 'pm-portal-data.json');
+    const env50 = { PM_PORTAL_DATA_FILE: dataFile50 };
+    const fresh50 = runChild50('fresh', env50);
+    assert(fresh50.code === 0 && !!fresh50.out && fresh50.out.mode === 'persistent-embedded' && fresh50.out.restored === false && fresh50.out.projects > 0 && fresh50.out.users > 0 && fs35.existsSync(dataFile50), `First start: an empty store is seeded and saved to the data file (${fresh50.code}${fresh50.code ? ` ${fresh50.err.slice(-300)}` : ''})`);
+    const restart50 = runChild50('state', env50);
+    const durable50 = restart50.out?.requirements?.find((r: any) => r.title === 'S20 Durable requirement (edited)');
+    assert(restart50.code === 0 && restart50.out.restored === true && !!durable50 && durable50.code === fresh50.out.created && durable50.revision === 2 && restart50.out.meetings.includes('S20 Durable meeting') && restart50.out.activity.includes(durable50.id), 'After a restart the requirement (code and revision), the meeting and the activity entry are all still there');
+    assert(restart50.out.projects === fresh50.out.projects && restart50.out.users === fresh50.out.users && !restart50.out.epics.includes('epic_1') && JSON.stringify(restart50.out.epics) === JSON.stringify(fresh50.out.epics), 'Seeds do not run over restored data: no duplicates, and a deleted seed record stays deleted');
+    const deleted50 = runChild50('deleteReq', env50);
+    const after50 = runChild50('createReq', env50);
+    const num50 = (c: string) => Number(String(c).replace(/^REQ-/, ''));
+    assert(deleted50.code === 0 && after50.code === 0 && after50.out.created !== fresh50.out.created && num50(after50.out.created) > num50(fresh50.out.created), `Code counters are kept: a deleted requirement's code is not issued again after a restart (${fresh50.out.created} → ${after50.out.created})`);
+    const tx50 = runChild50('tx', env50);
+    assert(tx50.code === 0 && tx50.out.insideSaved === false && tx50.out.afterRollback === false && tx50.out.committedSaved === true, 'Nothing is saved while a transaction is open; a rolled-back transaction is never saved, a committed one is');
+    const fail50 = runChild50('saveFail', env50);
+    assert(fail50.code === 0 && fail50.out.ok === false && fail50.out.unchanged === true && /Saving the data file failed/.test(fail50.out.lastError) && fail50.out.leftovers.length === 0 && fail50.out.health.mode === 'persistent-embedded' && !!fail50.out.health.saveError, 'A failed save is reported (status and health), keeps the previous data file and leaves no partial file');
+    const healthP50 = runChild50('health', env50);
+    assert(healthP50.code === 0 && healthP50.out.storage.mode === 'persistent-embedded' && healthP50.out.storage.durable === true && !healthP50.out.text.includes(dataFile50) && !healthP50.out.text.includes(tmp50), 'Health reports persistent-embedded mode in the embedded server, without the data file path');
+    const healthPg50 = runChild50('health', { DATABASE_URL: 'postgresql://pm:pm@127.0.0.1:1/pm' });
+    assert(healthPg50.code === 0 && healthPg50.out.storage.mode === 'postgresql' && !healthPg50.out.text.includes('pm:pm@'), 'Health reports postgresql mode when DATABASE_URL is set, without the connection string');
+    const temp50 = runChild50('state', { PM_PORTAL_DATA_MODE: 'memory', PM_PORTAL_DATA_FILE: path50.join(tmp50, 'never', 'data.json') });
+    assert(temp50.code === 0 && temp50.out.mode === 'temporary-memory' && !fs35.existsSync(path50.join(tmp50, 'never')), 'Explicit temporary-memory mode still works and writes nothing');
+    const corrupt50 = path50.join(tmp50, 'corrupt', 'pm-portal-data.json');
+    fs35.mkdirSync(path50.dirname(corrupt50), { recursive: true });
+    fs35.writeFileSync(corrupt50, '{"format":"pm-portal-embedded-store","version":1,"stores":{"users":');
+    const corruptRun50 = runChild50('state', { PM_PORTAL_DATA_FILE: corrupt50 });
+    assert(corruptRun50.code !== 0 && corruptRun50.out === null && /could not be restored/.test(corruptRun50.err) && /Restore the file from a backup/.test(corruptRun50.err) && fs35.readFileSync(corrupt50, 'utf8').endsWith('"users":'), 'A damaged data file stops startup with a clear message; the server does not start empty and the file is not touched');
+
+    // --- C2. A change succeeds only once it is on disk (persistent-embedded) ---
+    const dur50 = runChild50('durable', env50);
+    const d50 = dur50.out;
+    assert(dur50.code === 0 && d50.r1.status === 201 && d50.r1.body.success === true && d50.onDisk1 === true, 'A successful change is answered only after it is in the data file');
+    assert(d50.r2.status === 503 && d50.r2.body.error.code === 'PERSISTENCE_FAILED' && d50.r2.body.success === false && d50.r3.status === 503 && d50.unchanged === true && /Saving the data file failed/.test(d50.healthError), 'When saving fails the caller gets 503 PERSISTENCE_FAILED, not success — for every further change too — and the previous data file is kept');
+    assert(d50.inMemory === true && d50.r4.status === 200 && d50.recovered === true, 'The unsaved changes are not lost: they stay in memory and are written by the next successful save');
+    assert(d50.r5.status === 404 && d50.r5.body.success === true && d50.r6.status === 200, 'Error responses and reads are sent as they are');
+    assert(d50.early === 'waiting' && d50.r7.status === 201 && d50.duringTxSaved === true && d50.rolledBackSaved === false, 'A response waits while another transaction is open; the rolled-back transaction is never saved, the committed change is');
+    const noopRes50: any = { json: () => 'original' };
+    const originalJson50 = noopRes50.json;
+    let nextCalled50 = false;
+    Persist50.durableResponses({ method: 'POST' }, noopRes50, () => { nextCalled50 = true; });
+    assert(nextCalled50 && noopRes50.json === originalJson50, 'In temporary-memory and PostgreSQL modes the response guard does nothing');
+    const serverSrcDur50 = fs35.readFileSync('server.ts', 'utf8');
+    assert(/app\.use\('\/api', durableResponses\)/.test(serverSrcDur50) && /if \(mode === 'persistent-embedded' && !flushNow\(\)\)/.test(serverSrcDur50), 'The guard covers the whole API, and startup fails if the data file cannot be written');
+
+    // --- C3. Demo accounts ---
+    const demoFile50 = path50.join(tmp50, 'demo', 'pm-portal-data.json');
+    const demo50 = runChild50('demo', { PM_PORTAL_DATA_FILE: demoFile50 });
+    const demoAgain50 = runChild50('demoState', { PM_PORTAL_DATA_FILE: demoFile50 });
+    const demoLogs50 = demo50.err + demoAgain50.err;
+    assert(demo50.code === 0 && demo50.out.emails.includes('admin@company.com') && demo50.out.admins >= 1, 'Outside production a new embedded store gets the demo accounts');
+    assert(demoAgain50.code === 0 && demoAgain50.out.users === demo50.out.emails.length && demoAgain50.out.adminActive === false && demoAgain50.out.adminHash === 'changed-by-owner', 'A demo account that was changed or deactivated stays that way after a restart (never re-seeded or reset)');
+    assert(!/iRely@123|Admin@123|User@123/.test(demoLogs50) && !/console\.(log|info|warn)\([^)]*(iRely@123|Admin@123|User@123)/.test(fs35.readFileSync('server/repositories/userRepository.ts', 'utf8')), 'Demo passwords never appear in server output');
+    const prodFile50 = path50.join(tmp50, 'prod', 'pm-portal-data.json');
+    const prodPassword50 = 'Kept!Secure#Vault2026';
+    const prod50 = runChild50('prodEmbedded', { PM_PORTAL_DATA_FILE: prodFile50, NODE_ENV: 'production', S20_PASSWORD: prodPassword50 });
+    const prodAgain50 = runChild50('prodEmbeddedState', { PM_PORTAL_DATA_FILE: prodFile50, NODE_ENV: 'production' });
+    assert(prod50.code === 0 && prod50.out.before.users === 0 && prod50.out.before.projects > 0 && /BOOTSTRAP_ADMIN_EMAIL/.test(prod50.out.missing), `In production a new embedded store has no demo accounts and needs the bootstrap variables (other demo data is unaffected)${prod50.code ? ` [${prod50.err.slice(-600)}]` : ""}`);
+    assert(prod50.out.created === 'created' && JSON.stringify(prod50.out.admins) === JSON.stringify(['owner@example.com']) && prodAgain50.code === 0 && prodAgain50.out.again === 'exists' && JSON.stringify(prodAgain50.out.emails) === JSON.stringify(['owner@example.com']) && !(prod50.err + prodAgain50.err).includes(prodPassword50), 'Its only administrator is the bootstrapped one, kept across restarts; the password is never printed');
+    const archDocDemo50 = fs35.readFileSync('V2_ARCHITECTURE.md', 'utf8');
+    assert(/development and demonstration only/.test(archDocDemo50) && /Change their passwords or deactivate them before any real use/.test(archDocDemo50) && /With .NODE_ENV=production. no demo accounts are seeded/.test(archDocDemo50) && /PERSISTENCE_FAILED/.test(archDocDemo50), 'The documentation states the demo accounts are development-only, must be changed before real use, are not seeded in production, and describes the save guarantee');
+
+    // --- D. PostgreSQL startup: fail fast, schema, first admin ---
+    const savedUrl50 = config50.databaseUrl;
+    let pgErr50: any = null;
+    config50.databaseUrl = 'postgresql://pm:secret-pass@127.0.0.1:1/pm';
+    try {
+      await Db50.initDatabase();
+    } catch (e: any) {
+      pgErr50 = e;
+    } finally {
+      config50.databaseUrl = savedUrl50;
+    }
+    assert(pgErr50 instanceof Db50.DatabaseStartupError && /could not be reached/.test(pgErr50.message) && /does not fall back/.test(pgErr50.message) && !pgErr50.message.includes('secret-pass') && Db50.isDbConnected() === false, 'A configured but unreachable PostgreSQL stops startup (no fallback to memory, no credentials in the message)');
+    const sqlSeen50: string[] = [];
+    await Db50.applySchema({ query: async (sql: string) => { sqlSeen50.push(sql); } });
+    const schemaErr50 = await Db50.applySchema({ query: async () => { throw new Error('syntax error'); } }).then(() => null, (e: any) => e);
+    const missingErr50 = await Db50.applySchema({ query: async () => {} }, path50.join(tmp50, 'missing.sql')).then(() => null, (e: any) => e);
+    assert(sqlSeen50.length === 1 && /CREATE TABLE IF NOT EXISTS requirements/.test(sqlSeen50[0]) && /ALTER TABLE stories ADD COLUMN IF NOT EXISTS sprint_id/.test(sqlSeen50[0]) && schemaErr50 instanceof Db50.DatabaseStartupError && missingErr50 instanceof Db50.DatabaseStartupError, 'The idempotent schema file is applied at startup in one call; a schema error or a missing file stops startup');
+    const users50: any[] = [];
+    let admins50 = 0;
+    const pool50 = {
+      query: async (text: string, params: any[] = []) => {
+        if (/COUNT\(\*\)::int AS n FROM users WHERE role = 'admin'/.test(text)) return { rows: [{ n: admins50 }] };
+        if (/FROM users WHERE LOWER\(email\) = \$1/.test(text)) return { rows: users50.filter((u) => u.email === params[0]) };
+        if (/^\s*INSERT INTO users/.test(text)) { users50.push({ id: params[0], email: params[1], password_hash: params[2], role: params[5] }); return { rows: [], rowCount: 1 }; }
+        return { rows: [], rowCount: 0 };
+      },
+      connect: async () => { throw new Error('no client'); },
+    };
+    const logs50: string[] = [];
+    const strong50 = 'Str0ng!Bootstrap#2026';
+    const restorePool50 = Db50.setDatabasePoolForTests(pool50);
+    let results50: any = {};
+    try {
+      admins50 = 1;
+      results50.exists = await bootstrap50({ BOOTSTRAP_ADMIN_EMAIL: 'first@company.com', BOOTSTRAP_ADMIN_PASSWORD: strong50 }, (m) => logs50.push(m));
+      results50.insertsWhenExists = users50.length;
+      admins50 = 0;
+      results50.missing = await bootstrap50({}, (m) => logs50.push(m)).then(() => null, (e: any) => e);
+      results50.weak = await bootstrap50({ BOOTSTRAP_ADMIN_EMAIL: 'first@company.com', BOOTSTRAP_ADMIN_PASSWORD: 'Admin@123' }, (m) => logs50.push(m)).then(() => null, (e: any) => e);
+      results50.badEmail = await bootstrap50({ BOOTSTRAP_ADMIN_EMAIL: 'not-an-email', BOOTSTRAP_ADMIN_PASSWORD: strong50 }, (m) => logs50.push(m)).then(() => null, (e: any) => e);
+      users50.push({ id: 'usr_existing', email: 'taken@company.com', password_hash: 'unchanged', role: 'team-member' });
+      results50.taken = await bootstrap50({ BOOTSTRAP_ADMIN_EMAIL: 'taken@company.com', BOOTSTRAP_ADMIN_PASSWORD: strong50 }, (m) => logs50.push(m)).then(() => null, (e: any) => e);
+      results50.created = await bootstrap50({ BOOTSTRAP_ADMIN_EMAIL: ' First@Company.com ', BOOTSTRAP_ADMIN_PASSWORD: strong50 }, (m) => logs50.push(m));
+      admins50 = 1;
+      results50.again = await bootstrap50({ BOOTSTRAP_ADMIN_EMAIL: 'other@company.com', BOOTSTRAP_ADMIN_PASSWORD: strong50 }, (m) => logs50.push(m));
+    } finally {
+      restorePool50();
+    }
+    const admin50 = users50.find((u) => u.email === 'first@company.com');
+    assert(results50.exists === 'exists' && results50.insertsWhenExists === 0 && results50.again === 'exists' && users50.filter((u) => u.role === 'admin').length === 1, 'Bootstrap creates exactly one administrator and does nothing once one exists (repeat startups are idempotent)');
+    assert(results50.missing?.message?.includes('BOOTSTRAP_ADMIN_EMAIL') && results50.missing.message.includes('BOOTSTRAP_ADMIN_PASSWORD'), 'An empty PostgreSQL database without bootstrap credentials stops with instructions');
+    assert(!!results50.weak && !!results50.badEmail && !results50.weak.message.includes('Admin@123') && credProblems50('a@b.co', 'short').length > 0 && credProblems50('first@company.com', 'first@company.comA1!xx').length > 0 && credProblems50('first@company.com', strong50).length === 0, 'Weak passwords and invalid emails are refused, without echoing the password');
+    assert(!!results50.taken && users50.find((u) => u.email === 'taken@company.com').password_hash === 'unchanged' && users50.filter((u) => u.email === 'taken@company.com').length === 1, 'An existing account is never overwritten, reset or promoted by the bootstrap');
+    assert(results50.created === 'created' && !!admin50 && admin50.role === 'admin' && admin50.password_hash !== strong50 && (await verify50(strong50, admin50.password_hash)) && !logs50.some((l) => l.includes(strong50) || l.includes('first@company.com')), 'The administrator is created with a scrypt hash (never the plain password), and nothing logged contains the password or email');
+
+    // --- E. Sprint / backlog columns in PostgreSQL ---
+    const schema50 = fs35.readFileSync('server/db/schema.sql', 'utf8');
+    assert(['stories', 'tasks'].every((t) => new RegExp(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS sprint_id VARCHAR\\(64\\) REFERENCES sprints\\(id\\) ON DELETE SET NULL;`).test(schema50)) && ['stories', 'tasks', 'features', 'epics'].every((t) => new RegExp(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS backlog_order INTEGER;`).test(schema50)) && /ALTER TABLE sprints ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP WITH TIME ZONE;/.test(schema50) && /idx_stories_sprint_id ON stories\(sprint_id\)/.test(schema50), 'Schema: stories/tasks.sprint_id (FK, set null), backlog_order on stories, tasks, features and epics, sprints.completed_at — all idempotent');
+    const pgLog50: Array<{ text: string; params: any[] }> = [];
+    const storyRow50 = { id: 'story_pg', code: 'STR-1', title: 'PG story', project_id: 'P', status: 'ready', priority: 'medium', story_points: 3, progress: 0, sprint_id: 'sprint_pg', backlog_order: 7, user_story: { asA: '', iWant: '', soThat: '' }, acceptance_criteria: [], created_at: 'x', updated_at: 'x' };
+    const taskRow50 = { id: 'task_pg', code: 'TSK-1', title: 'PG task', project_id: 'P', status: 'todo', priority: 'medium', progress: 0, sprint_id: 'sprint_pg', backlog_order: 9, created_at: 'x', updated_at: 'x' };
+    const sprintRow50 = { id: 'sprint_pg', code: 'SPR-1', name: 'PG sprint', project_id: 'P', status: 'active', start_date: '2026-10-01', end_date: '2026-10-14', capacity_hours: 0, capacity_points: 0, completed_at: null, created_at: 'x', updated_at: 'x' };
+    const restoreSprintPool50 = Db50.setDatabasePoolForTests({
+      query: async (text: string, params: any[] = []) => {
+        pgLog50.push({ text, params });
+        if (/FROM stories/.test(text) && !/^\s*(INSERT|UPDATE)/.test(text)) return { rows: [storyRow50] };
+        if (/FROM tasks/.test(text) && !/^\s*(INSERT|UPDATE)/.test(text)) return { rows: [taskRow50] };
+        if (/FROM sprints/.test(text) && !/^\s*(INSERT|UPDATE)/.test(text)) return { rows: [sprintRow50] };
+        return { rows: [], rowCount: 1 };
+      },
+      connect: async () => { throw new Error('no client'); },
+    });
+    let pgStories50: any[] = [];
+    let pgStory50: any = null;
+    let pgTasks50: any[] = [];
+    try {
+      pgStories50 = await StoryRepo50.findAll({ sprintId: 'sprint_pg' } as any);
+      pgStory50 = await StoryRepo50.findById('story_pg');
+      pgTasks50 = await TaskRepo50.findAll({ sprintId: 'sprint_pg' } as any);
+      await StoryRepo50.update('story_pg', { sprintId: 'sprint_next', backlogOrder: 3 } as any);
+      await TaskRepo50.update('task_pg', { sprintId: undefined, backlogOrder: 4 } as any);
+      await SprintRepo50.update('sprint_pg', { status: 'completed' } as any);
+    } finally {
+      restoreSprintPool50();
+      // The stand-in rows were mirrored into memory; remove them.
+      await StoryRepo50.delete('story_pg');
+      await TaskRepo50.delete('task_pg');
+      await SprintRepo50.delete('sprint_pg');
+    }
+    const storyUpdate50 = pgLog50.find((l) => /^\s*UPDATE stories SET/.test(l.text));
+    const taskUpdate50 = pgLog50.find((l) => /^\s*UPDATE tasks SET/.test(l.text));
+    const sprintUpdate50 = pgLog50.find((l) => /^\s*UPDATE sprints SET/.test(l.text));
+    assert(pgLog50.some((l) => /s\.sprint_id = \$\d+/.test(l.text)) && pgStories50[0]?.sprintId === 'sprint_pg' && pgStories50[0]?.backlogOrder === 7 && pgStory50?.sprintId === 'sprint_pg' && pgStory50?.backlogOrder === 7 && pgTasks50[0]?.sprintId === 'sprint_pg' && pgTasks50[0]?.backlogOrder === 9, 'PostgreSQL reads filter on and map sprint_id and backlog_order (list and single reads)');
+    assert(!!storyUpdate50 && /sprint_id = \$22, backlog_order = \$23\s+WHERE id = \$24/.test(storyUpdate50.text) && storyUpdate50.params[21] === 'sprint_next' && storyUpdate50.params[22] === 3 && !!taskUpdate50 && /sprint_id = \$19, backlog_order = \$20\s+WHERE id = \$21/.test(taskUpdate50.text) && taskUpdate50.params[18] === null && taskUpdate50.params[19] === 4, 'PostgreSQL updates write sprint_id and backlog_order (clearing a sprint writes NULL)');
+    assert(!!sprintUpdate50 && /completed_at = \$9 WHERE id = \$10/.test(sprintUpdate50.text) && typeof sprintUpdate50.params[8] === 'string', 'Completing a sprint records completed_at');
+    const repoSrc50 = ['story', 'task', 'epic', 'feature'].map((r) => fs35.readFileSync(`server/repositories/${r}Repository.ts`, 'utf8'));
+    assert(repoSrc50.every((src: string) => /backlog_order/.test(src) && /backlogOrder \?\? null/.test(src)) && /story\.sprintId \|\| null/.test(repoSrc50[0]) && /task\.sprintId \|\| null/.test(repoSrc50[1]), 'Inserts write the new columns for stories, tasks, epics and features');
+
+    // --- F. CORS allowlist ---
+    const allowed50 = origins50('https://pm.example.com', false, 5173);
+    const prodAllowed50 = origins50('https://pm.example.com', true, 5173);
+    const badOrigin50 = (raw: string) => { try { origins50(raw, true, 5173); return null; } catch (e: any) { return e; } };
+    assert(allowed50.has('https://pm.example.com') && allowed50.has('http://localhost:5173') && prodAllowed50.has('https://pm.example.com') && !prodAllowed50.has('http://localhost:5173') && !!badOrigin50('pm.example.com') && !!badOrigin50('https://pm.example.com/path'), 'Allowlist: configured origins, plus localhost only outside production; malformed entries are refused');
+    const corsRun50 = (origin: string | undefined, host = 'portal.local:5173', method = 'GET') => new Promise<any>((resolve) => {
+      const headers: Record<string, string> = {};
+      const req: any = { method, headers: { ...(origin ? { origin } : {}), host, 'access-control-request-method': 'POST' }, protocol: 'http', get: (n: string) => (n.toLowerCase() === 'host' ? host : n.toLowerCase() === 'origin' ? origin : undefined) };
+      const res: any = { statusCode: 200, setHeader: (k: string, v: string) => { headers[k.toLowerCase()] = String(v); }, getHeader: (k: string) => headers[k.toLowerCase()], end: () => resolve({ headers, ended: true }) };
+      corsPolicy50(prodAllowed50)(req, res, () => resolve({ headers, ended: false }));
+    });
+    const okCors50 = await corsRun50('https://pm.example.com');
+    const evilCors50 = await corsRun50('https://evil.example');
+    const evilPreflight50 = await corsRun50('https://evil.example', 'portal.local:5173', 'OPTIONS');
+    const sameCors50 = await corsRun50('http://portal.local:5173');
+    const noOrigin50 = await corsRun50(undefined);
+    assert(okCors50.headers['access-control-allow-origin'] === 'https://pm.example.com' && okCors50.headers['access-control-allow-credentials'] === 'true', 'An allowed origin gets its origin and credentials back');
+    assert(!evilCors50.headers['access-control-allow-origin'] && !evilCors50.headers['access-control-allow-credentials'] && !evilPreflight50.headers['access-control-allow-origin'], 'An unapproved origin is not reflected and gets no credentials (requests and preflights)');
+    assert(sameCors50.headers['access-control-allow-origin'] === 'http://portal.local:5173' && !noOrigin50.headers['access-control-allow-origin'], 'Same-origin use keeps working (localhost or LAN address); requests without an Origin get no CORS headers');
+    assert(!/origin: true,\s*credentials: true/.test(fs35.readFileSync('server.ts', 'utf8')) && /app\.use\(cors\)/.test(fs35.readFileSync('server.ts', 'utf8')), 'The server no longer reflects any origin with credentials');
+
+    // --- G. Login rate limit ---
+    RateLimit50.resetRateLimits();
+    const loginUser50 = await Auth40.register({ email: `s20.login.${Date.now()}@company.com`, password: 'Sprint20@12345', firstName: 'Login', lastName: 'S20', role: 'team-member' }, login40.user);
+    const loginAs50 = (password: string, ip = '10.0.0.5') => new Promise<any>((resolve) => {
+      const res: any = { statusCode: 200, headers: {}, setHeader(k: string, v: string) { this.headers[k] = v; }, cookie() { return this; }, status(c: number) { this.statusCode = c; return this; }, json(b: any) { this.body = b; resolve(this); return this; } };
+      AuthCtl50.login({ body: { email: loginUser50.email, password }, ip, socket: {} } as any, res, (e: any) => resolve({ statusCode: 500, error: e }));
+    });
+    const fails50 = [];
+    for (let i = 0; i < 5; i++) fails50.push((await loginAs50('wrong-password')).statusCode);
+    const blocked50 = await loginAs50('Sprint20@12345');
+    const otherIp50 = await loginAs50('Sprint20@12345', '10.0.0.9');
+    assert(fails50.every((c) => c === 401) && blocked50.statusCode === 429 && blocked50.body.error.code === 'RATE_LIMITED' && Number(blocked50.headers['Retry-After']) > 0 && otherIp50.statusCode === 200, `Five failed sign-ins lock that account+address with 429 and Retry-After (even the right password), while another address is unaffected (${fails50.join(',')}→${blocked50.statusCode})`);
+    const { windowMs: window50 } = RateLimit50.loginLimits();
+    assert(RateLimit50.loginRetryAfter('10.0.0.5', loginUser50.email, Date.now() + window50 + 1) === 0, 'The lock ends with the window — nobody is locked out permanently');
+    RateLimit50.resetRateLimits();
+    for (let i = 0; i < 4; i++) await loginAs50('wrong-password');
+    const success50 = await loginAs50('Sprint20@12345');
+    const afterSuccess50 = [];
+    for (let i = 0; i < 4; i++) afterSuccess50.push((await loginAs50('wrong-password')).statusCode);
+    assert(success50.statusCode === 200 && afterSuccess50.every((c) => c === 401), 'A successful sign-in clears the failure count, so legitimate users are not left blocked');
+    RateLimit50.resetRateLimits();
+    await UserRepo40.update(loginUser50.id, { isActive: false });
+
+    // --- H. Production secret guard ---
+    const guardErr50 = (env: any) => { try { guard50(env); return null; } catch (e: any) { return e; } };
+    const strongSecret50 = 'k9'.repeat(24);
+    assert([{ NODE_ENV: 'production' }, { NODE_ENV: 'production', JWT_SECRET: DEFAULT_SECRET50 }, { NODE_ENV: 'production', JWT_SECRET: 'enterprise_super_secret_jwt_key_surya_pm_portal_v2' }, { NODE_ENV: 'production', JWT_SECRET: 'short-secret' }].every((env) => guardErr50(env)?.message?.includes('JWT_SECRET')) && !guardErr50({ NODE_ENV: 'production', JWT_SECRET: DEFAULT_SECRET50 }).message.includes(DEFAULT_SECRET50), 'Production refuses a missing, default, sample or short JWT_SECRET (without printing it)');
+    assert(guardErr50({ NODE_ENV: 'production', JWT_SECRET: strongSecret50 }) === null && guardErr50({ NODE_ENV: 'development' }) === null && guardErr50({}) === null, 'A strong production secret passes; development and test keep working without one');
+
+    // --- I. Source contracts ---
+    const serverSrc50 = fs35.readFileSync('server.ts', 'utf8');
+    const repoDir50 = fs35.readdirSync('server/repositories').filter((f: string) => f.endsWith('.ts'));
+    const rawMaps50 = repoDir50.filter((f: string) => /^const memory\w+[^\n]*new Map/m.test(fs35.readFileSync(`server/repositories/${f}`, 'utf8')));
+    assert(rawMaps50.length === 0 && Persist50.registeredStores().size >= 31, `Every production repository store is registered for persistence (${Persist50.registeredStores().size} stores; unregistered: ${rawMaps50.join(', ') || 'none'})`);
+    assert(/assertProductionSecrets\(\)/.test(serverSrc50) && /ensureFirstAdmin\(\)/.test(serverSrc50) && /await import\('\.\/server\/routes'\)/.test(serverSrc50) && !/Using local embedded data store/.test(fs35.readFileSync('server/config/database.ts', 'utf8')), 'Startup checks secrets, connects or fails, bootstraps the administrator, and loads routes (and data) only afterwards; the silent fallback is gone');
+    const envExample50 = fs35.readFileSync('.env.example', 'utf8');
+    assert(!/SQLite/i.test(envExample50) && /^# DATABASE_URL=/m.test(envExample50) && /PM_PORTAL_DATA_FILE/.test(envExample50) && /CORS_ALLOWED_ORIGINS/.test(envExample50) && /BOOTSTRAP_ADMIN_EMAIL/.test(envExample50), '.env.example documents the data modes, data file, CORS and bootstrap settings, and no longer mentions SQLite');
+  } finally {
+    try { fs35.rmSync(tmp50, { recursive: true, force: true }); } catch { /* temporary files */ }
+  }
+  assert(!fs35.existsSync(tmp50), 'Sprint 20 temporary data files are removed after §50');
 
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

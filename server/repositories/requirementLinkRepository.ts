@@ -1,4 +1,5 @@
 import { RequirementDecomposition, RequirementLink, RequirementLinkTargetType } from '../models/types';
+import { persistentMap } from '../config/persistence';
 import { isDbConnected, query, trackMemoryWrite } from '../config/database';
 import { newId, toIso } from './followThroughRows';
 import { duplicateRecordError } from './recordConflict';
@@ -17,8 +18,10 @@ import { duplicateRecordError } from './recordConflict';
  * pass it.
  */
 
-const memoryDecompositions: Map<string, RequirementDecomposition> = new Map();
-const memoryLinks: Map<string, RequirementLink> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryDecompositions = persistentMap<RequirementDecomposition>('requirementDecompositions');
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryLinks = persistentMap<RequirementLink>('requirementLinks');
 
 export const REQUIREMENT_LINK_TARGET_TYPES: readonly RequirementLinkTargetType[] = ['epic', 'feature', 'story'];
 

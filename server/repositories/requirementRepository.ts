@@ -1,4 +1,5 @@
 import { Requirement, RequirementPriority, RequirementStatus, RequirementType } from '../models/types';
+import { persistentMap } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 import { matchesSearch, matchesValue, newId, toDateOnly, toIso, toOptional } from './followThroughRows';
 import { duplicateRecordError } from './recordConflict';
@@ -18,7 +19,8 @@ import { duplicateRecordError } from './recordConflict';
  * retry if a generated code still loses a race on UNIQUE(code).
  */
 
-const memoryRequirements: Map<string, Requirement> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryRequirements = persistentMap<Requirement>('requirements');
 
 export interface RequirementFilter {
   /** Access scope set by the service: only these projects are returned. */
@@ -43,16 +45,17 @@ export function nextRequirementCodeNumber(codes: Iterable<string | null | undefi
   return highest === null ? 101 : highest + 1;
 }
 
-/** Memory-mode counter; null until first use. */
-let memoryCodeCounter: number | null = null;
+/**
+ * Reads and advances the memory-mode counter in one synchronous step — no
+ * await between. Sprint 20: the counter is kept with the embedded data, so a
+ * deleted code is not issued again after a restart.
+ */
+const codeCounters = persistentMap<number>('requirementCodeCounter');
 
-/** Reads and advances the counter in one synchronous step — no await between. */
 function issueMemoryCode(): string {
-  if (memoryCodeCounter === null) {
-    memoryCodeCounter = nextRequirementCodeNumber(Array.from(memoryRequirements.values()).map((r) => r.code));
-  }
-  const n = memoryCodeCounter;
-  memoryCodeCounter = n + 1;
+  const counters = codeCounters;
+  const n = Math.max(counters.get('requirement') ?? 0, nextRequirementCodeNumber(Array.from(memoryRequirements.values()).map((r) => r.code)));
+  counters.set('requirement', n + 1);
   return `REQ-${n}`;
 }
 

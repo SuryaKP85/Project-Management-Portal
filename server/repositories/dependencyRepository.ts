@@ -1,7 +1,9 @@
 import { Dependency, DependencyEntityType, DependencyStatus, DependencyType, DependencyCriticality } from '../models/types';
+import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 
-const memoryDependencies: Map<string, Dependency> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryDependencies = persistentMap<Dependency>('dependencies');
 
 /**
  * Checks if adding or updating an active dependency edge creates a cycle in the directed dependency graph.
@@ -163,7 +165,7 @@ export function isDuplicateRelationship(
 }
 
 function seedDefaultDependencies() {
-  if (memoryDependencies.size > 0) return;
+  if (memoryDependencies.size > 0 || snapshotRestored()) return;
   const defaults: Dependency[] = [
     {
       id: 'dep_1',

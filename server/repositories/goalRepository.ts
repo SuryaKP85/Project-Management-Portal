@@ -1,10 +1,12 @@
 import { Goal } from '../models/types';
+import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 
-const memoryGoals: Map<string, Goal> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryGoals = persistentMap<Goal>('goals');
 
 function seedDefaultGoals() {
-  if (memoryGoals.size > 0) return;
+  if (memoryGoals.size > 0 || snapshotRestored()) return;
   const defaults: Goal[] = [
     {
       id: 'goal_1',

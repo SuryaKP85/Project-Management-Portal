@@ -1,4 +1,5 @@
 import { UserStory } from '../models/types';
+import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query, trackMemoryWrite, withSavepoint } from '../config/database';
 import { MAX_CODE_ATTEMPTS, isCodeCollision, issueMemoryDeliveryCode, issueSequenceDeliveryCode } from './deliveryCodes';
 import { duplicateRecordError } from './recordConflict';
@@ -6,10 +7,11 @@ import { canonicalStory, readCriteria, readUserStory } from '../services/storyDe
 import { TaskRepository } from './taskRepository';
 import { calculateStoryProgress } from '../services/progressCalculator';
 
-const memoryStories: Map<string, UserStory> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryStories = persistentMap<UserStory>('stories');
 
 function seedDefaultStories() {
-  if (memoryStories.size > 0) return;
+  if (memoryStories.size > 0 || snapshotRestored()) return;
   const defaults: UserStory[] = [
     {
       id: 'story_1',
@@ -245,7 +247,8 @@ export const StoryRepository = {
         reporterId: r.reporter_id,
         reporterName: r.reporter_name,
         sprint: r.sprint,
-        sprintId: r.sprint_id,
+        sprintId: r.sprint_id || undefined,
+        backlogOrder: r.backlog_order === null || r.backlog_order === undefined ? undefined : Number(r.backlog_order),
         targetRelease: r.target_release,
         dueDate: r.due_date,
         progress: parseInt(r.progress, 10) || 0,
@@ -331,6 +334,8 @@ export const StoryRepository = {
         reporterId: r.reporter_id,
         reporterName: r.reporter_name,
         sprint: r.sprint,
+        sprintId: r.sprint_id || undefined,
+        backlogOrder: r.backlog_order === null || r.backlog_order === undefined ? undefined : Number(r.backlog_order),
         targetRelease: r.target_release,
         dueDate: r.due_date,
         progress: parseInt(r.progress, 10) || 0,
@@ -354,12 +359,12 @@ export const StoryRepository = {
           id, code, title, description, user_story, acceptance_criteria,
           feature_id, epic_id, project_id, product_id, story_points, priority,
           status, assignee_id, team_id, reporter_id, sprint, target_release,
-          due_date, progress, created_at, updated_at, jira_key, jira_url
+          due_date, progress, created_at, updated_at, jira_key, jira_url, sprint_id, backlog_order
         ) VALUES (
           $1, $2, $3, $4, $5, $6,
           $7, $8, $9, $10, $11, $12,
           $13, $14, $15, $16, $17, $18,
-          $19, $20, $21, $22, $23, $24
+          $19, $20, $21, $22, $23, $24, $25, $26
         ) RETURNING *
       `;
       for (let attempt = 1; ; attempt += 1) {
@@ -390,6 +395,8 @@ export const StoryRepository = {
             story.updatedAt || new Date().toISOString(),
             story.jiraKey || null,
             story.jiraUrl || null,
+            story.sprintId || null,
+            story.backlogOrder ?? null,
           ]));
           break;
         } catch (err) {
@@ -426,8 +433,9 @@ export const StoryRepository = {
           feature_id = $5, epic_id = $6, project_id = $7, product_id = $8,
           story_points = $9, priority = $10, status = $11, assignee_id = $12,
           team_id = $13, reporter_id = $14, sprint = $15, target_release = $16,
-          due_date = $17, progress = $18, updated_at = $19, jira_key = $20, jira_url = $21
-        WHERE id = $22
+          due_date = $17, progress = $18, updated_at = $19, jira_key = $20, jira_url = $21,
+          sprint_id = $22, backlog_order = $23
+        WHERE id = $24
       `;
       await query(q, [
         merged.title,
@@ -451,6 +459,8 @@ export const StoryRepository = {
         merged.updatedAt,
         merged.jiraKey || null,
         merged.jiraUrl || null,
+        merged.sprintId || null,
+        merged.backlogOrder ?? null,
         id,
       ]);
     }

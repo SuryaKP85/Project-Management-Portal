@@ -1,4 +1,5 @@
 import { ActionItem, ActionItemPriority, ActionItemStatus } from '../models/types';
+import { persistentMap } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 import {
   byDueThenCreated, matchesSearch, matchesValue, newId, toDateOnly, toIso, toOptional, toOptionalIso,
@@ -10,7 +11,8 @@ import {
  * repositories: PostgreSQL when connected, in-memory fallback otherwise.
  */
 
-const memoryActionItems: Map<string, ActionItem> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryActionItems = persistentMap<ActionItem>('actionItems');
 
 /** Statuses that no longer need anyone's attention. */
 export const CLOSED_ACTION_ITEM_STATUSES: ActionItemStatus[] = ['Completed', 'Cancelled'];

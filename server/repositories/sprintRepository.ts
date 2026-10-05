@@ -1,10 +1,12 @@
 import { Sprint, SprintStatus } from '../models/types';
+import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 
-const memorySprints: Map<string, Sprint> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memorySprints = persistentMap<Sprint>('sprints');
 
 function seedDefaultSprints() {
-  if (memorySprints.size > 0) return;
+  if (memorySprints.size > 0 || snapshotRestored()) return;
   const defaults: Sprint[] = [
     {
       id: 'sprint_3',
@@ -125,6 +127,7 @@ export const SprintRepository = {
         capacityPoints: Number(r.capacity_points),
         createdAt: r.created_at,
         updatedAt: r.updated_at,
+        completedAt: r.completed_at ? new Date(r.completed_at).toISOString() : undefined,
       }));
     }
 
@@ -156,6 +159,7 @@ export const SprintRepository = {
         capacityPoints: Number(r.capacity_points),
         createdAt: r.created_at,
         updatedAt: r.updated_at,
+        completedAt: r.completed_at ? new Date(r.completed_at).toISOString() : undefined,
       };
     }
     return memorySprints.get(id) || null;
@@ -243,11 +247,13 @@ export const SprintRepository = {
       ...updates,
       updatedAt: new Date().toISOString(),
     };
+    // Sprint 20: completion is stamped once, when the sprint first becomes completed.
+    if (updated.status === 'completed' && !updated.completedAt) updated.completedAt = updated.updatedAt;
 
     if (isDbConnected()) {
       await query(
         `UPDATE sprints SET name = $1, goal = $2, start_date = $3, end_date = $4, status = $5,
-         capacity_hours = $6, capacity_points = $7, updated_at = $8 WHERE id = $9`,
+         capacity_hours = $6, capacity_points = $7, updated_at = $8, completed_at = $9 WHERE id = $10`,
         [
           updated.name,
           updated.goal || null,
@@ -257,6 +263,7 @@ export const SprintRepository = {
           updated.capacityHours,
           updated.capacityPoints,
           updated.updatedAt,
+          updated.completedAt || null,
           id,
         ]
       );

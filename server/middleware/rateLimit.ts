@@ -99,3 +99,50 @@ export function rateLimit(options: RateLimitOptions) {
     next();
   };
 }
+
+// --------------------------------------------------------------------
+// Sprint 20 — failed sign-in limiter (same fixed-window buckets).
+//
+// Only failures count. Per account+IP: LOGIN_RATE_LIMIT_MAX failures (default
+// 5) per LOGIN_RATE_LIMIT_WINDOW_MS (default 15 minutes); per IP across all
+// accounts: four times that. When either is reached, sign-in attempts get 429
+// with Retry-After until the window ends — nothing is locked permanently. A
+// successful sign-in clears the account+IP counter.
+// --------------------------------------------------------------------
+
+const LOGIN_BUCKET = 'login-failures';
+const LOGIN_IP_BUCKET = 'login-failures-ip';
+
+export function loginLimits() {
+  const max = Math.max(1, Number(process.env.LOGIN_RATE_LIMIT_MAX) || 5);
+  const windowMs = Math.max(1000, Number(process.env.LOGIN_RATE_LIMIT_WINDOW_MS) || 15 * 60_000);
+  return { max, ipMax: max * 4, windowMs };
+}
+
+const accountKey = (ip: string, email: string) => `${ip}|${email.trim().toLowerCase()}`;
+
+/** Seconds until sign-in may be tried again, or 0 when it is allowed now. */
+export function loginRetryAfter(ip: string, email: string, now = Date.now()): number {
+  const { max, ipMax, windowMs } = loginLimits();
+  let wait = 0;
+  for (const [bucketName, key, limit] of [[LOGIN_BUCKET, accountKey(ip, email), max], [LOGIN_IP_BUCKET, ip, ipMax]] as const) {
+    const bucket = getBucket(bucketName);
+    pruneExpired(bucket, now, windowMs);
+    const state = bucket.get(key);
+    if (state && state.count >= limit) wait = Math.max(wait, Math.ceil((state.windowStart + windowMs - now) / 1000));
+  }
+  return wait;
+}
+
+export function recordLoginFailure(ip: string, email: string, now = Date.now()): void {
+  for (const [bucketName, key] of [[LOGIN_BUCKET, accountKey(ip, email)], [LOGIN_IP_BUCKET, ip]] as const) {
+    const bucket = getBucket(bucketName);
+    const state = bucket.get(key);
+    if (state) state.count += 1;
+    else bucket.set(key, { count: 1, windowStart: now });
+  }
+}
+
+export function clearLoginFailures(ip: string, email: string): void {
+  getBucket(LOGIN_BUCKET).delete(accountKey(ip, email));
+}

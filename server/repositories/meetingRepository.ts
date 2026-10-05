@@ -1,4 +1,5 @@
 import { Meeting, MeetingStatus } from '../models/types';
+import { persistentMap } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 import { matchesSearch, matchesValue, newId, toIso, toOptional } from './followThroughRows';
 
@@ -11,7 +12,8 @@ import { matchesSearch, matchesValue, newId, toIso, toOptional } from './followT
  * are reported when they fail, never disguised as success.
  */
 
-const memoryMeetings: Map<string, Meeting> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryMeetings = persistentMap<Meeting>('meetings');
 
 export interface MeetingFilter {
   /** Access scope set by the service: only these projects are returned. */

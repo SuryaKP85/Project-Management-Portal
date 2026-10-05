@@ -1,4 +1,5 @@
 import { Product, ProductHealth, normalizeDeclaredHealth } from '../models/types';
+import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 
 /**
@@ -17,10 +18,11 @@ function withDeclaredHealth(product: Product): Product {
   return health === product.health ? product : { ...product, health };
 }
 
-const memoryProducts: Map<string, Product> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryProducts = persistentMap<Product>('products');
 
 function seedDefaultProducts() {
-  if (memoryProducts.size > 0) return;
+  if (memoryProducts.size > 0 || snapshotRestored()) return;
   const defaultProducts: Product[] = [
     {
       id: 'prod_1',

@@ -183,7 +183,7 @@ Role hierarchy and permissions:
 5. **`activity_logs`**: `id`, `entity_type`, `entity_id`, `action`, `actor_id`, `actor_name`, `details (JSONB)`, `ip_address`, `created_at`.
 6. **`notifications`**: `id`, `user_id`, `title`, `message`, `type`, `is_read`, `link`, `created_at`.
 
-The full, current DDL (including later sprints' tables such as `roadmap_items`) lives in `server/db/schema.sql`. It is not applied automatically: when `DATABASE_URL` is enabled, apply that file to the target database (for example `psql "$DATABASE_URL" -f server/db/schema.sql`) before starting the server, otherwise every repository falls back to the in-memory store with a warning. The file is idempotent and safe to re-run.
+The full, current DDL (including later sprints' tables such as `roadmap_items`) lives in `server/db/schema.sql`. Since Sprint 20 the server applies it automatically at startup in PostgreSQL mode (`PM_PORTAL_SCHEMA_FILE` overrides the path); the file is idempotent (`CREATE … IF NOT EXISTS`, `ALTER … ADD COLUMN IF NOT EXISTS`) and safe on new and existing databases. If the database cannot be reached or the schema cannot be applied, the server does not start — it never falls back to the in-memory store when `DATABASE_URL` is set. See §9 for the data modes.
 
 ---
 
@@ -236,6 +236,39 @@ The portal supports seamless local Windows execution via:
 2. **`PM-Portal/Launch_Portal.vbs`** (Subdirectory launcher).
 3. **`start-local.bat`** (Windows batch launcher).
 
+### 9.1 Data modes, first run and deployment safety (Sprint 20)
+Exactly one data mode is active; the startup log prints it and `GET /api/v1/health` reports it as `data.storage.mode`:
+
+| Mode | When | Where V2 data lives |
+|---|---|---|
+| `persistent-embedded` | default — `DATABASE_URL` not set | one JSON data file; survives restarts |
+| `postgresql` | `DATABASE_URL` set | PostgreSQL |
+| `temporary-memory` | `PM_PORTAL_DATA_MODE=memory` (tests, demos) | process memory only — lost when the server stops |
+
+Setting both `DATABASE_URL` and `PM_PORTAL_DATA_MODE` is a configuration error. V1.1 pages that use browser localStorage are unaffected by the mode.
+
+**Persistent embedded (default for a local Windows install).**
+* Data file: `PM_PORTAL_DATA_FILE`, default `%LOCALAPPDATA%\PM-Portal\pm-portal-data.json` on Windows (`~/.pm-portal/pm-portal-data.json` elsewhere). It must lie outside the application folder (the development server serves files from that folder), and the server refuses a path inside it.
+* Every repository store (projects, products, users, requirements, decompositions and links, epics/features/stories/tasks, meetings and follow-through, governance records, Microsoft connections with their encrypted tokens, notifications, activity, code counters) is restored from the file before seeds run. Seeds run only when there is no data file yet; a restored file is never re-seeded, so deleted demo records stay deleted and nothing is duplicated.
+* **A change succeeds only once it is saved.** For every state-changing API request (POST, PUT, PATCH, DELETE), the success response is sent only after the data file has been written. If the write fails, the request answers 503 `PERSISTENCE_FAILED` instead of success: the change stays in memory (it is not discarded, and the next successful save includes it), the previous data file is unchanged, health reports `storage.saveError`, and every further change is refused the same way until saving works again — so the server never keeps reporting success while nothing reaches disk. Reads and error responses are unaffected. Changes made outside a request (startup seeds, the first administrator) are written before the server starts serving; a data location that cannot be written stops startup.
+* Each save writes a complete temporary file and then renames it over the old one, so the file is never left half-written; pending changes are also saved on a normal shutdown. Nothing is saved while a transaction is open (a response waits for open transactions to finish): a rolled-back decomposition is never written, a committed one is.
+* If the file exists but cannot be read or is damaged, the server does not start (and does not touch the file): restore it from a backup or move it aside to start fresh.
+* The file holds password hashes, encrypted Microsoft tokens, activity and all business data. It is created with owner-only permissions where the platform supports them (on Windows it inherits the folder's permissions); keep it private. It is not encrypted.
+* **Backup / restore:** stop the server, copy the data file; to restore, stop the server and copy a backup over it. There is no backup UI.
+* **Demo accounts.** Outside production, a new embedded store is seeded with demo data, including demo user accounts — two of them administrators — whose passwords are fixed in the source code (`server/repositories/userRepository.ts`), so anyone with the code knows them. They are for development and demonstration only: they are seeded only into an empty store with no data file, never re-created over restored data, and their passwords are never logged. Change their passwords or deactivate them before any real use. With `NODE_ENV=production` no demo accounts are seeded: a new embedded store, like a new PostgreSQL database, gets its first administrator only from `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD`, and does not start without them.
+
+**PostgreSQL (server / LAN deployments).**
+1. Create an empty database and set `DATABASE_URL`.
+2. For the first start, set `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` (also required for a new embedded store with `NODE_ENV=production`) (at least 12 characters, mixing upper- and lower-case letters, digits and a symbol).
+3. Start the server: it connects (or stops with a clear error), applies the schema, and — only while the database has no active administrator — creates that administrator with a hashed password. An existing account is never changed, reset or promoted; repeated starts do nothing. Without the variables an empty database stops startup with instructions.
+4. Remove `BOOTSTRAP_ADMIN_PASSWORD` from the environment. Credentials are never logged.
+* Sprint 20 schema additions: `stories.sprint_id` and `tasks.sprint_id` (references `sprints`, set null on delete), `backlog_order` on epics, features, stories and tasks, and `sprints.completed_at` (stamped when a sprint is completed). The repositories read, filter and write these, so sprint assignment, sprint items, completion and backlog order work in PostgreSQL as in the embedded store.
+
+**Security settings.**
+* `CORS_ALLOWED_ORIGINS`: comma-separated origins (e.g. `https://pm.example.com`) allowed to call the API with credentials from another site. The portal's own address (same origin, including a LAN address) always works; outside production `http://localhost:<PORT>` and `http://127.0.0.1:<PORT>` are allowed; any other origin is not reflected and gets no credentials.
+* Sign-in rate limit: after `LOGIN_RATE_LIMIT_MAX` (default 5) failed attempts for one account from one address within `LOGIN_RATE_LIMIT_WINDOW_MS` (default 15 minutes) — or four times that many from one address across accounts — sign-in answers 429 with `Retry-After` until the window ends. A successful sign-in clears the account's count; nothing is locked permanently. The limiter is per process.
+* `NODE_ENV=production` requires `JWT_SECRET` to be a random value of at least 32 characters (not the built-in development default or the `.env.example` sample); otherwise the server does not start.
+
 ---
 
 ## 10. Environment Configuration (`.env.example`)
@@ -249,12 +282,21 @@ PORT=3000
 NODE_ENV="development"
 APP_URL="http://localhost:3000"
 
-# PostgreSQL Database Connection
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/pm_portal"
+# Data mode (Sprint 20, see §9.1): PostgreSQL when set, otherwise the persistent embedded store
+# DATABASE_URL="postgresql://postgres:postgres@localhost:5432/pm_portal"
+# PM_PORTAL_DATA_FILE=""          # embedded data file (default: per-user app data folder)
+# PM_PORTAL_DATA_MODE="memory"    # temporary, nothing saved (tests/demos)
+# BOOTSTRAP_ADMIN_EMAIL=""        # first administrator for an empty PostgreSQL database
+# BOOTSTRAP_ADMIN_PASSWORD=""
 
-# JWT & Session Security
+# JWT & Session Security (production requires a random JWT_SECRET of 32+ characters)
 JWT_SECRET="enterprise_super_secret_jwt_key_surya_pm_portal_v2"
 SESSION_EXPIRY="7d"
+
+# CORS and sign-in limits (Sprint 20)
+CORS_ALLOWED_ORIGINS=""
+LOGIN_RATE_LIMIT_MAX=""
+LOGIN_RATE_LIMIT_WINDOW_MS=""
 
 # Microsoft 365 / Entra ID (Optional)
 MICROSOFT_CLIENT_ID=""

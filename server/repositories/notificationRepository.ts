@@ -1,7 +1,9 @@
 import { Notification } from '../models/types';
+import { markDirty, persistentArray } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 
-const memoryNotifications: Notification[] = [
+// Sprint 20: restored from / saved to the embedded data file in persistent mode (the list below seeds a new store).
+const memoryNotifications = persistentArray<Notification>('notifications', [
   {
     id: 'notif_1',
     userId: 'usr_admin_1',
@@ -22,7 +24,7 @@ const memoryNotifications: Notification[] = [
     link: '/PM-Portal/index.html#resource-planner',
     createdAt: new Date(Date.now() - 7200000).toISOString(),
   },
-];
+]);
 
 export const NotificationRepository = {
   async findByUserId(userId: string, unreadOnly = false): Promise<Notification[]> {
@@ -63,6 +65,7 @@ export const NotificationRepository = {
       );
     }
     memoryNotifications.unshift(notification);
+    markDirty();
     return notification;
   },
 
@@ -74,6 +77,7 @@ export const NotificationRepository = {
     const notif = memoryNotifications.find((n) => n.id === id && n.userId === userId);
     if (notif) {
       notif.isRead = true;
+      markDirty();
       return true;
     }
     return false;
@@ -91,6 +95,7 @@ export const NotificationRepository = {
         count++;
       }
     });
+    if (count) markDirty();
     return count;
   },
 };

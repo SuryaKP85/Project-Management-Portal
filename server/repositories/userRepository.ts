@@ -1,13 +1,20 @@
 import { User, SafeUser } from '../models/types';
+import { config } from '../config/env';
+import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 import { hashPassword } from '../auth/password';
 
 // In-memory store for standalone/local development
-const memoryUsers: Map<string, User> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryUsers = persistentMap<User>('users');
 
 // Seed initial users
 async function seedDefaultUsers() {
-  if (memoryUsers.size > 0) return;
+  if (memoryUsers.size > 0 || snapshotRestored()) return;
+  // Sprint 20: the demo accounts below have known passwords (they are in this file), so they are
+  // development/demo data only. In production nothing is seeded: the first administrator comes
+  // from BOOTSTRAP_ADMIN_EMAIL / BOOTSTRAP_ADMIN_PASSWORD (bootstrapAdmin.ts), as for PostgreSQL.
+  if (config.isProduction) return;
   
   const adminHash = await hashPassword('iRely@123');
   const userHash = await hashPassword('User@123');

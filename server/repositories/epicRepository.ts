@@ -1,14 +1,16 @@
 import { Epic } from '../models/types';
+import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query, trackMemoryWrite, withSavepoint } from '../config/database';
 import { MAX_CODE_ATTEMPTS, isCodeCollision, issueMemoryDeliveryCode, issueSequenceDeliveryCode } from './deliveryCodes';
 import { duplicateRecordError } from './recordConflict';
 import { FeatureRepository } from './featureRepository';
 import { calculateEpicProgress } from '../services/progressCalculator';
 
-const memoryEpics: Map<string, Epic> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryEpics = persistentMap<Epic>('epics');
 
 function seedDefaultEpics() {
-  if (memoryEpics.size > 0) return;
+  if (memoryEpics.size > 0 || snapshotRestored()) return;
   const defaults: Epic[] = [
     {
       id: 'epic_1',
@@ -206,6 +208,7 @@ export const EpicRepository = {
         taskCount: parseInt(r.task_count, 10) || 0,
         createdAt: r.created_at,
         updatedAt: r.updated_at,
+        backlogOrder: r.backlog_order === null || r.backlog_order === undefined ? undefined : Number(r.backlog_order),
       }));
     }
 
@@ -287,6 +290,7 @@ export const EpicRepository = {
         taskCount: parseInt(r.task_count, 10) || 0,
         createdAt: r.created_at,
         updatedAt: r.updated_at,
+        backlogOrder: r.backlog_order === null || r.backlog_order === undefined ? undefined : Number(r.backlog_order),
       };
     }
     return memoryEpics.get(id) || null;
@@ -302,11 +306,11 @@ export const EpicRepository = {
         INSERT INTO epics (
           id, code, name, description, project_id, product_id, portfolio_id,
           owner_id, team_id, status, priority, health, progress, start_date,
-          target_date, is_archived, created_at, updated_at, jira_key, jira_url
+          target_date, is_archived, created_at, updated_at, jira_key, jira_url, backlog_order
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7,
           $8, $9, $10, $11, $12, $13,
-          $14, $15, $16, $17, $18, $19, $20
+          $14, $15, $16, $17, $18, $19, $20, $21
         ) RETURNING *
       `;
       for (let attempt = 1; ; attempt += 1) {
@@ -333,6 +337,7 @@ export const EpicRepository = {
             epic.updatedAt || new Date().toISOString(),
             epic.jiraKey || null,
             epic.jiraUrl || null,
+            epic.backlogOrder ?? null,
           ]));
           break;
         } catch (err) {
@@ -369,8 +374,8 @@ export const EpicRepository = {
           portfolio_id = $5, owner_id = $6, team_id = $7, status = $8,
           priority = $9, health = $10, progress = $11, start_date = $12,
           target_date = $13, is_archived = $14, updated_at = $15,
-          jira_key = $16, jira_url = $17
-        WHERE id = $18
+          jira_key = $16, jira_url = $17, backlog_order = $18
+        WHERE id = $19
       `;
       await query(q, [
         merged.name,
@@ -390,6 +395,7 @@ export const EpicRepository = {
         merged.updatedAt,
         merged.jiraKey || null,
         merged.jiraUrl || null,
+        merged.backlogOrder ?? null,
         id,
       ]);
     }

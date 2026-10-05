@@ -1,4 +1,5 @@
 import { Release, ReleaseHealth, ReleaseHealthFactor, ReleaseItem, ReleaseStatus } from '../models/types';
+import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 import { RiskRepository } from './riskRepository';
 import { IssueRepository } from './issueRepository';
@@ -9,11 +10,13 @@ import { FeatureRepository } from './featureRepository';
 import { StoryRepository } from './storyRepository';
 import { TaskRepository } from './taskRepository';
 
-const memoryReleases: Map<string, Release> = new Map();
-const memoryReleaseItems: Map<string, ReleaseItem> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryReleases = persistentMap<Release>('releases');
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryReleaseItems = persistentMap<ReleaseItem>('releaseItems');
 
 function seedDefaultReleases() {
-  if (memoryReleases.size > 0) return;
+  if (memoryReleases.size > 0 || snapshotRestored()) return;
   const defaults: Release[] = [
     {
       id: 'rel_1',

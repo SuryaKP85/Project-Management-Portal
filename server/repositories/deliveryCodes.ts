@@ -1,4 +1,5 @@
 import { query } from '../config/database';
+import { persistentMap } from '../config/persistence';
 
 /**
  * Sprint 18 — collision-safe codes for epics (EPC-###), features (FEAT-###)
@@ -40,7 +41,8 @@ export function nextDeliveryCodeNumber(kind: DeliveryCodeKind, codes: Iterable<s
   return highest === null ? 101 : highest + 1;
 }
 
-const memoryCounters: Record<DeliveryCodeKind, number> = { epic: 0, feature: 0, story: 0 };
+/** Sprint 20: memory-mode counters, kept with the embedded data. */
+const codeCounters = persistentMap<number>('deliveryCodeCounters');
 
 /**
  * Memory mode. Reads and advances the counter in one synchronous step, so
@@ -49,9 +51,10 @@ const memoryCounters: Record<DeliveryCodeKind, number> = { epic: 0, feature: 0, 
 export function issueMemoryDeliveryCode(kind: DeliveryCodeKind, existingCodes: Iterable<string | null | undefined>): string {
   const inUse = new Set<string>();
   for (const code of existingCodes) if (typeof code === 'string') inUse.add(code);
-  let n = Math.max(memoryCounters[kind], nextDeliveryCodeNumber(kind, inUse));
+  // Sprint 20: the counter is kept with the embedded data, so codes are not re-issued after a restart.
+  let n = Math.max(codeCounters.get(kind) ?? 0, nextDeliveryCodeNumber(kind, inUse));
   while (inUse.has(`${DELIVERY_CODE_SPECS[kind].prefix}-${n}`)) n += 1;
-  memoryCounters[kind] = n + 1;
+  codeCounters.set(kind, n + 1);
   return `${DELIVERY_CODE_SPECS[kind].prefix}-${n}`;
 }
 

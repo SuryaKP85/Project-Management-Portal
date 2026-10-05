@@ -9,6 +9,7 @@
  *
  * Run manually:  npx tsx tests/roadmap-postgres.test.ts
  */
+import './testEnv'; // Sprint 20: temporary-memory mode, before any repository loads
 import fs from 'fs';
 import { initDatabase, isDbConnected, query, closeDatabase } from '../server/config/database';
 import { RoadmapRepository, ROADMAP_CODE_PATTERN, nextCodeNumber } from '../server/repositories/roadmapRepository';

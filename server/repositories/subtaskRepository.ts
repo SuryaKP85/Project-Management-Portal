@@ -1,11 +1,13 @@
 import { Subtask } from '../models/types';
+import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 import { duplicateRecordError } from './recordConflict';
 
-const memorySubtasks: Map<string, Subtask> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memorySubtasks = persistentMap<Subtask>('subtasks');
 
 function seedDefaultSubtasks() {
-  if (memorySubtasks.size > 0) return;
+  if (memorySubtasks.size > 0 || snapshotRestored()) return;
   const defaults: Subtask[] = [
     {
       id: 'sub_1',

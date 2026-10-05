@@ -1,10 +1,12 @@
 import { GovernanceLink, GovernanceLinkTargetType, GovernanceLinkSourceType } from '../models/types';
+import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 
-const memoryLinks: Map<string, GovernanceLink> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryLinks = persistentMap<GovernanceLink>('governanceLinks');
 
 function seedDefaultLinks() {
-  if (memoryLinks.size > 0) return;
+  if (memoryLinks.size > 0 || snapshotRestored()) return;
   const defaults: GovernanceLink[] = [
     // Risk 1 links (Ares Guidance IMU calibration slip)
     {

@@ -1,7 +1,9 @@
 import { ActivityLog } from '../models/types';
+import { markDirty, persistentArray } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 
-const memoryActivities: ActivityLog[] = [];
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryActivities = persistentArray<ActivityLog>('activityLogs');
 
 export const ActivityRepository = {
   async create(log: ActivityLog): Promise<ActivityLog> {
@@ -23,6 +25,7 @@ export const ActivityRepository = {
       );
     }
     memoryActivities.unshift(log);
+    markDirty();
     // Keep max 500 in memory
     if (memoryActivities.length > 500) {
       memoryActivities.pop();

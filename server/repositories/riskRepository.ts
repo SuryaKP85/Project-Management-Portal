@@ -1,4 +1,5 @@
 import { Risk, RiskCategory, RiskSeverity, RiskStatus } from '../models/types';
+import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 import { GovernanceLinkRepository } from './governanceLinkRepository';
 
@@ -13,10 +14,11 @@ export function calculateRiskScoreAndSeverity(probability: number, impact: numbe
   return { riskScore, severity };
 }
 
-const memoryRisks: Map<string, Risk> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryRisks = persistentMap<Risk>('risks');
 
 function seedDefaultRisks() {
-  if (memoryRisks.size > 0) return;
+  if (memoryRisks.size > 0 || snapshotRestored()) return;
   const defaults: Risk[] = [
     {
       id: 'rsk_1',

@@ -1,13 +1,15 @@
 import { Milestone, MilestoneHealth, MilestoneStatus, MilestoneType } from '../models/types';
+import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 import { GovernanceLinkRepository } from './governanceLinkRepository';
 import { FeatureRepository } from './featureRepository';
 import { StoryRepository } from './storyRepository';
 
-const memoryMilestones: Map<string, Milestone> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryMilestones = persistentMap<Milestone>('milestones');
 
 function seedDefaultMilestones() {
-  if (memoryMilestones.size > 0) return;
+  if (memoryMilestones.size > 0 || snapshotRestored()) return;
   const defaults: Milestone[] = [
     {
       id: 'mls_1',

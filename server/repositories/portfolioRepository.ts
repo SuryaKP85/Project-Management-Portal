@@ -1,4 +1,5 @@
 import { Portfolio, PortfolioHealth, normalizeDeclaredHealth } from '../models/types';
+import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 
 /**
@@ -16,10 +17,11 @@ function withDeclaredHealth(portfolio: Portfolio): Portfolio {
   return health === portfolio.health ? portfolio : { ...portfolio, health };
 }
 
-const memoryPortfolios: Map<string, Portfolio> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryPortfolios = persistentMap<Portfolio>('portfolios');
 
 function seedDefaultPortfolios() {
-  if (memoryPortfolios.size > 0) return;
+  if (memoryPortfolios.size > 0 || snapshotRestored()) return;
   const defaults: Portfolio[] = [
     {
       id: 'port_1',

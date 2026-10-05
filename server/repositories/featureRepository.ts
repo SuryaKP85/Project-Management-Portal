@@ -1,14 +1,16 @@
 import { Feature } from '../models/types';
+import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query, trackMemoryWrite, withSavepoint } from '../config/database';
 import { MAX_CODE_ATTEMPTS, isCodeCollision, issueMemoryDeliveryCode, issueSequenceDeliveryCode } from './deliveryCodes';
 import { duplicateRecordError } from './recordConflict';
 import { StoryRepository } from './storyRepository';
 import { calculateFeatureProgress } from '../services/progressCalculator';
 
-const memoryFeatures: Map<string, Feature> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryFeatures = persistentMap<Feature>('features');
 
 function seedDefaultFeatures() {
-  if (memoryFeatures.size > 0) return;
+  if (memoryFeatures.size > 0 || snapshotRestored()) return;
   const defaults: Feature[] = [
     {
       id: 'feat_1',
@@ -182,6 +184,7 @@ export const FeatureRepository = {
         taskCount: parseInt(r.task_count, 10) || 0,
         createdAt: r.created_at,
         updatedAt: r.updated_at,
+        backlogOrder: r.backlog_order === null || r.backlog_order === undefined ? undefined : Number(r.backlog_order),
       }));
     }
 
@@ -254,6 +257,7 @@ export const FeatureRepository = {
         taskCount: parseInt(r.task_count, 10) || 0,
         createdAt: r.created_at,
         updatedAt: r.updated_at,
+        backlogOrder: r.backlog_order === null || r.backlog_order === undefined ? undefined : Number(r.backlog_order),
       };
     }
     return memoryFeatures.get(id) || null;
@@ -269,11 +273,11 @@ export const FeatureRepository = {
         INSERT INTO features (
           id, code, name, description, epic_id, project_id, product_id,
           owner_id, team_id, status, priority, target_release, start_date,
-          target_date, progress, created_at, updated_at, jira_key, jira_url
+          target_date, progress, created_at, updated_at, jira_key, jira_url, backlog_order
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7,
           $8, $9, $10, $11, $12, $13,
-          $14, $15, $16, $17, $18, $19
+          $14, $15, $16, $17, $18, $19, $20
         ) RETURNING *
       `;
       for (let attempt = 1; ; attempt += 1) {
@@ -299,6 +303,7 @@ export const FeatureRepository = {
             feature.updatedAt || new Date().toISOString(),
             feature.jiraKey || null,
             feature.jiraUrl || null,
+            feature.backlogOrder ?? null,
           ]));
           break;
         } catch (err) {
@@ -334,8 +339,8 @@ export const FeatureRepository = {
           name = $1, description = $2, epic_id = $3, project_id = $4,
           product_id = $5, owner_id = $6, team_id = $7, status = $8,
           priority = $9, target_release = $10, start_date = $11, target_date = $12,
-          progress = $13, updated_at = $14, jira_key = $15, jira_url = $16
-        WHERE id = $17
+          progress = $13, updated_at = $14, jira_key = $15, jira_url = $16, backlog_order = $17
+        WHERE id = $18
       `;
       await query(q, [
         merged.name,
@@ -354,6 +359,7 @@ export const FeatureRepository = {
         merged.updatedAt,
         merged.jiraKey || null,
         merged.jiraUrl || null,
+        merged.backlogOrder ?? null,
         id,
       ]);
     }

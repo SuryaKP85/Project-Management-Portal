@@ -1,13 +1,15 @@
 import { Task } from '../models/types';
+import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 import { duplicateRecordError } from './recordConflict';
 import { SubtaskRepository } from './subtaskRepository';
 import { calculateTaskProgress } from '../services/progressCalculator';
 
-const memoryTasks: Map<string, Task> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryTasks = persistentMap<Task>('tasks');
 
 function seedDefaultTasks() {
-  if (memoryTasks.size > 0) return;
+  if (memoryTasks.size > 0 || snapshotRestored()) return;
   const defaults: Task[] = [
     {
       id: 'task_1',
@@ -234,7 +236,8 @@ export const TaskRepository = {
         startDate: r.start_date,
         completionDate: r.completion_date,
         sprint: r.sprint,
-        sprintId: r.sprint_id,
+        sprintId: r.sprint_id || undefined,
+        backlogOrder: r.backlog_order === null || r.backlog_order === undefined ? undefined : Number(r.backlog_order),
         progress: parseInt(r.progress, 10) || 0,
         subtaskCount: parseInt(r.subtask_count, 10) || 0,
         createdAt: r.created_at,
@@ -313,6 +316,8 @@ export const TaskRepository = {
         startDate: r.start_date,
         completionDate: r.completion_date,
         sprint: r.sprint,
+        sprintId: r.sprint_id || undefined,
+        backlogOrder: r.backlog_order === null || r.backlog_order === undefined ? undefined : Number(r.backlog_order),
         progress: parseInt(r.progress, 10) || 0,
         subtaskCount: parseInt(r.subtask_count, 10) || 0,
         createdAt: r.created_at,
@@ -330,11 +335,13 @@ export const TaskRepository = {
         INSERT INTO tasks (
           id, code, title, description, story_id, feature_id, epic_id, project_id,
           assignee_id, team_id, status, priority, due_date, estimated_effort_hrs,
-          actual_effort_hrs, start_date, completion_date, sprint, progress, created_at, updated_at
+          actual_effort_hrs, start_date, completion_date, sprint, progress, created_at, updated_at,
+          sprint_id, backlog_order
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8,
           $9, $10, $11, $12, $13, $14,
-          $15, $16, $17, $18, $19, $20, $21
+          $15, $16, $17, $18, $19, $20, $21,
+          $22, $23
         ) RETURNING *
       `;
       await query(q, [
@@ -359,6 +366,8 @@ export const TaskRepository = {
         task.progress || 0,
         task.createdAt || new Date().toISOString(),
         task.updatedAt || new Date().toISOString(),
+        task.sprintId || null,
+        task.backlogOrder ?? null,
       ]);
     }
     memoryTasks.set(task.id, task);
@@ -388,8 +397,9 @@ export const TaskRepository = {
           title = $1, description = $2, story_id = $3, feature_id = $4, epic_id = $5,
           project_id = $6, assignee_id = $7, team_id = $8, status = $9, priority = $10,
           due_date = $11, estimated_effort_hrs = $12, actual_effort_hrs = $13,
-          start_date = $14, completion_date = $15, sprint = $16, progress = $17, updated_at = $18
-        WHERE id = $19
+          start_date = $14, completion_date = $15, sprint = $16, progress = $17, updated_at = $18,
+          sprint_id = $19, backlog_order = $20
+        WHERE id = $21
       `;
       await query(q, [
         merged.title,
@@ -410,6 +420,8 @@ export const TaskRepository = {
         merged.sprint || null,
         merged.progress || 0,
         merged.updatedAt,
+        merged.sprintId || null,
+        merged.backlogOrder ?? null,
         id,
       ]);
     }

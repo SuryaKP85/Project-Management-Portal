@@ -1,4 +1,5 @@
 import { FollowThroughRelatedType, FollowUp, FollowUpStatus } from '../models/types';
+import { persistentMap } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 import {
   byDueThenCreated, matchesSearch, matchesValue, newId, toDateOnly, toIso, toOptional, toOptionalIso,
@@ -9,7 +10,8 @@ import {
  * project, optionally tied to one related record.
  */
 
-const memoryFollowUps: Map<string, FollowUp> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryFollowUps = persistentMap<FollowUp>('followUps');
 
 export interface FollowUpFilter {
   projectIds?: string[];

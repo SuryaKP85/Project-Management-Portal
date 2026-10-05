@@ -1,3 +1,4 @@
+import './testEnv'; // Sprint 20: temporary-memory mode, before any repository loads
 import { IssueService } from '../server/services/issueService';
 import { IssueRepository } from '../server/repositories/issueRepository';
 import { ActivityRepository } from '../server/repositories/activityRepository';

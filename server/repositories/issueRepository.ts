@@ -1,11 +1,13 @@
 import { Issue, IssueSeverity, IssuePriority, IssueStatus, RootCauseCategory } from '../models/types';
+import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 import { GovernanceLinkRepository } from './governanceLinkRepository';
 
-const memoryIssues: Map<string, Issue> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryIssues = persistentMap<Issue>('issues');
 
 function seedDefaultIssues() {
-  if (memoryIssues.size > 0) return;
+  if (memoryIssues.size > 0 || snapshotRestored()) return;
   const defaults: Issue[] = [
     {
       id: 'iss_1',

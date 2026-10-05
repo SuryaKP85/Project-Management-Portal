@@ -1,35 +1,68 @@
 import { AsyncLocalStorage } from 'async_hooks';
+import fs from 'fs';
+import path from 'path';
 import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { config } from './env';
+import { holdSaves, releaseSaves } from './persistence';
 
 let pool: Pool | null = null;
 let isPostgresConnected = false;
 
-export async function initDatabase(): Promise<{ isPostgres: boolean }> {
-  if (config.databaseUrl) {
-    try {
-      pool = new Pool({
-        connectionString: config.databaseUrl,
-        ssl: config.isProduction ? { rejectUnauthorized: false } : false,
-        connectionTimeoutMillis: 3000,
-      });
+/** Sprint 20: a startup condition the server must not run past. */
+export class DatabaseStartupError extends Error {}
 
-      // Test connection
-      const client = await pool.connect();
-      client.release();
-      isPostgresConnected = true;
-      console.log('✅ PostgreSQL database connected successfully.');
-      return { isPostgres: true };
-    } catch (err: any) {
-      console.warn(`⚠️ PostgreSQL connection attempt failed (${err.message}). Using local embedded data store.`);
-      isPostgresConnected = false;
-      pool = null;
-    }
-  } else {
-    console.log('ℹ️ No DATABASE_URL provided. Running with high-performance local embedded data store.');
+/** The schema applied at startup in PostgreSQL mode (PM_PORTAL_SCHEMA_FILE overrides). */
+export function schemaFilePath(): string {
+  return path.resolve(process.env.PM_PORTAL_SCHEMA_FILE || path.join(process.cwd(), 'server', 'db', 'schema.sql'));
+}
+
+/** Applies the idempotent schema file in one round trip; any failure stops startup. */
+export async function applySchema(db: { query: (sql: string) => Promise<unknown> }, file = schemaFilePath()): Promise<void> {
+  let sql: string;
+  try {
+    sql = fs.readFileSync(file, 'utf8');
+  } catch (err: any) {
+    throw new DatabaseStartupError(`The database schema file could not be read (${file}): ${err.message}`);
   }
+  try {
+    await db.query(sql);
+  } catch (err: any) {
+    throw new DatabaseStartupError(`The database schema could not be applied (${file}): ${err.message}`);
+  }
+}
 
-  return { isPostgres: false };
+/**
+ * Sprint 20 — PostgreSQL or nothing. When DATABASE_URL is set the database
+ * must be reachable and its schema applied, otherwise startup fails: a
+ * configured PostgreSQL deployment never quietly becomes an in-memory one.
+ * Without DATABASE_URL the embedded store is used (see persistence.ts).
+ */
+export async function initDatabase(): Promise<{ isPostgres: boolean }> {
+  if (!config.databaseUrl) return { isPostgres: false };
+  const candidate = new Pool({
+    connectionString: config.databaseUrl,
+    ssl: config.isProduction ? { rejectUnauthorized: false } : false,
+    connectionTimeoutMillis: 3000,
+  });
+  try {
+    const client = await candidate.connect();
+    client.release();
+  } catch (err: any) {
+    await candidate.end().catch(() => {});
+    throw new DatabaseStartupError(
+      `DATABASE_URL is set but PostgreSQL could not be reached (${err.message}). The server does not fall back to the embedded store when PostgreSQL is configured: fix the connection, or remove DATABASE_URL to use the embedded store.`
+    );
+  }
+  try {
+    await applySchema(candidate);
+  } catch (err) {
+    await candidate.end().catch(() => {});
+    throw err;
+  }
+  pool = candidate;
+  isPostgresConnected = true;
+  console.log('✅ PostgreSQL connected and schema applied.');
+  return { isPostgres: true };
 }
 
 export async function query<T extends QueryResultRow = any>(text: string, params?: any[]): Promise<QueryResult<T>> {
@@ -87,6 +120,8 @@ export async function withTransaction<T>(fn: () => Promise<T>): Promise<T> {
   if (transactionStorage.getStore()) return fn();
   const state: TransactionState = { client: null, undo: [], savepoints: 0 };
   if (pool && isPostgresConnected) state.client = await pool.connect();
+  // Sprint 20: no embedded snapshot is taken while this unit may still roll back.
+  holdSaves();
   try {
     return await transactionStorage.run(state, async () => {
       if (state.client) await state.client.query('BEGIN');
@@ -106,6 +141,7 @@ export async function withTransaction<T>(fn: () => Promise<T>): Promise<T> {
     throw err;
   } finally {
     state.client?.release();
+    releaseSaves();
   }
 }
 

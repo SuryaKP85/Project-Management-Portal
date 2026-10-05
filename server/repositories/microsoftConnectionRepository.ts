@@ -1,4 +1,5 @@
 import { isDbConnected, query } from '../config/database';
+import { persistentMap } from '../config/persistence';
 
 /**
  * Sprint 10A — one Microsoft 365 connection per portal user. Token columns
@@ -18,7 +19,8 @@ export interface MicrosoftConnection {
   updatedAt: string;
 }
 
-const memoryConnections = new Map<string, MicrosoftConnection>();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryConnections = persistentMap<MicrosoftConnection>('microsoftConnections');
 
 function fromRow(row: any): MicrosoftConnection {
   return {

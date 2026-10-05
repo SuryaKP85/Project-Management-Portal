@@ -1,10 +1,12 @@
 import { Team, TeamMember } from '../models/types';
+import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 
-const memoryTeams: Map<string, Team> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryTeams = persistentMap<Team>('teams');
 
 function seedDefaultTeams() {
-  if (memoryTeams.size > 0) return;
+  if (memoryTeams.size > 0 || snapshotRestored()) return;
   const defaultTeams: Team[] = [
     {
       id: 'team_1',

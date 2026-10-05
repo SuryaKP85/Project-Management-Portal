@@ -1,10 +1,12 @@
 import { VelocityRecord } from '../models/types';
+import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 
-const memoryVelocity: Map<string, VelocityRecord> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryVelocity = persistentMap<VelocityRecord>('velocityRecords');
 
 function seedDefaultVelocity() {
-  if (memoryVelocity.size > 0) return;
+  if (memoryVelocity.size > 0 || snapshotRestored()) return;
   const defaults: VelocityRecord[] = [
     {
       sprintId: 'sprint_hist_21',

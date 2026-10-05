@@ -1,11 +1,11 @@
 import express from 'express';
 import path from 'path';
-import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import { createServer as createViteServer } from 'vite';
-import { config } from './server/config/env';
+import { assertProductionSecrets, config } from './server/config/env';
 import { initDatabase } from './server/config/database';
-import { v1ApiRouter } from './server/routes';
+import { dataFilePath, dataMode, durableResponses, flushNow } from './server/config/persistence';
+import { corsPolicy } from './server/middleware/corsPolicy';
 import { securityHeaders } from './server/middleware/securityHeaders';
 import { errorHandler } from './server/middleware/errorHandler';
 
@@ -13,20 +13,38 @@ async function startServer() {
   const app = express();
   const PORT = config.port;
 
-  // 1. Initialize Database Layer
-  await initDatabase();
+  // 1. Sprint 20: configuration that must be safe before anything runs.
+  assertProductionSecrets();
+  const cors = corsPolicy();
+  const mode = dataMode();
 
-  // 2. Global Security & Body Parsers
+  // 2. Data layer: PostgreSQL (reachable, schema applied, an administrator present) or the embedded store.
+  await initDatabase();
+  // An administrator must exist: from the bootstrap variables, or (development only) the demo accounts.
+  const { ensureFirstAdmin } = await import('./server/config/bootstrapAdmin');
+  await ensureFirstAdmin();
+  // Routes load the repositories, which restore the embedded data file before any seed runs.
+  const { v1ApiRouter } = await import('./server/routes');
+  // First-run seeds and a bootstrapped administrator are on disk before any request is served;
+  // a data location that cannot be written stops startup here.
+  if (mode === 'persistent-embedded' && !flushNow()) {
+    throw new Error(`The data file could not be written (${dataFilePath()}). Check that the folder is writable, or set PM_PORTAL_DATA_FILE.`);
+  }
+  const modeNote = mode === 'persistent-embedded'
+    ? `persistent-embedded (data file: ${dataFilePath()})`
+    : mode === 'temporary-memory' ? 'temporary-memory — nothing is saved; data is lost when the server stops' : 'postgresql';
+  console.log(`🗄️ Data mode: ${modeNote}`);
+
+  // 3. Global Security & Body Parsers
   app.use(securityHeaders);
-  app.use(cors({
-    origin: true,
-    credentials: true,
-  }));
+  app.use(cors);
   app.use(cookieParser());
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-  // 3. Mount V2 API Routes (/api/v1/* and /api/v2/*)
+  // 4. Mount V2 API Routes (/api/v1/* and /api/v2/*)
+  // Sprint 20: in the embedded store, a change succeeds only once it is saved to the data file.
+  app.use('/api', durableResponses);
   app.use('/api/v1', v1ApiRouter);
   app.use('/api/v2', v1ApiRouter);
 
@@ -38,7 +56,7 @@ async function startServer() {
   // PM-Portal direct static directory serving for VB launcher & local file links
   app.use('/PM-Portal', express.static(path.join(process.cwd(), 'PM-Portal')));
 
-  // 4. Vite Middleware for Development / Static serving for Production
+  // 5. Vite Middleware for Development / Static serving for Production
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true, host: '0.0.0.0' },
@@ -53,7 +71,7 @@ async function startServer() {
     });
   }
 
-  // 5. Global Error Handler
+  // 6. Global Error Handler
   app.use(errorHandler);
 
   app.listen(PORT, '0.0.0.0', () => {
@@ -64,6 +82,6 @@ async function startServer() {
 }
 
 startServer().catch((err) => {
-  console.error('Fatal error during server startup:', err);
+  console.error(`❌ The server did not start: ${err?.message || err}`);
   process.exit(1);
 });

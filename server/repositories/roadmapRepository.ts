@@ -1,4 +1,5 @@
 import { RoadmapItem } from '../models/types';
+import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 
 /**
@@ -11,7 +12,8 @@ import { isDbConnected, query } from '../config/database';
  * as the tiebreak — rather than introducing a new sorting mechanism.
  */
 
-const memoryRoadmapItems: Map<string, RoadmapItem> = new Map();
+// Sprint 20: restored from / saved to the embedded data file in persistent mode.
+const memoryRoadmapItems = persistentMap<RoadmapItem>('roadmapItems');
 
 const SEQUENCE_STEP = 10;
 
@@ -44,27 +46,24 @@ export function nextCodeNumber(codes: Iterable<string | null | undefined>): numb
   return highest === null ? 101 : highest + 1;
 }
 
-/** Memory-mode counter; null until first use so seeds are counted lazily. */
-let memoryCodeCounter: number | null = null;
+/** Memory-mode counter (Sprint 20: kept with the embedded data, so codes are not re-issued after a restart). */
+const codeCounters = persistentMap<number>('roadmapCodeCounter');
 
 function currentMemoryCounter(): number {
-  if (memoryCodeCounter === null) {
-    memoryCodeCounter = nextCodeNumber(Array.from(memoryRoadmapItems.values()).map((i) => i.code));
-  }
-  return memoryCodeCounter;
+  return Math.max(codeCounters.get('roadmap') ?? 0, nextCodeNumber(Array.from(memoryRoadmapItems.values()).map((i) => i.code)));
 }
 
 /** Reads and advances the counter in one synchronous step — no await between. */
 function issueMemoryCode(): string {
   const n = currentMemoryCounter();
-  memoryCodeCounter = n + 1;
+  codeCounters.set('roadmap', n + 1);
   return `RM-${n}`;
 }
 
 /** An explicit valid code moves the generator past it; malformed ones do not. */
 function noteExplicitCode(code: string): void {
   const match = ROADMAP_CODE_PATTERN.exec(code);
-  if (match) memoryCodeCounter = Math.max(currentMemoryCounter(), Number(match[1]) + 1);
+  if (match) codeCounters.set('roadmap', Math.max(currentMemoryCounter(), Number(match[1]) + 1));
 }
 
 function memoryHasCode(code: string): boolean {
@@ -104,7 +103,7 @@ async function nextSequenceCode(): Promise<string> {
 }
 
 function seedDefaultRoadmapItems() {
-  if (memoryRoadmapItems.size > 0) return;
+  if (memoryRoadmapItems.size > 0 || snapshotRestored()) return;
   const now = new Date().toISOString();
   const defaults: RoadmapItem[] = [
     {
