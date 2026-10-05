@@ -10,12 +10,22 @@ import { StoryService } from './services/storyService.js';
 import { TaskService } from './services/taskService.js';
 import { SubtaskService } from './services/subtaskService.js';
 import { DeliveryService } from './services/deliveryService.js';
+import { AuthService } from './services/authService.js';
 import { ProjectService } from './services/projectService.js';
 import { ProductService } from './services/productService.js';
 import { PortfolioService } from './services/portfolioService.js';
 import { UserService } from './services/userService.js';
 import { escapeHtml, cssToken, percent, dataArgs, readDataArgs } from './safeHtml.js';
 import { jiraLinkHtml, loadJiraLinkConfig, getJiraBaseUrl, normalizeJiraKey, safeJiraUrl, keyFromJiraUrl, escapeHtml as escapeJira } from './jiraLinks.js';
+
+// Sprint 19: Story editor choices. A stored value outside these is kept as its own option.
+const STORY_POINT_CHOICES = [[1, '1 Point'], [2, '2 Points'], [3, '3 Points'], [5, '5 Points'], [8, '8 Points'], [13, '13 Points']];
+const STORY_STATUS_CHOICES = [['backlog', 'Backlog'], ['ready', 'Ready for Sprint'], ['in-progress', 'In Progress'], ['review', 'In Review'], ['done', 'Done'], ['blocked', 'Blocked']];
+const STORY_PRIORITY_CHOICES = [['critical', 'Critical'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low']];
+const MAX_STORY_CRITERIA = 50;
+
+/** A criterion's text, whatever shape older data used. */
+const criterionText = (c) => (typeof c === 'string' ? c : c && typeof c.text === 'string' ? c.text : '');
 
 export const DeliveryModule = {
   app: null,
@@ -62,6 +72,8 @@ export const DeliveryModule = {
           UserService.getUsers().catch(() => []),
           DeliveryService.getSummary().catch(() => null),
         ]);
+      // Sprint 19: the signed-in user, to offer Refine with AI only where the server allows it.
+      if (!this.me) this.me = await AuthService.getCurrentUser().catch(() => null);
 
       this.epics = epics || [];
       this.features = features || [];
@@ -626,12 +638,12 @@ export const DeliveryModule = {
                   <div class="card-body py-2">
                     <h6 class="fw-bold mb-1 text-dark">${escapeHtml(story.title)}</h6>
                     ${
-                      story.userPersona || story.userAction || story.userBenefit
+                      story.userStory && (story.userStory.asA || story.userStory.iWant || story.userStory.soThat)
                         ? `
                       <div class="p-2 rounded bg-light small mb-2 text-secondary font-monospace" style="font-size: 0.8rem;">
-                        <strong>As a</strong> ${escapeHtml(story.userPersona || 'user')},<br/>
-                        <strong>I want</strong> ${escapeHtml(story.userAction || 'feature action')},<br/>
-                        <strong>So that</strong> ${escapeHtml(story.userBenefit || 'business benefit')}.
+                        <strong>As a</strong> ${escapeHtml(story.userStory.asA || '—')},<br/>
+                        <strong>I want</strong> ${escapeHtml(story.userStory.iWant || '—')},<br/>
+                        <strong>So that</strong> ${escapeHtml(story.userStory.soThat || '—')}.
                       </div>
                     `
                         : ''
@@ -645,7 +657,7 @@ export const DeliveryModule = {
                       <div class="small text-muted mb-2">
                         <span class="fw-bold d-block mb-1">Acceptance Criteria:</span>
                         <ul class="list-unstyled ps-2 mb-0 small text-secondary">
-                          ${story.acceptanceCriteria.slice(0, 3).map((c) => `<li><i class="fa-solid fa-circle-check text-success me-1"></i>${c}</li>`).join('')}
+                          ${story.acceptanceCriteria.slice(0, 3).map((c) => `<li><i class="fa-solid ${c && c.completed ? 'fa-circle-check text-success' : 'fa-circle text-secondary'} me-1"></i>${escapeHtml(criterionText(c))}</li>`).join('')}
                         </ul>
                       </div>
                     `
@@ -1288,70 +1300,85 @@ ${this.jiraFieldsHtml('feat', feature)}
   },
 
   // --- STORY MODAL ---
+  // Sprint 19: canonical details (userStory {asA, iWant, soThat}; acceptanceCriteria [{id, text, completed}]),
+  // a row editor for criteria, values that are never silently reset, synchronous validation that keeps the
+  // modal open, and "Refine with AI" (a proposal that fills the editor; nothing is saved until Save).
   openStoryModal(storyId = null, defaultFeatureId = null, defaultProjectId = null) {
     const story = storyId ? this.stories.find((s) => s.id === storyId) : null;
     const isEdit = !!story;
+    this.storyEditorId = story ? story.id : null;
+    const option = (value, label, selected) => `<option value="${escapeHtml(value)}" ${selected ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+    // A stored value outside the usual choices is kept as its own option, so saving never changes it.
+    const choices = (list, current, fallback) => {
+      const chosen = current === undefined || current === null || current === '' ? fallback : current;
+      const known = list.some(([v]) => String(v) === String(chosen));
+      return (known ? '' : option(chosen, `${chosen} (current)`, true)) + list.map(([v, l]) => option(v, l, String(v) === String(chosen))).join('');
+    };
+    const hasPoints = story ? typeof story.storyPoints === 'number' : true;
+    this.storyCriteria = (story?.acceptanceCriteria || []).map((c) =>
+      (typeof c === 'string' ? { text: c, completed: false } : { id: c.id, text: String(c.text ?? ''), completed: c.completed === true }));
 
     const bodyHtml = `
-      <form id="form-story-modal" class="row g-3">
+      <form id="form-story-modal" class="row g-3" novalidate>
         <div class="col-12">
-          <label class="form-label fw-semibold">Story Title <span class="text-danger">*</span></label>
-          <input type="text" id="story-title" class="form-control" required placeholder="e.g. As an Admin, I want to enforce MFA logins" />
+          <label class="form-label fw-semibold" for="story-title">Story Title <span class="text-danger">*</span></label>
+          <input type="text" id="story-title" class="form-control" maxlength="255" placeholder="e.g. Enforce MFA at sign-in" />
         </div>
+        <div class="col-12 small text-muted" id="story-origin" aria-live="polite"></div>
         <div class="col-md-6">
-          <label class="form-label fw-semibold">Parent Feature</label>
+          <label class="form-label fw-semibold" for="story-feature">Parent Feature</label>
           <select id="story-feature" class="form-select">
             <option value="">-- No Feature (Unlinked) --</option>
             ${this.features.map((f) => `<option value="${escapeHtml(f.id)}" ${story && story.featureId === f.id ? 'selected' : (!story && defaultFeatureId === f.id ? 'selected' : '')}>[${escapeHtml(f.code || 'FEAT')}] ${escapeHtml(f.name)}</option>`).join('')}
           </select>
         </div>
         <div class="col-md-6">
-          <label class="form-label fw-semibold">Project <span class="text-danger">*</span></label>
-          <select id="story-project" class="form-select" required>
+          <label class="form-label fw-semibold" for="story-project">Project <span class="text-danger">*</span></label>
+          <select id="story-project" class="form-select">
             ${this.projects.map((p) => `<option value="${escapeHtml(p.id)}" ${story && story.projectId === p.id ? 'selected' : (!story && defaultProjectId === p.id ? 'selected' : '')}>${escapeHtml(p.name || p.id)}</option>`).join('')}
           </select>
         </div>
+        <div class="col-12">
+          <label class="form-label fw-semibold" for="story-description">Description</label>
+          <textarea id="story-description" class="form-control" rows="3" maxlength="50000"></textarea>
+        </div>
         <div class="col-12 p-3 bg-light rounded border">
-          <div class="fw-bold small text-secondary mb-2">Agile User Story Format:</div>
+          <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+            <div class="fw-bold small text-secondary">User Story</div>
+            ${isEdit && this.canRefineStory(story.projectId) ? '<button type="button" class="btn btn-sm btn-outline-primary" id="story-refine-btn" data-dv-action="refineStoryWithAi"><i class="fa-solid fa-wand-magic-sparkles me-1"></i>Refine with AI</button>' : ''}
+          </div>
+          <div id="story-ai-note" class="small mb-2" role="status"></div>
           <div class="row g-2">
             <div class="col-md-4">
-              <label class="form-label small mb-1">As a (Persona):</label>
-              <input type="text" id="story-persona" class="form-control form-control-sm" placeholder="e.g. System Administrator" />
+              <label class="form-label small mb-1" for="story-as-a">As a</label>
+              <input type="text" id="story-as-a" class="form-control form-control-sm" maxlength="2000" placeholder="e.g. System Administrator" />
             </div>
             <div class="col-md-4">
-              <label class="form-label small mb-1">I want (Action):</label>
-              <input type="text" id="story-action" class="form-control form-control-sm" placeholder="e.g. to require TOTP verification" />
+              <label class="form-label small mb-1" for="story-i-want">I want</label>
+              <input type="text" id="story-i-want" class="form-control form-control-sm" maxlength="2000" placeholder="e.g. to require TOTP verification" />
             </div>
             <div class="col-md-4">
-              <label class="form-label small mb-1">So that (Benefit):</label>
-              <input type="text" id="story-benefit" class="form-control form-control-sm" placeholder="e.g. credential theft is prevented" />
+              <label class="form-label small mb-1" for="story-so-that">So that</label>
+              <input type="text" id="story-so-that" class="form-control form-control-sm" maxlength="2000" placeholder="e.g. credential theft is prevented" />
             </div>
           </div>
         </div>
-        <div class="col-md-4">
-          <label class="form-label fw-semibold">Story Points (Fibonacci)</label>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold" for="story-points">Story Points</label>
           <select id="story-points" class="form-select">
-            <option value="1" ${story?.storyPoints === 1 ? 'selected' : ''}>1 Point</option>
-            <option value="2" ${story?.storyPoints === 2 ? 'selected' : ''}>2 Points</option>
-            <option value="3" ${story?.storyPoints === 3 || !story ? 'selected' : ''}>3 Points</option>
-            <option value="5" ${story?.storyPoints === 5 ? 'selected' : ''}>5 Points</option>
-            <option value="8" ${story?.storyPoints === 8 ? 'selected' : ''}>8 Points</option>
-            <option value="13" ${story?.storyPoints === 13 ? 'selected' : ''}>13 Points</option>
+            ${hasPoints ? choices(STORY_POINT_CHOICES, story?.storyPoints, 3) : option('', 'Not estimated', true) + STORY_POINT_CHOICES.map(([v, l]) => option(v, l, false)).join('')}
           </select>
         </div>
-        <div class="col-md-4">
-          <label class="form-label fw-semibold">Status</label>
-          <select id="story-status" class="form-select">
-            <option value="backlog" ${story?.status === 'backlog' ? 'selected' : ''}>Backlog</option>
-            <option value="ready" ${story?.status === 'ready' ? 'selected' : ''}>Ready for Sprint</option>
-            <option value="in-progress" ${story?.status === 'in-progress' ? 'selected' : ''}>In Progress</option>
-            <option value="review" ${story?.status === 'review' ? 'selected' : ''}>In Review</option>
-            <option value="done" ${story?.status === 'done' ? 'selected' : ''}>Done</option>
-            <option value="blocked" ${story?.status === 'blocked' ? 'selected' : ''}>Blocked</option>
-          </select>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold" for="story-status">Status</label>
+          <select id="story-status" class="form-select">${choices(STORY_STATUS_CHOICES, story?.status, 'backlog')}</select>
         </div>
-        <div class="col-md-4">
-          <label class="form-label fw-semibold">Assignee</label>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold" for="story-priority">Priority</label>
+          <select id="story-priority" class="form-select">${choices(STORY_PRIORITY_CHOICES, story?.priority, 'medium')}</select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold" for="story-assignee">Assignee</label>
           <select id="story-assignee" class="form-select">
             <option value="">-- Unassigned --</option>
             ${this.users.map((u) => `<option value="${escapeHtml(u.id)}" ${story?.assigneeId === u.id ? 'selected' : ''}>${escapeHtml(u.firstName)} ${escapeHtml(u.lastName)}</option>`).join('')}
@@ -1359,66 +1386,185 @@ ${this.jiraFieldsHtml('feat', feature)}
         </div>
 ${this.jiraFieldsHtml('story', story)}
         <div class="col-12">
-          <label class="form-label fw-semibold">Acceptance Criteria (One per line)</label>
-          <textarea id="story-criteria" class="form-control" rows="3" placeholder="User can scan QR code with authenticator app&#10;Invalid codes return 401 error"></textarea>
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="form-label fw-semibold mb-0">Acceptance Criteria</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary py-0" id="story-criteria-add" data-dv-action="addCriterion"><i class="fa-solid fa-plus me-1"></i>Add criterion</button>
+          </div>
+          <div id="story-criteria-list"></div>
         </div>
+        <div class="col-12 text-danger small" id="story-form-error" role="alert"></div>
       </form>
     `;
 
-    // Sprint 15A: the Jira check runs first and synchronously; returning false keeps the modal open.
-    this.app.openModal(isEdit ? 'Edit User Story' : 'Create User Story', bodyHtml, () => this.jiraFieldsValid('story') && (async () => {
-      const title = document.getElementById('story-title')?.value.trim();
-      const projectId = document.getElementById('story-project')?.value;
-      if (!title || !projectId) {
-        this.app.showToast('Please specify Story Title and Project', 'warning');
+    let saving = false;
+    this.app.openModal(isEdit ? 'Edit User Story' : 'Create User Story', bodyHtml, (overlay) => {
+      // Synchronous checks first: returning false keeps the modal open and sends nothing.
+      if (saving || !this.jiraFieldsValid('story')) return false;
+      const errorBox = document.getElementById('story-form-error');
+      const value = (id) => document.getElementById(id)?.value ?? '';
+      this.syncCriteriaFromDom();
+      const title = value('story-title').trim();
+      const projectId = value('story-project');
+      const problems = [];
+      if (!title) problems.push('a title');
+      if (!projectId) problems.push('a project');
+      if (this.storyCriteria.some((c) => !c.text.trim())) problems.push('text for every acceptance criterion (or remove the empty ones)');
+      if (problems.length) {
+        if (errorBox) errorBox.textContent = `Please provide ${problems.join(', ')}.`;
         return false;
       }
-
-      const criteriaText = document.getElementById('story-criteria')?.value.trim() || '';
-      const acceptanceCriteria = criteriaText
-        ? criteriaText
-            .split('\n')
-            .map((c) => c.trim())
-            .filter((c) => c.length > 0)
-        : [];
-
+      const points = value('story-points');
       const payload = {
         title,
         projectId,
-        featureId: document.getElementById('story-feature')?.value || null,
-        userPersona: document.getElementById('story-persona')?.value.trim() || null,
-        userAction: document.getElementById('story-action')?.value.trim() || null,
-        userBenefit: document.getElementById('story-benefit')?.value.trim() || null,
-        storyPoints: parseInt(document.getElementById('story-points')?.value, 10) || 3,
-        status: document.getElementById('story-status')?.value || 'backlog',
-        assigneeId: document.getElementById('story-assignee')?.value || null,
-        acceptanceCriteria,
+        featureId: value('story-feature') || null,
+        description: value('story-description'),
+        userStory: { asA: value('story-as-a').trim(), iWant: value('story-i-want').trim(), soThat: value('story-so-that').trim() },
+        status: value('story-status'),
+        priority: value('story-priority'),
+        assigneeId: value('story-assignee') || null,
+        acceptanceCriteria: this.storyCriteria.map((c) => (c.id ? { id: c.id, text: c.text.trim(), completed: c.completed } : { text: c.text.trim(), completed: c.completed })),
+        ...(points !== '' ? { storyPoints: Number(points) } : {}),
         ...this.readJiraFields('story'),
       };
-
-      try {
-        if (isEdit) {
-          await StoryService.updateStory(story.id, payload);
-          this.app.showToast('Story updated successfully', 'success');
-        } else {
-          await StoryService.createStory(payload);
-          this.app.showToast('Story created successfully', 'success');
-        }
-        await this.loadData();
-        this.render();
-      } catch (err) {
-        this.app.showToast('Failed saving Story', 'danger');
-      }
-    })());
+      saving = true;
+      const saveBtn = overlay?.querySelector('#global-modal-save-btn');
+      if (saveBtn) saveBtn.disabled = true;
+      if (errorBox) errorBox.textContent = '';
+      (isEdit ? StoryService.updateStory(story.id, payload) : StoryService.createStory(payload))
+        .then(async () => {
+          overlay?.classList.remove('show');
+          this.app.showToast(isEdit ? 'Story updated successfully' : 'Story created successfully', 'success');
+          await this.loadData();
+          this.render();
+        })
+        .catch((err) => {
+          if (errorBox) errorBox.textContent = (err && err.message) || 'The story could not be saved.';
+        })
+        .finally(() => {
+          saving = false;
+          if (saveBtn) saveBtn.disabled = false;
+        });
+      return false;
+    });
     this.fillJiraFields('story', story);
     // Sprint 16: stored values are set as properties, never interpolated into markup.
     this.fillFormValues({
       'story-title': story ? story.title : '',
-      'story-persona': story?.userPersona || '',
-      'story-action': story?.userAction || '',
-      'story-benefit': story?.userBenefit || '',
-      'story-criteria': story?.acceptanceCriteria ? story.acceptanceCriteria.join('\n') : '',
+      'story-description': story?.description || '',
+      'story-as-a': story?.userStory?.asA || '',
+      'story-i-want': story?.userStory?.iWant || '',
+      'story-so-that': story?.userStory?.soThat || '',
     });
+    this.renderCriteriaRows();
+    if (isEdit) this.showStoryOrigin(story.id);
+  },
+
+  /** Refine with AI: admin, project or product manager who manages or belongs to the project (the server re-checks). */
+  canRefineStory(projectId) {
+    const me = this.me;
+    if (!me || !['admin', 'project-manager', 'product-manager'].includes(me.role)) return false;
+    if (me.role === 'admin') return true;
+    const p = this.projects.find((x) => x.id === projectId);
+    return !!p && (p.managerId === me.id || (p.members || []).some((m) => m && m.userId === me.id));
+  },
+
+  /** Criteria rows: markup carries no criterion text; values go in through the DOM. */
+  renderCriteriaRows() {
+    const list = document.getElementById('story-criteria-list');
+    if (!list) return;
+    const rows = this.storyCriteria || [];
+    list.innerHTML = rows.length
+      ? rows.map((_, i) => `
+        <div class="input-group input-group-sm mb-1" data-criterion-row="${i}">
+          <span class="input-group-text"><input class="form-check-input mt-0" type="checkbox" data-criterion-done="${i}" aria-label="Criterion ${i + 1} met"></span>
+          <input type="text" class="form-control" data-criterion-text="${i}" maxlength="2000" aria-label="Criterion ${i + 1}">
+          <button type="button" class="btn btn-outline-secondary" data-dv-action="moveCriterion" data-args="${dataArgs(String(i), 'up')}" aria-label="Move criterion ${i + 1} up" ${i === 0 ? 'disabled' : ''}><i class="fa-solid fa-arrow-up"></i></button>
+          <button type="button" class="btn btn-outline-secondary" data-dv-action="moveCriterion" data-args="${dataArgs(String(i), 'down')}" aria-label="Move criterion ${i + 1} down" ${i === rows.length - 1 ? 'disabled' : ''}><i class="fa-solid fa-arrow-down"></i></button>
+          <button type="button" class="btn btn-outline-danger" data-dv-action="removeCriterion" data-args="${dataArgs(String(i))}" aria-label="Remove criterion ${i + 1}"><i class="fa-solid fa-trash"></i></button>
+        </div>`).join('')
+      : '<div class="small text-muted">No acceptance criteria yet.</div>';
+    rows.forEach((c, i) => {
+      const text = list.querySelector(`[data-criterion-text="${i}"]`);
+      const done = list.querySelector(`[data-criterion-done="${i}"]`);
+      if (text) text.value = c.text;
+      if (done) done.checked = c.completed === true;
+    });
+    const add = document.getElementById('story-criteria-add');
+    if (add) add.disabled = rows.length >= MAX_STORY_CRITERIA;
+  },
+
+  /** Reads the rows back into the editor state (text and done flag; ids stay with their rows). */
+  syncCriteriaFromDom() {
+    const list = document.getElementById('story-criteria-list');
+    if (!list || !this.storyCriteria) return;
+    this.storyCriteria.forEach((c, i) => {
+      const text = list.querySelector(`[data-criterion-text="${i}"]`);
+      const done = list.querySelector(`[data-criterion-done="${i}"]`);
+      if (text) c.text = text.value;
+      if (done) c.completed = !!done.checked;
+    });
+  },
+
+  addCriterion() {
+    this.syncCriteriaFromDom();
+    if ((this.storyCriteria || []).length >= MAX_STORY_CRITERIA) return;
+    this.storyCriteria.push({ text: '', completed: false });
+    this.renderCriteriaRows();
+  },
+
+  moveCriterion(index, direction) {
+    this.syncCriteriaFromDom();
+    const list = this.storyCriteria || [];
+    const from = Number(index);
+    const to = direction === 'up' ? from - 1 : from + 1;
+    if (!Number.isInteger(from) || from < 0 || from >= list.length || to < 0 || to >= list.length) return;
+    [list[from], list[to]] = [list[to], list[from]];
+    this.renderCriteriaRows();
+  },
+
+  removeCriterion(index) {
+    this.syncCriteriaFromDom();
+    const i = Number(index);
+    if (!Number.isInteger(i) || !this.storyCriteria || i < 0 || i >= this.storyCriteria.length) return;
+    this.storyCriteria.splice(i, 1);
+    this.renderCriteriaRows();
+  },
+
+  /** Fills the editor with an AI proposal; nothing is saved until the user presses Save. */
+  async refineStoryWithAi() {
+    const button = document.getElementById('story-refine-btn');
+    const note = document.getElementById('story-ai-note');
+    const storyId = this.storyEditorId;
+    if (!storyId || !button) return;
+    button.disabled = true;
+    if (note) { note.className = 'small mb-2 text-muted'; note.textContent = 'Asking the AI for a proposal…'; }
+    try {
+      const proposal = await StoryService.proposeRefinement(storyId);
+      if (this.storyEditorId !== storyId) return;
+      this.fillFormValues({ 'story-as-a': proposal.userStory.asA, 'story-i-want': proposal.userStory.iWant, 'story-so-that': proposal.userStory.soThat });
+      // The proposal replaces the criteria in the editor (new rows, not yet met); the story itself is unchanged.
+      this.storyCriteria = proposal.acceptanceCriteria.map((c) => ({ text: String(c.text ?? ''), completed: false }));
+      this.renderCriteriaRows();
+      if (note) { note.className = 'small mb-2 text-warning'; note.textContent = `Proposal from ${proposal.provider}. AI output can be wrong. Review before saving.`; }
+    } catch (err) {
+      if (note) { note.className = 'small mb-2 text-danger'; note.textContent = (err && err.message) || 'The AI could not refine this story.'; }
+    } finally {
+      button.disabled = false;
+    }
+  },
+
+  async showStoryOrigin(storyId) {
+    this.storyEditorId = storyId;
+    const box = document.getElementById('story-origin');
+    if (!box) return;
+    try {
+      const requirement = await StoryService.getOrigin(storyId);
+      if (this.storyEditorId !== storyId || !requirement) return;
+      box.textContent = `Originating requirement: ${requirement.code} · ${requirement.title}`;
+    } catch {
+      // The story stays fully usable without its requirement.
+    }
   },
 
   async deleteStory(id) {
@@ -1731,6 +1877,8 @@ ${this.jiraFieldsHtml('story', story)}
 const DELIVERY_ACTIONS = new Set([
   'openEpicModal', 'openFeatureModal', 'openStoryModal', 'openTaskModal', 'openSubtasksManager',
   'inspectTrace', 'deleteEpic', 'deleteFeature', 'deleteStory', 'deleteTask', 'deleteSubtask',
+  // Sprint 19: Story editor criteria rows and AI refinement.
+  'addCriterion', 'moveCriterion', 'removeCriterion', 'refineStoryWithAi',
 ]);
 if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
   document.addEventListener('click', (event) => {

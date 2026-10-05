@@ -438,7 +438,13 @@ export const DeliveryService = {
       action,
       actorId: actor.id,
       actorName: `${actor.firstName} ${actor.lastName}`,
-      details: { code: updated.code, previousStatus: existing.status, ...updates },
+      // Sprint 19: field names only — never story text (description, user story, criteria) or the raw payload.
+      details: {
+        code: updated.code,
+        previousStatus: existing.status,
+        ...(updates.status ? { status: updates.status } : {}),
+        changedFields: Object.keys(updates).filter((k) => JSON.stringify((updates as any)[k]) !== JSON.stringify((existing as any)[k])),
+      },
       createdAt: new Date().toISOString(),
     });
 

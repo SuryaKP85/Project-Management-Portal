@@ -35,3 +35,7 @@ requirementRoutes.delete('/requirements/:id', authenticateToken, remove, Require
 requirementRoutes.post('/requirements/:id/decomposition/proposal', authenticateToken, decompose, aiQuota, RequirementController.propose);
 requirementRoutes.post('/requirements/:id/decomposition', authenticateToken, decompose, RequirementController.approveDecomposition);
 requirementRoutes.get('/requirements/:id/links', authenticateToken, RequirementController.links);
+
+// Sprint 19 — AI story refinement (a temporary proposal; saving is the existing PATCH /stories/:id) and the story's originating requirement.
+requirementRoutes.post('/stories/:id/refinement/proposal', authenticateToken, decompose, aiQuota, RequirementController.refineStory);
+requirementRoutes.get('/stories/:id/origin', authenticateToken, RequirementController.storyOrigin);

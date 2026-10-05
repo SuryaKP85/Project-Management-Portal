@@ -104,6 +104,18 @@ export const RequirementLinkRepository = {
     return Array.from(memoryLinks.values()).filter((l) => l.requirementId === requirementId).sort(byCreated);
   },
 
+  /** Sprint 19: the links pointing at one delivery record (callers check the projects match). */
+  async findByTarget(targetType: RequirementLinkTargetType, targetId: string): Promise<RequirementLink[]> {
+    if (!REQUIREMENT_LINK_TARGET_TYPES.includes(targetType)) {
+      throw Object.assign(new Error(`Unsupported link target type '${targetType}'.`), { status: 400, code: 'VALIDATION_ERROR' });
+    }
+    if (isDbConnected()) {
+      const res = await query('SELECT * FROM requirement_links WHERE target_type = $1 AND target_id = $2', [targetType, targetId]);
+      return res.rows.map(mapLink).sort(byCreated);
+    }
+    return Array.from(memoryLinks.values()).filter((l) => l.targetType === targetType && l.targetId === targetId).sort(byCreated);
+  },
+
   async findByDecomposition(decompositionId: string): Promise<RequirementLink[]> {
     if (isDbConnected()) {
       const res = await query('SELECT * FROM requirement_links WHERE decomposition_id = $1', [decompositionId]);

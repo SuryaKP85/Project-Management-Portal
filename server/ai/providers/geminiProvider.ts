@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { DECOMPOSITION_REQUEST, DECOMPOSITION_RESPONSE_SCHEMA, DECOMPOSITION_TASK } from '../requirementDecomposition';
+import { STORY_REFINEMENT_REQUEST, STORY_REFINEMENT_RESPONSE_SCHEMA, STORY_REFINEMENT_TASK } from '../storyRefinement';
 import { AIProvider, AIProviderResponse, ExecutiveReportInput } from './baseProvider';
 import { config, GEMINI_DEFAULT_MODEL, GEMINI_DEFAULT_TIMEOUT_MS } from '../../config/env';
 import {
@@ -251,23 +252,37 @@ Do not invent resources, customers, hours, budgets or dates that are not supplie
    * propagate to the caller; there is no fallback.
    */
   async decomposeRequirement(context: Record<string, unknown>): Promise<AIProviderResponse> {
-    const ai = getClient();
-    if (!ai) {
-      throw new Error('Gemini API key is not configured on the server.');
-    }
-    const model = resolveGeminiModel();
-    const response = await withGeminiTimeout(
-      ai.models.generateContent({
-        model,
-        contents: buildGuardedContents(DECOMPOSITION_REQUEST, context),
-        config: {
-          systemInstruction: taskSystemInstruction(DECOMPOSITION_TASK),
-          responseMimeType: 'application/json',
-          responseSchema: DECOMPOSITION_RESPONSE_SCHEMA,
-        },
-      }),
-      'decomposition'
-    );
-    return { provider: 'gemini', text: response.text || '', metadata: { model } };
+    return generateStructured('decomposition', DECOMPOSITION_REQUEST, DECOMPOSITION_TASK, DECOMPOSITION_RESPONSE_SCHEMA, context);
+  },
+
+  /** Sprint 19 — story refinement (user story + acceptance criteria), same structured path. */
+  async refineStory(context: Record<string, unknown>): Promise<AIProviderResponse> {
+    return generateStructured('story refinement', STORY_REFINEMENT_REQUEST, STORY_REFINEMENT_TASK, STORY_REFINEMENT_RESPONSE_SCHEMA, context);
   },
 };
+
+/**
+ * Structured generation (Sprints 18–19): JSON constrained by a response schema,
+ * with the business data only inside the sealed untrusted block. Returns the
+ * raw JSON text; callers validate it. Errors propagate — no fallback.
+ */
+async function generateStructured(label: string, request: string, task: string, schema: unknown, context: Record<string, unknown>): Promise<AIProviderResponse> {
+  const ai = getClient();
+  if (!ai) {
+    throw new Error('Gemini API key is not configured on the server.');
+  }
+  const model = resolveGeminiModel();
+  const response = await withGeminiTimeout(
+    ai.models.generateContent({
+      model,
+      contents: buildGuardedContents(request, context),
+      config: {
+        systemInstruction: taskSystemInstruction(task),
+        responseMimeType: 'application/json',
+        responseSchema: schema as any,
+      },
+    }),
+    label
+  );
+  return { provider: 'gemini', text: response.text || '', metadata: { model } };
+}

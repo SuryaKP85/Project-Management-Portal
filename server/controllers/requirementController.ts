@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { RequirementService } from '../services/requirementService';
 import { RequirementDecompositionService } from '../services/requirementDecompositionService';
+import { StoryRefinementService } from '../services/storyRefinementService';
 import { FollowThroughActor } from '../services/followThroughSupport';
 
 /**
@@ -52,4 +53,7 @@ export const RequirementController = {
   propose: handle(async (actor, req, res) => res.json({ success: true, data: { proposal: await RequirementDecompositionService.propose(actor, req.params.id) } })),
   approveDecomposition: handle(async (actor, req, res) => res.status(201).json({ success: true, data: { decomposition: await RequirementDecompositionService.approve(actor, req.params.id, body(req)) } })),
   links: handle(async (actor, req, res) => res.json({ success: true, data: { links: await RequirementDecompositionService.linkedRecords(actor, req.params.id) } })),
+  // Sprint 19 — story refinement (shares this controller's actor handling) and the story's originating requirement.
+  refineStory: handle(async (actor, req, res) => res.json({ success: true, data: { proposal: await StoryRefinementService.propose(actor, req.params.id) } })),
+  storyOrigin: handle(async (actor, req, res) => res.json({ success: true, data: { requirement: await StoryRefinementService.origin(actor, req.params.id) } })),
 };

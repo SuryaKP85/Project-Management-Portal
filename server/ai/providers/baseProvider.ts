@@ -37,4 +37,6 @@ export interface AIProvider {
    * that can produce structured output implement it (LocalRule does not).
    */
   decomposeRequirement?(context: Record<string, unknown>): Promise<AIProviderResponse>;
+  /** Sprint 19 — story refinement; same contract style (raw JSON text, validated by the caller). */
+  refineStory?(context: Record<string, unknown>): Promise<AIProviderResponse>;
 }

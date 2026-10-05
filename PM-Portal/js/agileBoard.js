@@ -1011,10 +1011,10 @@ export const AgileBoardModule = {
 
       if (itemType === 'task') {
         item = await TaskService.getTaskById(itemId);
-        trace = await DeliveryService.getTraceability('task', itemId).catch(() => null);
+        trace = await DeliveryService.getTrace('task', itemId).catch(() => null);
       } else {
         item = await StoryService.getStoryById(itemId);
-        trace = await DeliveryService.getTraceability('story', itemId).catch(() => null);
+        trace = await DeliveryService.getTrace('story', itemId).catch(() => null);
       }
 
       if (!item) return;
@@ -1025,7 +1025,7 @@ export const AgileBoardModule = {
           <div class="p-2 bg-light rounded mb-3 border font-mono" style="font-size: 0.75rem;">
             <i class="fa-solid fa-route text-primary me-1"></i>
             <strong>Hierarchy Path:</strong> 
-            ${trace?.ancestors?.map((a) => `<span class="badge bg-white text-dark border mx-1">${a.entityType}: ${a.name}</span>`).join('&rarr;') || 'Standalone'}
+            ${trace?.ancestors?.map((a) => `<span class="badge bg-white text-dark border mx-1">${escapeHtml(a.type)}: ${escapeHtml(a.name)}</span>`).join('&rarr;') || 'Standalone'}
           </div>
 
           <div class="d-flex justify-content-between align-items-center mb-3">

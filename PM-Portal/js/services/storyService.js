@@ -30,4 +30,16 @@ export class StoryService {
     const data = await apiClient.delete(`/stories/${id}`);
     return data;
   }
+
+  /** Sprint 19: an AI proposal for the story's user story and criteria (nothing is saved). */
+  static async proposeRefinement(id) {
+    const data = await apiClient.post(`/stories/${encodeURIComponent(id)}/refinement/proposal`, {});
+    return data.proposal;
+  }
+
+  /** Sprint 19: the requirement the story was decomposed from, or null. */
+  static async getOrigin(id) {
+    const data = await apiClient.get(`/stories/${encodeURIComponent(id)}/origin`);
+    return data.requirement || null;
+  }
 }

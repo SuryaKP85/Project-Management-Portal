@@ -65,4 +65,14 @@ export const AIService = {
     if (!this.canDecompose()) throw new Error('No AI provider that supports decomposition is configured.');
     return GeminiAIProvider.decomposeRequirement!(context);
   },
+
+  /** Sprint 19 — story refinement: structured output required, no LocalRule fallback (as for decomposition). */
+  canRefineStory(): boolean {
+    return GeminiAIProvider.isAvailable() && typeof GeminiAIProvider.refineStory === 'function';
+  },
+
+  async refineStory(context: Record<string, unknown>): Promise<AIProviderResponse> {
+    if (!this.canRefineStory()) throw new Error('No AI provider that supports story refinement is configured.');
+    return GeminiAIProvider.refineStory!(context);
+  },
 };

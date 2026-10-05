@@ -7,6 +7,7 @@ import { FeatureRepository } from '../repositories/featureRepository';
 import { StoryRepository } from '../repositories/storyRepository';
 import { TaskRepository } from '../repositories/taskRepository';
 import { applyJiraReference } from './jiraReference';
+import { normaliseCriteria, normaliseUserStory, readUserStory } from './storyDetails';
 import { forbidden, httpError, validationError } from './followThroughSupport';
 
 /**
@@ -141,11 +142,13 @@ async function parent(kind: 'epic' | 'feature' | 'story' | 'task', value: unknow
 /** Validates the allowlisted values in place; returns the clean payload. */
 async function validateFields(kind: DeliveryKind, fields: Record<string, any>, projectId: string, current: any = {}): Promise<Record<string, any>> {
   const out: Record<string, any> = {};
+  const legacy: Record<string, string> = {};
   for (const [field, value] of Object.entries(fields)) {
     switch (field) {
       case 'name': case 'title': out[field] = text(value, field, 255, true); break;
       case 'description': out[field] = text(value, field, 50000); break;
-      case 'userPersona': case 'userAction': case 'userBenefit': out[field] = text(value, field, 2000); break;
+      // Sprint 19: legacy flat persona fields are folded into userStory below; they are never stored themselves.
+      case 'userPersona': case 'userAction': case 'userBenefit': legacy[field] = text(value, field, 2000) ?? ''; break;
       case 'targetRelease': case 'sprint': case 'sprintId': case 'productId': case 'portfolioId': out[field] = text(value, field, 100); break;
       case 'complexity': out[field] = text(value, field, 30); break;
       case 'status': out[field] = oneOf(value, DELIVERY_STATUSES, 'status'); break;
@@ -164,19 +167,19 @@ async function validateFields(kind: DeliveryKind, fields: Record<string, any>, p
       case 'featureId': out[field] = await parent('feature', value, projectId, field); break;
       case 'storyId': out[field] = await parent('story', value, projectId, field); break;
       case 'taskId': out[field] = await parent('task', value, projectId, field, true); break;
-      case 'acceptanceCriteria':
-        if (!Array.isArray(value) || value.length > 100) throw validationError("Field 'acceptanceCriteria' must be a list of at most 100 items.");
-        out[field] = value.map((c) => (typeof c === 'string' ? text(c, 'acceptanceCriteria', 2000) : c)).filter((c) => c !== '' && c !== null && c !== undefined);
-        break;
-      case 'userStory': {
-        if (!value || typeof value !== 'object' || Array.isArray(value)) throw validationError("Field 'userStory' must be an object.");
-        const v = value as Record<string, unknown>;
-        out[field] = { asA: text(v.asA ?? '', 'userStory.asA', 2000), iWant: text(v.iWant ?? '', 'userStory.iWant', 2000), soThat: text(v.soThat ?? '', 'userStory.soThat', 2000) };
-        break;
-      }
+      // Sprint 19: canonical story details (storyDetails.ts).
+      case 'acceptanceCriteria': out[field] = normaliseCriteria(value, validationError); break;
+      case 'userStory': out[field] = normaliseUserStory(value, validationError); break;
       case 'jiraKey': case 'jiraUrl': out[field] = value; break;
       default: break;
     }
+  }
+  // Legacy flat values only fill a userStory the request did not send itself.
+  if (Object.keys(legacy).length && out.userStory === undefined) {
+    const base = readUserStory(current.userStory, current);
+    out.userStory = normaliseUserStory({
+      asA: legacy.userPersona ?? base.asA, iWant: legacy.userAction ?? base.iWant, soThat: legacy.userBenefit ?? base.soThat,
+    }, validationError);
   }
   // Jira references keep their Sprint 15A rules (epic, feature and story only).
   if (kind === 'epic' || kind === 'feature' || kind === 'story') applyJiraReference(out, current);

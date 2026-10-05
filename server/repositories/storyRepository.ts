@@ -2,6 +2,7 @@ import { UserStory } from '../models/types';
 import { isDbConnected, query, trackMemoryWrite, withSavepoint } from '../config/database';
 import { MAX_CODE_ATTEMPTS, isCodeCollision, issueMemoryDeliveryCode, issueSequenceDeliveryCode } from './deliveryCodes';
 import { duplicateRecordError } from './recordConflict';
+import { canonicalStory, readCriteria, readUserStory } from '../services/storyDetails';
 import { TaskRepository } from './taskRepository';
 import { calculateStoryProgress } from '../services/progressCalculator';
 
@@ -224,8 +225,8 @@ export const StoryRepository = {
         description: r.description,
         jiraKey: r.jira_key || undefined,
         jiraUrl: r.jira_url || undefined,
-        userStory: r.user_story,
-        acceptanceCriteria: r.acceptance_criteria || [],
+        userStory: readUserStory(r.user_story),
+        acceptanceCriteria: readCriteria(r.acceptance_criteria),
         featureId: r.feature_id,
         featureName: r.feature_name,
         epicId: r.epic_id,
@@ -274,7 +275,8 @@ export const StoryRepository = {
           (s.description && s.description.toLowerCase().includes(q))
       );
     }
-    return list;
+    // Sprint 19: stored details always come back canonical (as in PostgreSQL mode).
+    return list.map(canonicalStory);
   },
 
   async findById(id: string): Promise<UserStory | null> {
@@ -309,8 +311,8 @@ export const StoryRepository = {
         description: r.description,
         jiraKey: r.jira_key || undefined,
         jiraUrl: r.jira_url || undefined,
-        userStory: r.user_story,
-        acceptanceCriteria: r.acceptance_criteria || [],
+        userStory: readUserStory(r.user_story),
+        acceptanceCriteria: readCriteria(r.acceptance_criteria),
         featureId: r.feature_id,
         featureName: r.feature_name,
         epicId: r.epic_id,
@@ -337,7 +339,8 @@ export const StoryRepository = {
         updatedAt: r.updated_at,
       };
     }
-    return memoryStories.get(id) || null;
+    const stored = memoryStories.get(id);
+    return stored ? canonicalStory(stored) : null;
   },
 
   async create(story: UserStory): Promise<UserStory> {
