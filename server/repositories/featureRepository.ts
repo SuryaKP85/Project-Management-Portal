@@ -1,5 +1,6 @@
 import { Feature } from '../models/types';
-import { isDbConnected, query } from '../config/database';
+import { isDbConnected, query, trackMemoryWrite, withSavepoint } from '../config/database';
+import { MAX_CODE_ATTEMPTS, isCodeCollision, issueMemoryDeliveryCode, issueSequenceDeliveryCode } from './deliveryCodes';
 import { duplicateRecordError } from './recordConflict';
 import { StoryRepository } from './storyRepository';
 import { calculateFeatureProgress } from '../services/progressCalculator';
@@ -261,6 +262,8 @@ export const FeatureRepository = {
   async create(feature: Feature): Promise<Feature> {
     // Sprint 16: never overwrite an existing record (both modes; findById reads PostgreSQL when connected).
     if (await this.findById(feature.id)) throw duplicateRecordError('feature', feature.id);
+    // Sprint 18: a record without a code gets a collision-safe one (deliveryCodes.ts).
+    const generated = !feature.code;
     if (isDbConnected()) {
       const q = `
         INSERT INTO features (
@@ -273,28 +276,40 @@ export const FeatureRepository = {
           $14, $15, $16, $17, $18, $19
         ) RETURNING *
       `;
-      await query(q, [
-        feature.id,
-        feature.code,
-        feature.name,
-        feature.description || null,
-        feature.epicId || null,
-        feature.projectId,
-        feature.productId || null,
-        feature.ownerId || null,
-        feature.teamId || null,
-        feature.status || 'backlog',
-        feature.priority || 'medium',
-        feature.targetRelease || null,
-        feature.startDate || null,
-        feature.targetDate || null,
-        feature.progress || 0,
-        feature.createdAt || new Date().toISOString(),
-        feature.updatedAt || new Date().toISOString(),
-        feature.jiraKey || null,
-        feature.jiraUrl || null,
-      ]);
+      for (let attempt = 1; ; attempt += 1) {
+        if (generated) feature = { ...feature, code: await issueSequenceDeliveryCode('feature') };
+        try {
+          await withSavepoint(() => query(q, [
+            feature.id,
+            feature.code,
+            feature.name,
+            feature.description || null,
+            feature.epicId || null,
+            feature.projectId,
+            feature.productId || null,
+            feature.ownerId || null,
+            feature.teamId || null,
+            feature.status || 'backlog',
+            feature.priority || 'medium',
+            feature.targetRelease || null,
+            feature.startDate || null,
+            feature.targetDate || null,
+            feature.progress || 0,
+            feature.createdAt || new Date().toISOString(),
+            feature.updatedAt || new Date().toISOString(),
+            feature.jiraKey || null,
+            feature.jiraUrl || null,
+          ]));
+          break;
+        } catch (err) {
+          if (generated && isCodeCollision(err) && attempt < MAX_CODE_ATTEMPTS) continue;
+          throw err;
+        }
+      }
+    } else if (generated) {
+      feature = { ...feature, code: issueMemoryDeliveryCode('feature', Array.from(memoryFeatures.values()).map((r) => r.code)) };
     }
+    trackMemoryWrite(memoryFeatures, feature.id);
     memoryFeatures.set(feature.id, feature);
     return feature;
   },

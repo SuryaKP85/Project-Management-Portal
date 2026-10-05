@@ -741,6 +741,7 @@ CREATE SEQUENCE IF NOT EXISTS requirement_code_seq START WITH 101 INCREMENT BY 1
 CREATE TABLE IF NOT EXISTS requirements (
   id VARCHAR(64) PRIMARY KEY,
   code VARCHAR(20) NOT NULL UNIQUE,
+  revision INTEGER NOT NULL DEFAULT 1,
   project_id VARCHAR(64) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   title VARCHAR(255) NOT NULL,
   description TEXT,
@@ -761,3 +762,54 @@ CREATE INDEX IF NOT EXISTS idx_requirements_project ON requirements(project_id);
 CREATE INDEX IF NOT EXISTS idx_requirements_status ON requirements(status);
 CREATE INDEX IF NOT EXISTS idx_requirements_priority ON requirements(priority);
 CREATE INDEX IF NOT EXISTS idx_requirements_owner ON requirements(owner_id);
+
+-- ====================================================================
+-- Sprint 18: Requirement decomposition (Requirement -> Epic -> Feature -> Story)
+-- ====================================================================
+-- Server-controlled content revision (see requirements above); added here for
+-- databases created in Sprint 17.
+ALTER TABLE requirements ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 1;
+
+-- Collision-safe delivery codes (EPC-###, FEAT-###, STR-###). The server
+-- raises each sequence above the highest stored code before issuing one, so
+-- existing data is never duplicated; UNIQUE(code) is the backstop. Task codes
+-- are unchanged.
+CREATE SEQUENCE IF NOT EXISTS epic_code_seq START WITH 101 INCREMENT BY 1;
+CREATE SEQUENCE IF NOT EXISTS feature_code_seq START WITH 101 INCREMENT BY 1;
+CREATE SEQUENCE IF NOT EXISTS story_code_seq START WITH 101 INCREMENT BY 1;
+
+-- One row per approved decomposition. UNIQUE(requirement_id,
+-- requirement_revision) is the database guarantee that a requirement
+-- revision is decomposed at most once, whatever the number of concurrent
+-- approvals or server processes. AI proposals are never stored.
+CREATE TABLE IF NOT EXISTS requirement_decompositions (
+  id VARCHAR(64) PRIMARY KEY,
+  requirement_id VARCHAR(64) NOT NULL REFERENCES requirements(id) ON DELETE CASCADE,
+  project_id VARCHAR(64) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  requirement_revision INTEGER NOT NULL,
+  created_by VARCHAR(64),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT uq_requirement_decomposition_revision UNIQUE (requirement_id, requirement_revision)
+);
+
+-- Traceability from a requirement to the delivery records created from it.
+-- The delivery hierarchy itself stays in the epic/feature/story parent ids;
+-- these rows only point at records. target_id has no FK (three target
+-- tables), so readers drop links whose target no longer exists.
+CREATE TABLE IF NOT EXISTS requirement_links (
+  id VARCHAR(64) PRIMARY KEY,
+  requirement_id VARCHAR(64) NOT NULL REFERENCES requirements(id) ON DELETE CASCADE,
+  project_id VARCHAR(64) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  target_type VARCHAR(20) NOT NULL CHECK (target_type IN ('epic', 'feature', 'story')),
+  target_id VARCHAR(64) NOT NULL,
+  decomposition_id VARCHAR(64) NOT NULL REFERENCES requirement_decompositions(id) ON DELETE CASCADE,
+  created_by VARCHAR(64),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT uq_requirement_link_target UNIQUE (requirement_id, target_type, target_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_requirement_decompositions_requirement ON requirement_decompositions(requirement_id);
+CREATE INDEX IF NOT EXISTS idx_requirement_links_requirement ON requirement_links(requirement_id);
+CREATE INDEX IF NOT EXISTS idx_requirement_links_project ON requirement_links(project_id);
+CREATE INDEX IF NOT EXISTS idx_requirement_links_target ON requirement_links(target_id, target_type);
+CREATE INDEX IF NOT EXISTS idx_requirement_links_decomposition ON requirement_links(decomposition_id);

@@ -85,6 +85,7 @@ function mapRow(r: any): Requirement {
   return {
     id: r.id,
     code: r.code,
+    revision: Number(r.revision) > 0 ? Number(r.revision) : 1,
     projectId: r.project_id,
     title: r.title,
     description: toOptional(r.description),
@@ -124,7 +125,7 @@ function byCodeDesc(a: Requirement, b: Requirement): number {
 }
 
 /** Server-controlled fields are set here, never taken from the caller. */
-export type RequirementCreateData = Omit<Requirement, 'id' | 'code' | 'createdAt' | 'updatedAt'>;
+export type RequirementCreateData = Omit<Requirement, 'id' | 'code' | 'revision' | 'createdAt' | 'updatedAt'>;
 
 export const RequirementRepository = {
   async findAll(filter?: RequirementFilter): Promise<Requirement[]> {
@@ -166,6 +167,7 @@ export const RequirementRepository = {
       return {
         id,
         code,
+        revision: 1,
         projectId: data.projectId,
         title: data.title,
         description: data.description,
@@ -190,12 +192,12 @@ export const RequirementRepository = {
         try {
           await query(
             `INSERT INTO requirements (id, code, project_id, title, description, type, status, priority, rationale, source,
-               owner_id, target_date, created_by, updated_by, created_at, updated_at)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+               owner_id, target_date, created_by, updated_by, created_at, updated_at, revision)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
             [
               item.id, item.code, item.projectId, item.title, item.description || null, item.type, item.status, item.priority,
               item.rationale || null, item.source || null, item.ownerId || null, item.targetDate || null,
-              item.createdBy || null, item.updatedBy || null, item.createdAt, item.updatedAt,
+              item.createdBy || null, item.updatedBy || null, item.createdAt, item.updatedAt, item.revision,
             ]
           );
           memoryRequirements.set(id, item);
@@ -231,6 +233,7 @@ export const RequirementRepository = {
       description: 'description' in updates ? updates.description : existing.description,
       type: updates.type ?? existing.type,
       status: updates.status ?? existing.status,
+      revision: updates.revision ?? existing.revision,
       priority: updates.priority ?? existing.priority,
       rationale: 'rationale' in updates ? updates.rationale : existing.rationale,
       source: 'source' in updates ? updates.source : existing.source,
@@ -242,17 +245,31 @@ export const RequirementRepository = {
     if (isDbConnected()) {
       await query(
         `UPDATE requirements SET title = $1, description = $2, type = $3, status = $4, priority = $5, rationale = $6,
-           source = $7, owner_id = $8, target_date = $9, updated_by = $10, updated_at = $11
-         WHERE id = $12`,
+           source = $7, owner_id = $8, target_date = $9, updated_by = $10, updated_at = $11, revision = $12
+         WHERE id = $13`,
         [
           updated.title, updated.description || null, updated.type, updated.status, updated.priority,
           updated.rationale || null, updated.source || null, updated.ownerId || null, updated.targetDate || null,
-          updated.updatedBy || null, updated.updatedAt, id,
+          updated.updatedBy || null, updated.updatedAt, updated.revision, id,
         ]
       );
     }
     memoryRequirements.set(id, updated);
     return updated;
+  },
+
+  /**
+   * Sprint 18: reads a requirement for an operation that must see its latest
+   * committed state. Inside a PostgreSQL transaction the row is locked
+   * (FOR UPDATE) until the transaction ends, so concurrent decompositions and
+   * edits of the same requirement are serialised. Errors are not swallowed.
+   */
+  async findForUpdate(id: string): Promise<Requirement | null> {
+    if (isDbConnected()) {
+      const res = await query('SELECT * FROM requirements WHERE id = $1 FOR UPDATE', [id]);
+      return res.rows.length > 0 ? mapRow(res.rows[0]) : null;
+    }
+    return memoryRequirements.get(id) || null;
   },
 
   async delete(id: string): Promise<boolean> {

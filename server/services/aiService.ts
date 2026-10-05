@@ -50,4 +50,19 @@ export const AIService = {
       return await LocalRuleAIProvider.generateExecutiveReport(input);
     }
   },
+
+  /**
+   * Sprint 18 — requirement decomposition. Structured output is required, so
+   * only a provider that implements it is used, and failures are reported to
+   * the caller: there is deliberately no LocalRule fallback here (other AI
+   * features keep theirs).
+   */
+  canDecompose(): boolean {
+    return GeminiAIProvider.isAvailable() && typeof GeminiAIProvider.decomposeRequirement === 'function';
+  },
+
+  async decomposeRequirement(context: Record<string, unknown>): Promise<AIProviderResponse> {
+    if (!this.canDecompose()) throw new Error('No AI provider that supports decomposition is configured.');
+    return GeminiAIProvider.decomposeRequirement!(context);
+  },
 };

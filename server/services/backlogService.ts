@@ -35,7 +35,8 @@ export const BacklogService = {
     actor: Actor
   ) {
     if (data.type === 'story') {
-      const code = `STR-${Math.floor(100 + Math.random() * 900)}`;
+      // Sprint 18: the repository issues a collision-safe STR code when none is given.
+      const code = '';
       const story = await StoryRepository.create({
         id: `str_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`,
         code,

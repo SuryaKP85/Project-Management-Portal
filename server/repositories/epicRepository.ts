@@ -1,5 +1,6 @@
 import { Epic } from '../models/types';
-import { isDbConnected, query } from '../config/database';
+import { isDbConnected, query, trackMemoryWrite, withSavepoint } from '../config/database';
+import { MAX_CODE_ATTEMPTS, isCodeCollision, issueMemoryDeliveryCode, issueSequenceDeliveryCode } from './deliveryCodes';
 import { duplicateRecordError } from './recordConflict';
 import { FeatureRepository } from './featureRepository';
 import { calculateEpicProgress } from '../services/progressCalculator';
@@ -294,6 +295,8 @@ export const EpicRepository = {
   async create(epic: Epic): Promise<Epic> {
     // Sprint 16: never overwrite an existing record (both modes; findById reads PostgreSQL when connected).
     if (await this.findById(epic.id)) throw duplicateRecordError('epic', epic.id);
+    // Sprint 18: a record without a code gets a collision-safe one (deliveryCodes.ts).
+    const generated = !epic.code;
     if (isDbConnected()) {
       const q = `
         INSERT INTO epics (
@@ -306,29 +309,41 @@ export const EpicRepository = {
           $14, $15, $16, $17, $18, $19, $20
         ) RETURNING *
       `;
-      await query(q, [
-        epic.id,
-        epic.code,
-        epic.name,
-        epic.description || null,
-        epic.projectId,
-        epic.productId || null,
-        epic.portfolioId || null,
-        epic.ownerId || null,
-        epic.teamId || null,
-        epic.status || 'backlog',
-        epic.priority || 'medium',
-        epic.health || 'on-track',
-        epic.progress || 0,
-        epic.startDate || null,
-        epic.targetDate || null,
-        epic.isArchived || false,
-        epic.createdAt || new Date().toISOString(),
-        epic.updatedAt || new Date().toISOString(),
-        epic.jiraKey || null,
-        epic.jiraUrl || null,
-      ]);
+      for (let attempt = 1; ; attempt += 1) {
+        if (generated) epic = { ...epic, code: await issueSequenceDeliveryCode('epic') };
+        try {
+          await withSavepoint(() => query(q, [
+            epic.id,
+            epic.code,
+            epic.name,
+            epic.description || null,
+            epic.projectId,
+            epic.productId || null,
+            epic.portfolioId || null,
+            epic.ownerId || null,
+            epic.teamId || null,
+            epic.status || 'backlog',
+            epic.priority || 'medium',
+            epic.health || 'on-track',
+            epic.progress || 0,
+            epic.startDate || null,
+            epic.targetDate || null,
+            epic.isArchived || false,
+            epic.createdAt || new Date().toISOString(),
+            epic.updatedAt || new Date().toISOString(),
+            epic.jiraKey || null,
+            epic.jiraUrl || null,
+          ]));
+          break;
+        } catch (err) {
+          if (generated && isCodeCollision(err) && attempt < MAX_CODE_ATTEMPTS) continue;
+          throw err;
+        }
+      }
+    } else if (generated) {
+      epic = { ...epic, code: issueMemoryDeliveryCode('epic', Array.from(memoryEpics.values()).map((r) => r.code)) };
     }
+    trackMemoryWrite(memoryEpics, epic.id);
     memoryEpics.set(epic.id, epic);
     return epic;
   },

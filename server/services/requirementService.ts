@@ -35,7 +35,10 @@ import {
  *   only way an approved requirement leaves approval; rejected and deferred
  *   are final in this foundation.
  *
- * id, code, projectId, createdBy/updatedBy and timestamps are never taken
+ * - Sprint 18: every substantive change also increments the server-controlled
+ *   revision (decomposition consumes one revision at most once).
+ *
+ * id, code, revision, projectId, createdBy/updatedBy and timestamps are never taken
  * from the client; only allowlisted fields are read from a request body.
  */
 
@@ -268,6 +271,8 @@ export const RequirementService = {
     const substantive = changed.filter((k) => (REQUIREMENT_SUBSTANTIVE_FIELDS as readonly string[]).includes(k));
     const reopened = current.status === 'approved' && substantive.length > 0;
     if (reopened) updates.status = 'in-review';
+    // Sprint 18: a substantive change is a new revision (owner and target date are not).
+    if (substantive.length > 0) updates.revision = (current.revision || 1) + 1;
 
     const updated = (await RequirementRepository.update(id, updates)) as Requirement;
     const base = { projectId: updated.projectId, code: updated.code };

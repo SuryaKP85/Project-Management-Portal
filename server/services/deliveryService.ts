@@ -67,7 +67,8 @@ export const DeliveryService = {
     // Sprint 16: access, allowlisted fields and validated values; the id and code are always server-generated.
     data = (await DeliveryGuards.prepareCreate('epic', data as Record<string, any>, actor)) as Partial<Epic>;
     const id = `epic_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
-    const code = `EPC-${Math.floor(100 + Math.random() * 900)}`;
+    // Sprint 18: the repository issues a collision-safe EPC code when none is given.
+    const code = '';
 
     const epic: Epic = {
       id,
@@ -200,7 +201,8 @@ export const DeliveryService = {
     // Sprint 16: access, allowlisted fields and validated values; the id and code are always server-generated.
     data = (await DeliveryGuards.prepareCreate('feature', data as Record<string, any>, actor)) as Partial<Feature>;
     const id = `feat_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
-    const code = `FEAT-${Math.floor(100 + Math.random() * 900)}`;
+    // Sprint 18: the repository issues a collision-safe FEAT code when none is given.
+    const code = '';
 
     const feature: Feature = {
       id,
@@ -343,7 +345,8 @@ export const DeliveryService = {
     // Sprint 16: access, allowlisted fields and validated values; the id and code are always server-generated.
     data = (await DeliveryGuards.prepareCreate('story', data as Record<string, any>, actor)) as Partial<UserStory>;
     const id = `story_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
-    const code = `STR-${Math.floor(100 + Math.random() * 900)}`;
+    // Sprint 18: the repository issues a collision-safe STR code when none is given.
+    const code = '';
 
     const story: UserStory = {
       id,

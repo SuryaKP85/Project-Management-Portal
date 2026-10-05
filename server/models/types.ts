@@ -516,6 +516,7 @@ export type ActivityEntityType =
 
 export type ActivityAction =
   | 'create'
+  | 'decompose'
   | 'update'
   | 'delete'
   | 'status_change'
@@ -1465,6 +1466,13 @@ export interface Requirement {
   id: string;
   /** REQ-###, issued by the server and never re-issued. */
   code: string;
+  /**
+   * Sprint 18: server-controlled content revision, starting at 1. Incremented
+   * by every substantive change (title, description, type, priority,
+   * rationale, source); owner, target date and status changes leave it alone.
+   * Each revision can be decomposed into delivery work at most once.
+   */
+  revision: number;
   projectId: string;
   title: string;
   description?: string;
@@ -1479,4 +1487,32 @@ export interface Requirement {
   updatedBy: string;
   createdAt: string;
   updatedAt: string;
+}
+
+// ====================================================================
+// Sprint 18: Requirement decomposition
+// ====================================================================
+
+export type RequirementLinkTargetType = 'epic' | 'feature' | 'story';
+
+/** One approved decomposition of one requirement revision. */
+export interface RequirementDecomposition {
+  id: string;
+  requirementId: string;
+  projectId: string;
+  requirementRevision: number;
+  createdBy: string;
+  createdAt: string;
+}
+
+/** Traceability from a requirement to a delivery record created from it. */
+export interface RequirementLink {
+  id: string;
+  requirementId: string;
+  projectId: string;
+  targetType: RequirementLinkTargetType;
+  targetId: string;
+  decompositionId: string;
+  createdBy: string;
+  createdAt: string;
 }

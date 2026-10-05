@@ -44,4 +44,22 @@ export class RequirementService {
   static async deleteRequirement(id) {
     return apiClient.delete(`/requirements/${encodeURIComponent(id)}`);
   }
+
+  /** Sprint 18: asks the server for an AI decomposition proposal (nothing is stored). */
+  static async proposeDecomposition(id) {
+    const data = await apiClient.post(`/requirements/${encodeURIComponent(id)}/decomposition/proposal`, {});
+    return data.proposal;
+  }
+
+  /** Sprint 18: approves an edited proposal; the server creates the records atomically. */
+  static async approveDecomposition(id, { requirementRevision, epics }) {
+    const data = await apiClient.post(`/requirements/${encodeURIComponent(id)}/decomposition`, { requirementRevision, epics });
+    return data.decomposition;
+  }
+
+  /** Sprint 18: the delivery records linked to a requirement. */
+  static async getLinks(id) {
+    const data = await apiClient.get(`/requirements/${encodeURIComponent(id)}/links`);
+    return data.links || [];
+  }
 }

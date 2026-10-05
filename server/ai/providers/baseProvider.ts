@@ -31,4 +31,10 @@ export interface AIProvider {
   generateProjectInsights(project: Record<string, any>): Promise<AIProviderResponse>;
   draftExecutiveEmail(context: { project: string; client: string; status: string; keyHighlights: string[] }): Promise<AIProviderResponse>;
   generateExecutiveReport(input: ExecutiveReportInput): Promise<AIProviderResponse>;
+  /**
+   * Sprint 18 — requirement decomposition. Returns the model's raw JSON text
+   * in `text`; the caller parses and validates it. Optional: only providers
+   * that can produce structured output implement it (LocalRule does not).
+   */
+  decomposeRequirement?(context: Record<string, unknown>): Promise<AIProviderResponse>;
 }

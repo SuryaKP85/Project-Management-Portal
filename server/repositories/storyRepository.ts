@@ -1,5 +1,6 @@
 import { UserStory } from '../models/types';
-import { isDbConnected, query } from '../config/database';
+import { isDbConnected, query, trackMemoryWrite, withSavepoint } from '../config/database';
+import { MAX_CODE_ATTEMPTS, isCodeCollision, issueMemoryDeliveryCode, issueSequenceDeliveryCode } from './deliveryCodes';
 import { duplicateRecordError } from './recordConflict';
 import { TaskRepository } from './taskRepository';
 import { calculateStoryProgress } from '../services/progressCalculator';
@@ -342,6 +343,8 @@ export const StoryRepository = {
   async create(story: UserStory): Promise<UserStory> {
     // Sprint 16: never overwrite an existing record (both modes; findById reads PostgreSQL when connected).
     if (await this.findById(story.id)) throw duplicateRecordError('story', story.id);
+    // Sprint 18: a record without a code gets a collision-safe one (deliveryCodes.ts).
+    const generated = !story.code;
     if (isDbConnected()) {
       const q = `
         INSERT INTO stories (
@@ -356,33 +359,45 @@ export const StoryRepository = {
           $19, $20, $21, $22, $23, $24
         ) RETURNING *
       `;
-      await query(q, [
-        story.id,
-        story.code,
-        story.title,
-        story.description || null,
-        JSON.stringify(story.userStory || {}),
-        JSON.stringify(story.acceptanceCriteria || []),
-        story.featureId || null,
-        story.epicId || null,
-        story.projectId,
-        story.productId || null,
-        story.storyPoints || 3,
-        story.priority || 'medium',
-        story.status || 'backlog',
-        story.assigneeId || null,
-        story.teamId || null,
-        story.reporterId || null,
-        story.sprint || null,
-        story.targetRelease || null,
-        story.dueDate || null,
-        story.progress || 0,
-        story.createdAt || new Date().toISOString(),
-        story.updatedAt || new Date().toISOString(),
-        story.jiraKey || null,
-        story.jiraUrl || null,
-      ]);
+      for (let attempt = 1; ; attempt += 1) {
+        if (generated) story = { ...story, code: await issueSequenceDeliveryCode('story') };
+        try {
+          await withSavepoint(() => query(q, [
+            story.id,
+            story.code,
+            story.title,
+            story.description || null,
+            JSON.stringify(story.userStory || {}),
+            JSON.stringify(story.acceptanceCriteria || []),
+            story.featureId || null,
+            story.epicId || null,
+            story.projectId,
+            story.productId || null,
+            story.storyPoints || 3,
+            story.priority || 'medium',
+            story.status || 'backlog',
+            story.assigneeId || null,
+            story.teamId || null,
+            story.reporterId || null,
+            story.sprint || null,
+            story.targetRelease || null,
+            story.dueDate || null,
+            story.progress || 0,
+            story.createdAt || new Date().toISOString(),
+            story.updatedAt || new Date().toISOString(),
+            story.jiraKey || null,
+            story.jiraUrl || null,
+          ]));
+          break;
+        } catch (err) {
+          if (generated && isCodeCollision(err) && attempt < MAX_CODE_ATTEMPTS) continue;
+          throw err;
+        }
+      }
+    } else if (generated) {
+      story = { ...story, code: issueMemoryDeliveryCode('story', Array.from(memoryStories.values()).map((r) => r.code)) };
     }
+    trackMemoryWrite(memoryStories, story.id);
     memoryStories.set(story.id, story);
     return story;
   },

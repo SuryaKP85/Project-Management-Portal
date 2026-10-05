@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import { DECOMPOSITION_REQUEST, DECOMPOSITION_RESPONSE_SCHEMA, DECOMPOSITION_TASK } from '../requirementDecomposition';
 import { AIProvider, AIProviderResponse, ExecutiveReportInput } from './baseProvider';
 import { config, GEMINI_DEFAULT_MODEL, GEMINI_DEFAULT_TIMEOUT_MS } from '../../config/env';
 import {
@@ -242,5 +243,31 @@ Do not invent resources, customers, hours, budgets or dates that are not supplie
       text: response.text || '',
       metadata: { model },
     };
+  },
+
+  /**
+   * Sprint 18 — structured decomposition: JSON constrained by a response
+   * schema. The requirement travels only inside the sealed data block. Errors
+   * propagate to the caller; there is no fallback.
+   */
+  async decomposeRequirement(context: Record<string, unknown>): Promise<AIProviderResponse> {
+    const ai = getClient();
+    if (!ai) {
+      throw new Error('Gemini API key is not configured on the server.');
+    }
+    const model = resolveGeminiModel();
+    const response = await withGeminiTimeout(
+      ai.models.generateContent({
+        model,
+        contents: buildGuardedContents(DECOMPOSITION_REQUEST, context),
+        config: {
+          systemInstruction: taskSystemInstruction(DECOMPOSITION_TASK),
+          responseMimeType: 'application/json',
+          responseSchema: DECOMPOSITION_RESPONSE_SCHEMA,
+        },
+      }),
+      'decomposition'
+    );
+    return { provider: 'gemini', text: response.text || '', metadata: { model } };
   },
 };

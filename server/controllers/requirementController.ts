@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { RequirementService } from '../services/requirementService';
+import { RequirementDecompositionService } from '../services/requirementDecompositionService';
 import { FollowThroughActor } from '../services/followThroughSupport';
 
 /**
@@ -47,4 +48,8 @@ export const RequirementController = {
     await RequirementService.remove(actor, req.params.id);
     res.json({ success: true, data: { deleted: true } });
   }),
+  // Sprint 18 — decomposition.
+  propose: handle(async (actor, req, res) => res.json({ success: true, data: { proposal: await RequirementDecompositionService.propose(actor, req.params.id) } })),
+  approveDecomposition: handle(async (actor, req, res) => res.status(201).json({ success: true, data: { decomposition: await RequirementDecompositionService.approve(actor, req.params.id, body(req)) } })),
+  links: handle(async (actor, req, res) => res.json({ success: true, data: { links: await RequirementDecompositionService.linkedRecords(actor, req.params.id) } })),
 };
