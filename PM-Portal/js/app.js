@@ -32,6 +32,7 @@ import { MeetingsModule } from './meetings.js';
 import { RequirementsModule } from './requirements.js';
 import { GovernanceModule } from './governance.js';
 import { NotificationService } from './services/notificationService.js';
+import { renderNotifications } from './notifications.js';
 import { Authentication } from './authentication.js';
 
 class EnterprisePortalApp {
@@ -472,23 +473,11 @@ class EnterprisePortalApp {
       try {
         const notifs = await NotificationService.getNotifications();
         if (listContainer && Array.isArray(notifs) && notifs.length > 0) {
-          listContainer.innerHTML = notifs.slice(0, 10).map(n => {
-            const isUnread = !n.read;
-            const iconClass = n.type === 'risk' ? 'fa-shield-halved text-danger' :
-                             n.type === 'leave' ? 'fa-umbrella-beach text-success' :
-                             n.type === 'budget' ? 'fa-circle-exclamation text-warning' :
-                             n.type === 'project' ? 'fa-diagram-project text-primary' : 'fa-bell text-info';
-            return `
-              <div class="notification-item ${isUnread ? 'unread' : ''}" data-id="${n.id}" style="cursor: pointer;">
-                <div class="notification-icon"><i class="fa-solid ${iconClass}"></i></div>
-                <div class="notification-info">
-                  <span class="notification-title fw-bold">${n.title}</span>
-                  <span class="notification-text text-muted">${n.message}</span>
-                  <span class="notification-time small">${new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                </div>
-              </div>
-            `;
-          }).join('');
+          // Sprint 21A: title and message are untrusted text, built through the DOM.
+          renderNotifications(listContainer, notifs.slice(0, 10), async (id, item) => {
+            await NotificationService.markAsRead(id);
+            item.classList.remove('unread');
+          });
 
           // Update unread badge dot
           const hasUnread = notifs.some(n => !n.read);
@@ -496,17 +485,6 @@ class EnterprisePortalApp {
           if (badgeDot) {
             badgeDot.style.display = hasUnread ? 'block' : 'none';
           }
-
-          // Individual click to mark as read
-          listContainer.querySelectorAll('.notification-item.unread').forEach(item => {
-            item.addEventListener('click', async () => {
-              const id = item.getAttribute('data-id');
-              if (id) {
-                await NotificationService.markAsRead(id);
-                item.classList.remove('unread');
-              }
-            });
-          });
         }
       } catch (err) {
         console.warn('[App] Failed fetching notifications:', err);

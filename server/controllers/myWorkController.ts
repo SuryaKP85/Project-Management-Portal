@@ -17,9 +17,11 @@ function getActor(req: Request) {
 export const MyWorkController = {
   async getMyWork(req: Request, res: Response) {
     try {
-      const actor = getActor(req);
-      const userId = (req.query.userId as string) || actor.id;
-      const userName = (req.query.userName as string) || actor.name;
+      // Sprint 21A: My Work is always the signed-in user's. The identity comes
+      // from the verified token only; ?userId= and ?userName= are ignored, and
+      // items match by assignee id (a display name is editable by its owner).
+      if (!req.user) return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } });
+      const { id: userId, name: userName } = getActor(req);
       const { timeframe = 'all' } = req.query;
 
       const [allStories, allTasks, sprints] = await Promise.all([
@@ -32,9 +34,7 @@ export const MyWorkController = {
       const activeSprintNames = new Set(sprints.map((s) => s.name));
 
       // Filter assigned to current user
-      const isAssigned = (item: any) =>
-        item.assigneeId === userId ||
-        (item.assigneeName && item.assigneeName.toLowerCase().includes(userName.toLowerCase()));
+      const isAssigned = (item: any) => item.assigneeId === userId;
 
       let myStories = allStories.filter(isAssigned);
       let myTasks = allTasks.filter(isAssigned);

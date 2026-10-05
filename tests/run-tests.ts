@@ -7589,6 +7589,129 @@ if (step === 'fresh') {
   }
   assert(!fs35.existsSync(tmp50), 'Sprint 20 temporary data files are removed after §50');
 
+  // 51. Security hotfix (Sprint 21A)
+  // A. Notification titles and messages are untrusted text: a hostile story
+  //    title, carried by the assignment notification, renders inert in the bell.
+  // B. My Work is always the signed-in user's: ?userId= / ?userName= and the
+  //    user's own (editable) display name cannot reach another user's work.
+  console.log('\n--- 51. Security Hotfix: Notification XSS & My Work Identity (Sprint 21A) ---');
+  const { DeliveryController: DelCtl51 } = await import('../server/controllers/deliveryController');
+  const { ProjectController: ProjCtl51 } = await import('../server/controllers/projectController');
+  const { NotificationController: NotifCtl51 } = await import('../server/controllers/notificationController');
+  const { MyWorkController: MyWorkCtl51 } = await import('../server/controllers/myWorkController');
+  const { StoryRepository: StoryRepo51 } = await import('../server/repositories/storyRepository');
+  const { TaskRepository: TaskRepo51 } = await import('../server/repositories/taskRepository');
+  const { renderNotifications: renderNotifs51 } = await import('../PM-Portal/js/notifications.js');
+
+  // A minimal DOM: elements record their attributes, children, listeners and any markup assignment.
+  const markup51: string[] = [];
+  const created51: any[] = [];
+  const el51 = (tag: string): any => {
+    const node: any = {
+      tagName: tag.toUpperCase(), className: '', textContent: '', style: {}, attributes: {} as Record<string, string>, children: [] as any[], listeners: {} as Record<string, any>,
+      setAttribute(name: string, value: string) { node.attributes[name] = String(value); },
+      getAttribute(name: string) { return node.attributes[name] ?? null; },
+      appendChild(child: any) { node.children.push(child); return child; },
+      replaceChildren(...kids: any[]) { node.children = kids; },
+      addEventListener(type: string, fn: any) { node.listeners[type] = fn; },
+      classList: { remove: (c: string) => { node.className = node.className.split(' ').filter((x: string) => x !== c).join(' '); } },
+    };
+    for (const prop of ['innerHTML', 'outerHTML']) {
+      Object.defineProperty(node, prop, { get: () => '', set: (v: string) => { markup51.push(String(v)); } });
+    }
+    node.insertAdjacentHTML = (_p: string, v: string) => { markup51.push(String(v)); };
+    created51.push(node);
+    return node;
+  };
+  const walk51 = (node: any): any[] => [node, ...node.children.flatMap(walk51)];
+  const hadDocument51 = 'document' in globalThis;
+  const savedDocument51 = (globalThis as any).document;
+
+  const stamp51 = Date.now();
+  const HOSTILE51 = `<img src=x onerror="globalThis.__xss51=1"><script>globalThis.__xss51=1</script><svg onload=alert(1)>`;
+  const mk51 = (key: string, role: any, firstName = `U${key}`) => Auth40.register({ email: `s21a.${key}.${stamp51}@company.com`, password: 'Sprint21a@12345', firstName, lastName: 'S21A', role }, login40.user);
+  const pm51 = await mk51('pm', 'project-manager');
+  const attacker51 = await mk51('attacker', 'team-member');
+  const userA51 = await mk51('alice', 'team-member', 'Alice');
+  const userB51 = await mk51('bartholomew', 'team-member', 'Bartholomew');
+  const cleanup51: Array<() => Promise<unknown>> = [];
+
+  try {
+    const proj51 = (await call46(ProjCtl51.create, pm51, { name: 'S21A Project', client: 'Client' })).body.data.project;
+    cleanup51.push(() => ProjRepo24.delete(proj51.id));
+    await call46(ProjCtl51.update, pm51, { members: [{ userId: attacker51.id, name: 'Attacker', role: 'Developer' }, { userId: userA51.id, name: 'Alice', role: 'Developer' }, { userId: userB51.id, name: 'Bartholomew', role: 'Developer' }] }, { id: proj51.id });
+
+    // --- A. Notification XSS: story title → assignment → notification → bell ---
+    const storyRes51 = await call46(DelCtl51.createStory, attacker51, { title: HOSTILE51, projectId: proj51.id, assigneeId: pm51.id });
+    const story51 = storyRes51.body?.data?.story;
+    cleanup51.push(() => StoryRepo51.delete(story51.id));
+    assert(storyRes51.statusCode === 201 && story51.title === HOSTILE51, 'A team member can still create a story with any title and assign it (the fix is at rendering, not input)');
+    await NotifRepo37.create({ id: `notif_s21a_${stamp51}`, userId: pm51.id, title: HOSTILE51, message: `Plain message for ${HOSTILE51}`, type: 'system', isRead: false, link: '', createdAt: new Date().toISOString() });
+    await NotifRepo37.create({ id: `notif_s21a_ok_${stamp51}`, userId: pm51.id, title: 'Risk Level Critical', message: 'Database replication lagging by 35 min.', type: 'system', isRead: false, link: '', createdAt: new Date().toISOString() });
+    const listed51 = await run41(NotifCtl51.list, reqAs40(pm51));
+    const notifs51 = listed51.body.data.notifications;
+    const assigned51 = notifs51.find((n: any) => n.type === 'work_assigned' && n.message.includes(story51.code));
+    const hostileTitle51 = notifs51.find((n: any) => n.title === HOSTILE51);
+    const normal51 = notifs51.find((n: any) => n.title === 'Risk Level Critical');
+    assert(listed51.statusCode === 200 && assigned51 && assigned51.message === `You have been assigned to Story "${HOSTILE51}" (${story51.code}).` && hostileTitle51 && normal51, 'The assignee receives the notification carrying the hostile title verbatim (the server does not need to escape it)');
+
+    (globalThis as any).document = { createElement: el51 };
+    const container51 = el51('div');
+    const read51: string[] = [];
+    delete (globalThis as any).__xss51;
+    renderNotifs51(container51, [assigned51, hostileTitle51, normal51], (id: string, item: any) => { read51.push(id); item.classList.remove('unread'); });
+    const nodes51 = walk51(container51);
+    const items51 = container51.children;
+    const textOf51 = (item: any, cls: string) => walk51(item).find((n: any) => n.className.split(' ').includes(cls))?.textContent;
+    assert(markup51.length === 0, 'The bell renderer never assigns markup (innerHTML, outerHTML or insertAdjacentHTML) for any notification');
+    assert(nodes51.every((n: any) => ['DIV', 'SPAN', 'I'].includes(n.tagName)) && !nodes51.some((n: any) => ['SCRIPT', 'IMG', 'SVG'].includes(n.tagName)), 'No <script>, <img> or <svg> element is created from a hostile title or message');
+    assert(nodes51.every((n: any) => Object.keys(n.attributes).every((a) => a === 'data-id')) && !nodes51.some((n: any) => Object.keys(n.attributes).some((a) => /^on/i.test(a))), 'No attacker-controlled attribute or event handler is created (only the data-id attribute is set)');
+    assert(textOf51(items51[0], 'notification-text') === assigned51.message && textOf51(items51[0], 'notification-title') === 'Story Assigned', 'The hostile story title in the assignment message is rendered as literal text');
+    assert(textOf51(items51[1], 'notification-title') === HOSTILE51 && textOf51(items51[1], 'notification-text') === `Plain message for ${HOSTILE51}`, 'A hostile notification title and message are both rendered as literal text');
+    assert(textOf51(items51[2], 'notification-title') === 'Risk Level Critical' && textOf51(items51[2], 'notification-text') === 'Database replication lagging by 35 min.' && items51[2].attributes['data-id'] === normal51.id && /fa-bell/.test(items51[2].children[0].children[0].className), 'A normal notification still renders its title, message, id and icon');
+    assert(items51.every((i: any) => i.className === 'notification-item unread' && typeof i.listeners.click === 'function'), 'Unread notifications are marked unread and clickable');
+    items51[2].listeners.click();
+    assert(read51.join() === normal51.id && items51[2].className === 'notification-item' && (globalThis as any).__xss51 === undefined, 'Clicking marks that notification read; no payload ran');
+    const appSrc51 = fs35.readFileSync('PM-Portal/js/app.js', 'utf8');
+    const rendererSrc51 = fs35.readFileSync('PM-Portal/js/notifications.js', 'utf8');
+    assert(/import \{ renderNotifications \} from '\.\/notifications\.js'/.test(appSrc51) && /renderNotifications\(listContainer,/.test(appSrc51) && !/\$\{n\.(title|message|id)\}/.test(appSrc51), 'The bell uses the safe renderer; app.js no longer interpolates notification fields into markup');
+    assert(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(rendererSrc51.replace(/\/\*[\s\S]*?\*\//g, '')) && /textContent = String\(text \?\? ''\)/.test(rendererSrc51), 'The renderer source contains no markup sinks and sets text with textContent');
+
+    // --- B. My Work: identity comes from the verified token only ---
+    const storyB51 = (await call46(DelCtl51.createStory, pm51, { title: `S21A Bart secret ${stamp51}`, projectId: proj51.id, assigneeId: userB51.id })).body.data.story;
+    cleanup51.push(() => StoryRepo51.delete(storyB51.id));
+    const taskB51 = (await call46(DelCtl51.createTask, pm51, { title: `S21A Bart task ${stamp51}`, projectId: proj51.id, storyId: storyB51.id, assigneeId: userB51.id })).body.data.task;
+    cleanup51.push(() => TaskRepo51.delete(taskB51.id));
+    // Legacy items also carry the assignee's display name, which the old matching used.
+    await StoryRepo51.update(storyB51.id, { assigneeName: 'Bartholomew S21A' });
+    await TaskRepo51.update(taskB51.id, { assigneeName: 'Bartholomew S21A' });
+    const storyA51 = (await call46(DelCtl51.createStory, pm51, { title: `S21A Alice story ${stamp51}`, projectId: proj51.id, assigneeId: userA51.id })).body.data.story;
+    cleanup51.push(() => StoryRepo51.delete(storyA51.id));
+    const myWork51 = (u: any, query: any = {}) => run41(MyWorkCtl51.getMyWork, reqAs40(u, { query }));
+    const ids51 = (r: any) => [...r.body.data.stories, ...r.body.data.tasks].map((i: any) => i.id).sort().join();
+    const leaksB51 = (r: any) => { const t = JSON.stringify(r.body); return t.includes(userB51.id) || t.includes('Bart secret') || t.includes('Bart task') || t.includes(storyB51.id) || t.includes(taskB51.id); };
+
+    const ownA51 = await myWork51(userA51);
+    assert(ownA51.statusCode === 200 && ownA51.body.data.user.id === userA51.id && ids51(ownA51) === storyA51.id && !leaksB51(ownA51), 'User A gets their own work');
+    const probeA51 = await myWork51(userA51, { userId: userB51.id, userName: 'Bartholomew S21A' });
+    assert(probeA51.statusCode === 200 && probeA51.body.data.user.id === userA51.id && ids51(probeA51) === storyA51.id && !leaksB51(probeA51), 'User A asking for ?userId=<B>&userName=<B> still gets only their own work; nothing about B is returned');
+    const renamedA51 = { ...userA51, firstName: 'Bart', lastName: '' };
+    const nameProbe51 = await myWork51(renamedA51, { userName: 'a' });
+    assert(nameProbe51.statusCode === 200 && ids51(nameProbe51) === storyA51.id && !leaksB51(nameProbe51), 'A display name that is part of B\'s name (which users can edit) does not match B\'s work: items match by assignee id');
+    const ownB51 = await myWork51(userB51);
+    assert(ownB51.statusCode === 200 && ownB51.body.data.user.id === userB51.id && ids51(ownB51) === [storyB51.id, taskB51.id].sort().join() && ownB51.body.data.counts.totalStories === 1 && ownB51.body.data.counts.totalTasks === 1, 'User B gets their own stories and tasks');
+    const adminProbe51 = await myWork51(adminUser40, { userId: userB51.id });
+    assert(adminProbe51.statusCode === 200 && adminProbe51.body.data.user.id === adminUser40.id && !leaksB51(adminProbe51), 'An administrator also gets their own work: there was no intended cross-user My Work capability to preserve');
+    const anon51 = await myWork51(null, { userId: userB51.id });
+    assert(anon51.statusCode === 401 && !leaksB51(anon51), 'Without a verified identity My Work answers 401 (no built-in fallback user)');
+    const ctlSrc51 = fs35.readFileSync('server/controllers/myWorkController.ts', 'utf8');
+    assert(!/req\.query\.(userId|userName)/.test(ctlSrc51) && !/assigneeName/.test(ctlSrc51), 'The controller reads no identity from the query and does not match by display name');
+  } finally {
+    if (hadDocument51) (globalThis as any).document = savedDocument51; else delete (globalThis as any).document;
+    for (const fn of cleanup51.reverse()) await fn();
+    for (const u of [pm51, attacker51, userA51, userB51]) await UserRepo40.update(u.id, { isActive: false });
+  }
+
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('========================================\n');
