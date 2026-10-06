@@ -42,7 +42,7 @@
     <!-- LEFT SIDEBAR -->
     <aside id="sidebar">
       <div class="sidebar-brand">
-        <a href="#" class="brand-logo" data-page="dashboard" id="sidebar-logo">
+        <a href="#" class="brand-logo" data-page="home" id="sidebar-logo">
           <i class="fa-solid fa-cubes-stacked"></i>
           <div>
             <span class="brand-text">PM Portal</span>
@@ -52,13 +52,20 @@
       </div>
 
       <ul class="sidebar-menu">
-        <li class="menu-header">Overview</li>
+        <li class="menu-header">Daily Work</li>
         <li class="menu-item active">
-          <a href="#" class="menu-link" data-page="dashboard">
-            <i class="fa-solid fa-chart-pie"></i>
-            <span class="menu-text">Executive Dashboard</span>
+          <a href="#" class="menu-link" data-page="home">
+            <i class="fa-solid fa-house text-primary"></i>
+            <span class="menu-text">Home</span>
           </a>
         </li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="my-work">
+            <i class="fa-solid fa-user-check text-warning"></i>
+            <span class="menu-text">My Work</span>
+          </a>
+        </li>
+        <li class="menu-header">Overview</li>
         <li class="menu-item">
           <a href="#" class="menu-link" data-page="executive">
             <i class="fa-solid fa-chart-line text-success"></i>
@@ -66,15 +73,15 @@
           </a>
         </li>
         <li class="menu-item">
-          <a href="#" class="menu-link" data-page="action-center">
-            <i class="fa-solid fa-bolt text-warning"></i>
-            <span class="menu-text">Executive Action Center</span>
-          </a>
-        </li>
-        <li class="menu-item">
           <a href="#" class="menu-link" data-page="projects">
             <i class="fa-solid fa-diagram-project"></i>
             <span class="menu-text">Projects</span>
+          </a>
+        </li>
+        <li class="menu-item">
+          <a href="#" class="menu-link" data-page="dashboard">
+            <i class="fa-solid fa-chart-pie"></i>
+            <span class="menu-text">Legacy Dashboard (V1.1)</span>
           </a>
         </li>
         <li class="menu-header">Strategy & Portfolios</li>
@@ -113,12 +120,6 @@
           <a href="#" class="menu-link" data-page="sprint-planning">
             <i class="fa-solid fa-list-ol text-success"></i>
             <span class="menu-text">Sprint Planning</span>
-          </a>
-        </li>
-        <li class="menu-item">
-          <a href="#" class="menu-link" data-page="my-work">
-            <i class="fa-solid fa-user-check text-warning"></i>
-            <span class="menu-text">My Work</span>
           </a>
         </li>
         <li class="menu-item">
@@ -250,7 +251,7 @@
           </button>
           
           <div class="breadcrumb-container">
-            <a href="#" class="breadcrumb-link" data-page="dashboard">Home</a>
+            <a href="#" class="breadcrumb-link" data-page="home">Home</a>
             <span class="divider"><i class="fa-solid fa-chevron-right" style="font-size: 0.65rem; opacity: 0.6;"></i></span>
             <span id="navbar-breadcrumb-label" class="font-semibold" style="color: var(--text-primary);">Dashboard</span>
           </div>
@@ -323,11 +324,24 @@
       <!-- ===================================================================== -->
 
       <!-- 1. DASHBOARD PAGE -->
-      <section id="page-dashboard" class="page-container active">
+      <!-- V2 HOME (Sprint 21B): the default landing page -->
+      <section id="page-home" class="page-container active">
         <div class="page-header">
           <div>
-            <h1 class="page-title">Executive Dashboard</h1>
-            <p class="page-description">Comprehensive portfolio health, resourcing metrics, and milestone forecasts</p>
+            <h1 class="page-title">Home</h1>
+            <p class="page-description">What needs your attention, what is coming up, and how your projects are doing</p>
+          </div>
+        </div>
+        <div id="home-workspace">
+          <!-- Rendered dynamically by HomeModule -->
+        </div>
+      </section>
+
+      <section id="page-dashboard" class="page-container">
+        <div class="page-header">
+          <div>
+            <h1 class="page-title">Legacy Dashboard (V1.1)</h1>
+            <p class="page-description">The previous dashboard, built from imported spreadsheet data. Your daily view is now Home.</p>
           </div>
           <button id="refresh-dashboard-btn" class="btn-enterprise btn-enterprise-secondary" aria-label="Refresh Stats">
             <i class="fa-solid fa-arrows-rotate"></i> Refresh Metrics
@@ -1507,8 +1521,8 @@
       <section id="page-my-work" class="page-container">
         <div class="page-header d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
           <div>
-            <h1 class="page-title">My Personal Work Queue</h1>
-            <p class="page-description">Track all stories, tasks, and subtasks assigned to you across active sprints with direct status progression</p>
+            <h1 class="page-title">My Work</h1>
+            <p class="page-description">Everything that is yours: assigned delivery work, follow-through you own, your requirements, approvals and upcoming meetings</p>
           </div>
           <div class="d-flex align-items-center gap-2">
             <button class="btn-enterprise btn-enterprise-secondary" onclick="window.portalAppInstance?.switchPage('agile-board')">

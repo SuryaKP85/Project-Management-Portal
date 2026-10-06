@@ -17,7 +17,6 @@ import { RiskModule } from './riskModule.js';
 import { ForecastEngineModule } from './forecastEngine.js';
 import { ReportsHubModule } from './reportsHub.js';
 import { GanttModule } from './gantt.js';
-import { ActionCenterModule } from './actionCenter.js';
 import { AppIntegrationModule } from './appIntegration.js';
 import { MigrationConfig } from './migrationConfig.js';
 import { SettingsModule } from './settings.js';
@@ -33,12 +32,13 @@ import { RequirementsModule } from './requirements.js';
 import { GovernanceModule } from './governance.js';
 import { NotificationService } from './services/notificationService.js';
 import { renderNotifications } from './notifications.js';
+import { HomeModule } from './home.js';
 import { Authentication } from './authentication.js';
 
 class EnterprisePortalApp {
   constructor() {
     this.currentTheme = 'light';
-    this.currentPage = 'dashboard';
+    this.currentPage = 'home';
     
     // Core Collections initialized empty for fresh start
     this.projectsList = [];
@@ -74,6 +74,9 @@ class EnterprisePortalApp {
     // Initialize Settings & User session
     SettingsModule.init(this);
     
+    // Sprint 21B: the V2 Home is the landing page; the V1.1 dashboard stays one click away.
+    this.switchPage('home');
+
     this.showToast('Enterprise PM Portal fully integrated & active', 'info');
   }
 
@@ -287,16 +290,38 @@ class EnterprisePortalApp {
     if (brandLink) {
       brandLink.addEventListener('click', (e) => {
         e.preventDefault();
-        this.switchPage('dashboard');
+        this.switchPage('home');
       });
     }
+  }
+
+  /**
+   * Sprint 21B: opens the page behind a Home / My Work item ({ page, tab, id }
+   * from the server). Only known pages; the record is selected through each
+   * module's existing state, never through markup.
+   */
+  openTarget(link) {
+    const pages = ['home', 'my-work', 'delivery', 'meetings', 'requirements', 'projects', 'governance'];
+    if (!link || !pages.includes(link.page)) return;
+    const id = typeof link.id === 'string' && link.id ? link.id : null;
+    if (link.page === 'meetings') {
+      MeetingsModule.activeTab = ['meetings', 'action-items', 'waiting-for', 'follow-ups'].includes(link.tab) ? link.tab : 'meetings';
+      MeetingsModule.selectedMeetingId = MeetingsModule.activeTab === 'meetings' ? id : null;
+    } else if (link.page === 'requirements') {
+      RequirementsModule.selectedId = id;
+    } else if (link.page === 'delivery' && ['stories', 'tasks'].includes(link.tab)) {
+      DeliveryModule.activeTab = link.tab;
+    }
+    this.switchPage(link.page);
   }
 
   switchPage(pageId) {
     // Hide active containers, show current container
     const allPages = document.querySelectorAll('.page-container');
+    // Sprint 21B: the old Action Center is replaced by the unified My Work.
+    if (pageId === 'action-center') pageId = 'my-work';
     let targetPage = document.getElementById(`page-${pageId}`);
-    if (!targetPage && (pageId === 'issues' || pageId === 'governance' || pageId === 'dependencies')) {
+    if (!targetPage && ['issues', 'governance', 'dependencies', 'milestones', 'releases'].includes(pageId)) {
       targetPage = document.getElementById('page-governance');
     }
     
@@ -322,9 +347,9 @@ class EnterprisePortalApp {
     if (breadcrumbLabel) {
       // Capitalize page name cleanly
       const nameMap = {
-        'dashboard': 'Executive Dashboard',
+        'home': 'Home',
+        'dashboard': 'Legacy Dashboard (V1.1)',
         'executive': 'Executive Overview',
-        'action-center': 'Executive Action Center',
         'projects': 'Projects Portfolio',
         'portfolios': 'Strategic Portfolios & OKRs',
         'products': 'Enterprise Products',
@@ -332,7 +357,7 @@ class EnterprisePortalApp {
         'delivery': 'Delivery Management & Hierarchy',
         'agile-board': 'Agile Execution Board',
         'sprint-planning': 'Sprint Planning & Backlog',
-        'my-work': 'My Personal Work Queue',
+        'my-work': 'My Work',
         'meetings': 'Meetings & Follow-through',
         'customers': 'Customers Registry',
         'resources': 'Human Resources',
@@ -346,6 +371,8 @@ class EnterprisePortalApp {
         'risks': 'Risk Registers & Audits',
         'issues': 'Issues Tracker & Root Causes',
         'dependencies': 'Dependencies & Critical Path',
+        'milestones': 'Milestones',
+        'releases': 'Releases',
         'reports': 'Executive Reports',
         'settings': 'Portal Settings'
       };
@@ -356,12 +383,12 @@ class EnterprisePortalApp {
     this.currentPage = pageId;
 
     // Load page modules
-    if (pageId === 'dashboard') {
+    if (pageId === 'home') {
+      HomeModule.init(this);
+    } else if (pageId === 'dashboard') {
       DashboardModule.renderAllCharts();
     } else if (pageId === 'executive') {
       ExecutiveOverviewModule.init(this);
-    } else if (pageId === 'action-center') {
-      ActionCenterModule.init(this);
     } else if (pageId === 'projects') {
       ProjectsModule.init(this);
     } else if (pageId === 'portfolios') {
@@ -405,6 +432,8 @@ class EnterprisePortalApp {
       GovernanceModule.init(this, 'issues');
     } else if (pageId === 'dependencies') {
       GovernanceModule.init(this, 'dependencies');
+    } else if (pageId === 'milestones' || pageId === 'releases') {
+      GovernanceModule.init(this, pageId);
     } else if (pageId === 'reports') {
       ExcelEngineModule.init(this);
       ReportsHubModule.init(this);

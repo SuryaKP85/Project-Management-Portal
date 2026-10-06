@@ -1,4 +1,5 @@
-import { Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
+import { HomeService } from '../services/homeService';
 import { StoryRepository } from '../repositories/storyRepository';
 import { TaskRepository } from '../repositories/taskRepository';
 import { SprintRepository } from '../repositories/sprintRepository';
@@ -15,6 +16,21 @@ function getActor(req: Request) {
 }
 
 export const MyWorkController = {
+  /**
+   * Sprint 21B — GET /home: Home and unified My Work for the signed-in user.
+   * Read-only; the query string is ignored entirely (no user, project,
+   * portfolio or product scope can be requested).
+   */
+  async getHome(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } });
+      const { id, name } = getActor(req);
+      res.json({ success: true, data: await HomeService.getHome({ userId: id, role: req.user.role, name }) });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async getMyWork(req: Request, res: Response) {
     try {
       // Sprint 21A: My Work is always the signed-in user's. The identity comes

@@ -3484,7 +3484,8 @@ async function runTests() {
   // 1–3. navigation and the untouched V1.1 dashboard
   assert(/data-page="executive"[\s\S]*?Executive Overview/.test(html36), 'Executive Overview navigation item exists');
   assert(/<section id="page-executive" class="page-container">/.test(html36), 'Executive Overview page section exists');
-  assert(/data-page="dashboard"[\s\S]*?Executive Dashboard/.test(html36) && /<section id="page-dashboard" class="page-container active">/.test(html36), 'Existing Executive Dashboard navigation and page remain');
+  // Sprint 21B: the V2 Home is the default page; the V1.1 dashboard stays reachable under a legacy label.
+  assert(/data-page="dashboard"[\s\S]*?Legacy Dashboard \(V1\.1\)/.test(html36) && /<section id="page-dashboard" class="page-container">/.test(html36) && /<section id="page-home" class="page-container active">/.test(html36), 'Existing V1.1 dashboard navigation and page remain (as the legacy dashboard; Home is the default)');
   assert((html36.match(/id="page-dashboard"/g) || []).length === 1 && (html36.match(/id="page-executive"/g) || []).length === 1, 'Both pages exist exactly once');
   assert(!/executive\/overview|ExecutiveOverview|executiveService|page-executive|Executive Overview/.test(dash36), 'dashboard.js has no executive-overview references');
   assert(/import { Storage } from '\.\/storage\.js';/.test(dash36) && /renderAllCharts\(\)/.test(dash36), 'dashboard.js keeps its V1.1 entry points');
@@ -7710,6 +7711,222 @@ if (step === 'fresh') {
     if (hadDocument51) (globalThis as any).document = savedDocument51; else delete (globalThis as any).document;
     for (const fn of cleanup51.reverse()) await fn();
     for (const u of [pm51, attacker51, userA51, userB51]) await UserRepo40.update(u.id, { isActive: false });
+  }
+
+  // 52. V2 PM Home & unified My Work (Sprint 21B)
+  // One read-only aggregation (GET /home) for the signed-in user: identity from
+  // the token, scope from ProjectAccessService, no client-supplied scope; the
+  // project pulse reuses the health model; Home is the default page; the dead
+  // Milestones / Releases / Action Center navigation is resolved.
+  console.log('\n--- 52. V2 PM Home & Unified My Work (Sprint 21B) ---');
+  const { MyWorkController: MyWorkCtl52 } = await import('../server/controllers/myWorkController');
+  const { ProjectController: ProjCtl52 } = await import('../server/controllers/projectController');
+  const { ProjectHealthService: Health52 } = await import('../server/services/projectHealthService');
+  const { StoryRepository: StoryRepo52 } = await import('../server/repositories/storyRepository');
+  const { TaskRepository: TaskRepo52 } = await import('../server/repositories/taskRepository');
+  const { SubtaskRepository: SubRepo52 } = await import('../server/repositories/subtaskRepository');
+  const { ActionItemRepository: ActRepo52 } = await import('../server/repositories/actionItemRepository');
+  const { FollowUpRepository: FupRepo52 } = await import('../server/repositories/followUpRepository');
+  const { WaitingForRepository: WfrRepo52 } = await import('../server/repositories/waitingForRepository');
+  const { MeetingRepository: MtgRepo52 } = await import('../server/repositories/meetingRepository');
+  const { RequirementRepository: ReqRepo52 } = await import('../server/repositories/requirementRepository');
+  const { HomeModule: HomeMod52 } = await import('../PM-Portal/js/home.js');
+  const { MyWorkModule: MyWork52 } = await import('../PM-Portal/js/myWork.js');
+
+  const stamp52 = Date.now();
+  const now52 = new Date();
+  const day52 = (offset: number) => new Date(now52.getTime() + offset * 86400000).toISOString().slice(0, 10);
+  const at52 = (offset: number) => new Date(now52.getTime() + offset * 86400000).toISOString();
+  const mk52 = (key: string, role: any) => Auth40.register({ email: `s21b.${key}.${stamp52}@company.com`, password: 'Sprint21b@12345', firstName: `S21B${key}`, lastName: 'Home', role }, login40.user);
+  const pmA52 = await mk52('pma', 'project-manager');
+  const pmB52 = await mk52('pmb', 'project-manager');
+  const memberA52 = await mk52('membera', 'team-member');
+  const memberB52 = await mk52('memberb', 'team-member');
+  const viewerA52 = await mk52('viewera', 'viewer');
+  const prodA52 = await mk52('proda', 'product-manager');
+  const cleanup52: Array<() => Promise<unknown>> = [];
+  const home52 = (u: any, query: any = {}) => run41(MyWorkCtl52.getHome, reqAs40(u, { query }));
+  const SECRET52 = `S21B Secret B ${stamp52}`;
+
+  try {
+    const projA52 = (await call46(ProjCtl52.create, pmA52, { name: `S21B Project A ${stamp52}`, client: 'Client A' })).body.data.project;
+    cleanup52.push(() => ProjRepo24.delete(projA52.id));
+    const projB52 = (await call46(ProjCtl52.create, pmB52, { name: `${SECRET52} project`, client: 'Client B' })).body.data.project;
+    cleanup52.push(() => ProjRepo24.delete(projB52.id));
+    await call46(ProjCtl52.update, pmA52, { members: [{ userId: memberA52.id, name: 'Member A', role: 'Developer' }, { userId: viewerA52.id, name: 'Viewer A', role: 'Observer' }, { userId: prodA52.id, name: 'Product A', role: 'Product Manager' }] }, { id: projA52.id });
+    await call46(ProjCtl52.update, pmB52, { members: [{ userId: memberB52.id, name: 'Member B', role: 'Developer' }] }, { id: projB52.id });
+
+    // --- Fixtures in project A (member A's work) and project B (never visible to A) ---
+    const story = async (id: string, data: any) => { await StoryRepo52.create({ id, code: id, priority: 'high', storyPoints: 3, ...data } as any); cleanup52.push(() => StoryRepo52.delete(id)); };
+    const task = async (id: string, data: any) => { await TaskRepo52.create({ id, code: id, priority: 'medium', ...data } as any); cleanup52.push(() => TaskRepo52.delete(id)); };
+    await story(`S52-OVERDUE-${stamp52}`, { title: 'S21B overdue story', projectId: projA52.id, status: 'in-progress', assigneeId: memberA52.id, dueDate: '2020-01-01' });
+    await story(`S52-DONE-${stamp52}`, { title: 'S21B finished story', projectId: projA52.id, status: 'done', assigneeId: memberA52.id, dueDate: '2020-01-01' });
+    await story(`S52-OTHER-${stamp52}`, { title: 'S21B someone else', projectId: projA52.id, status: 'blocked', assigneeId: pmA52.id, dueDate: day52(3) });
+    await task(`T52-TODAY-${stamp52}`, { title: 'S21B task due today', projectId: projA52.id, storyId: `S52-OVERDUE-${stamp52}`, status: 'blocked', assigneeId: memberA52.id, dueDate: day52(0) });
+    await SubRepo52.create({ id: `ST52-${stamp52}`, taskId: `T52-TODAY-${stamp52}`, title: 'S21B subtask', status: 'ready', priority: 'low', assigneeId: memberA52.id, dueDate: day52(20) } as any);
+    cleanup52.push(() => SubRepo52.delete(`ST52-${stamp52}`));
+    await story(`S52-SECRET-${stamp52}`, { title: `${SECRET52} story`, projectId: projB52.id, status: 'in-progress', assigneeId: memberB52.id, dueDate: '2020-01-01' });
+    const meta52 = (by: any) => ({ createdBy: by.id, updatedBy: by.id });
+    const act52 = await ActRepo52.create({ projectId: projA52.id, title: 'S21B overdue action', ownerId: memberA52.id, dueDate: '2020-02-01', status: 'Open', priority: 'High', ...meta52(pmA52) });
+    const actDone52 = await ActRepo52.create({ projectId: projA52.id, title: 'S21B completed action', ownerId: memberA52.id, status: 'Completed', priority: 'Low', ...meta52(pmA52) });
+    const fup52 = await FupRepo52.create({ projectId: projA52.id, title: 'S21B follow-up', ownerId: memberA52.id, dueDate: day52(2), status: 'Open', ...meta52(pmA52) });
+    const wfr52 = await WfrRepo52.create({ projectId: projA52.id, title: 'S21B waiting on vendor', ownerId: memberA52.id, waitingOnName: 'Vendor', expectedDate: day52(10), status: 'Follow-up Needed', ...meta52(pmA52) });
+    const mtg52 = await MtgRepo52.create({ projectId: projA52.id, title: 'S21B sprint review', scheduledAt: at52(1), durationMinutes: 30, organizerId: pmA52.id, participantIds: [memberA52.id], status: 'Scheduled', ...meta52(pmA52) });
+    const mtgLate52 = await MtgRepo52.create({ projectId: projA52.id, title: 'S21B far meeting', scheduledAt: at52(12), durationMinutes: 30, organizerId: pmA52.id, participantIds: [memberA52.id], status: 'Scheduled', ...meta52(pmA52) });
+    const mtgOff52 = await MtgRepo52.create({ projectId: projA52.id, title: 'S21B cancelled meeting', scheduledAt: at52(1), durationMinutes: 30, organizerId: pmA52.id, participantIds: [memberA52.id], status: 'Cancelled', ...meta52(pmA52) });
+    const reqDraft52 = await ReqRepo52.create({ projectId: projA52.id, title: 'S21B member draft', type: 'functional', status: 'draft', priority: 'high', ownerId: memberA52.id, targetDate: day52(5), ...meta52(memberA52) });
+    const reqApproved52 = await ReqRepo52.create({ projectId: projA52.id, title: 'S21B member approved', type: 'functional', status: 'approved', priority: 'low', ownerId: memberA52.id, ...meta52(memberA52) });
+    const reqReview52 = await ReqRepo52.create({ projectId: projA52.id, title: 'S21B awaiting approval', type: 'business', status: 'in-review', priority: 'critical', ownerId: pmA52.id, targetDate: day52(1), ...meta52(pmA52) });
+    const reqReviewB52 = await ReqRepo52.create({ projectId: projB52.id, title: `${SECRET52} requirement`, type: 'business', status: 'in-review', priority: 'high', ownerId: pmB52.id, ...meta52(pmB52) });
+    // Stale records in B that name member A (as if A had been removed from B): never shown to A.
+    const staleAct52 = await ActRepo52.create({ projectId: projB52.id, title: `${SECRET52} stale action`, ownerId: memberA52.id, dueDate: '2020-01-01', status: 'Open', priority: 'Urgent', ...meta52(pmB52) });
+    const staleReq52 = await ReqRepo52.create({ projectId: projB52.id, title: `${SECRET52} stale requirement`, type: 'functional', status: 'draft', priority: 'high', ownerId: memberA52.id, ...meta52(pmB52) });
+    const staleMtg52 = await MtgRepo52.create({ projectId: projB52.id, title: `${SECRET52} meeting`, scheduledAt: at52(1), durationMinutes: 30, organizerId: pmB52.id, participantIds: [memberA52.id, memberB52.id], status: 'Scheduled', ...meta52(pmB52) });
+    const riskA52 = await RiskRepo35.create({ projectId: projA52.id, title: 'S21B high risk', probability: 5, impact: 4, status: 'Identified' } as any);
+    const issueA52 = await IssueRepo35.create({ projectId: projA52.id, title: 'S21B high issue', severity: 'High', priority: 'High', status: 'Open' } as any);
+    const riskB52 = await RiskRepo35.create({ projectId: projB52.id, title: `${SECRET52} risk`, probability: 5, impact: 5, status: 'Identified' } as any);
+    cleanup52.push(
+      () => ActRepo52.delete(act52.id), () => ActRepo52.delete(actDone52.id), () => ActRepo52.delete(staleAct52.id),
+      () => FupRepo52.delete(fup52.id), () => WfrRepo52.delete(wfr52.id),
+      () => MtgRepo52.delete(mtg52.id), () => MtgRepo52.delete(mtgLate52.id), () => MtgRepo52.delete(mtgOff52.id), () => MtgRepo52.delete(staleMtg52.id),
+      () => ReqRepo52.delete(reqDraft52.id), () => ReqRepo52.delete(reqApproved52.id), () => ReqRepo52.delete(reqReview52.id), () => ReqRepo52.delete(reqReviewB52.id), () => ReqRepo52.delete(staleReq52.id),
+      () => RiskRepo35.delete(riskA52.id), () => IssueRepo35.delete(issueA52.id), () => RiskRepo35.delete(riskB52.id),
+    );
+    const leaksB52 = (r: any) => { const t = JSON.stringify(r.body); return t.includes(SECRET52) || t.includes(projB52.id) || t.includes(memberB52.id); };
+    const ids52 = (items: any[]) => items.map((i: any) => i.id).sort().join();
+
+    // --- A. Authentication ---
+    const anon52 = await home52(null);
+    assert(anon52.statusCode === 401 && anon52.body?.success === false, 'GET /home without a verified identity is 401');
+
+    // --- B. Identity: the token decides, the query string is ignored ---
+    const mineA52 = await home52(memberA52);
+    const dA52 = mineA52.body.data;
+    assert(mineA52.statusCode === 200 && mineA52.body.success === true && dA52.user.id === memberA52.id && dA52.user.role === 'team-member', 'Member A gets their own Home');
+    const probe52 = await home52(memberA52, { userId: memberB52.id, userName: 'S21Bmemberb Home', projectId: projB52.id, portfolioId: 'port_1', productId: 'prod_1', scope: 'all' });
+    const stripVolatile52 = (d: any) => JSON.stringify(d);
+    assert(probe52.statusCode === 200 && probe52.body.data.user.id === memberA52.id && stripVolatile52(probe52.body.data) === stripVolatile52(dA52) && !leaksB52(probe52), 'userId, userName, projectId, portfolioId, productId and scope in the query change nothing: A still gets exactly their own Home');
+
+    // --- C. Project isolation ---
+    assert(!leaksB52(mineA52), 'Nothing from project B (its name, id, records or members) appears anywhere in member A\'s Home — including stale B records naming A');
+    assert(dA52.projects.map((p: any) => p.id).join() === projA52.id, 'Member A\'s pulse lists project A only');
+    const mineB52 = await home52(pmB52);
+    assert(mineB52.body.data.projects.map((p: any) => p.id).join() === projB52.id && !JSON.stringify(mineB52.body).includes('S21B overdue story') && !JSON.stringify(mineB52.body).includes(projA52.id), 'The manager of B sees project B only, and nothing from A');
+    const adminHome52 = await home52(adminUser40);
+    const adminPulse52 = adminHome52.body.data.projects.map((p: any) => p.id);
+    assert(adminPulse52.includes(projA52.id) && adminPulse52.includes(projB52.id), 'An administrator, who may see every project, gets both in the pulse');
+    const homeSrc52 = fs35.readFileSync('server/services/homeService.ts', 'utf8');
+    const ctlSrc52 = fs35.readFileSync('server/controllers/myWorkController.ts', 'utf8');
+    const getHomeSrc52 = ctlSrc52.slice(ctlSrc52.indexOf('async getHome('), ctlSrc52.indexOf('async getMyWork('));
+    assert(!/req\.query|req\.body|req\.params/.test(getHomeSrc52) && /ProjectAccessService\.accessibleProjectIds\(actor\)/.test(homeSrc52) && !/ExecutiveDashboardService|executiveDashboardService/.test(homeSrc52), 'GET /home reads no request input; its scope is ProjectAccessService, not the Executive Overview rollup');
+
+    // --- D. Project pulse ---
+    const pulseA52 = dA52.projects[0];
+    const healthA52 = await Health52.computeHealth((await ProjRepo24.findById(projA52.id))!);
+    assert(pulseA52.code === projA52.code && pulseA52.name === projA52.name && pulseA52.health.band === healthA52.band && pulseA52.health.score === healthA52.score, `The pulse shows the existing health model's band and score (${pulseA52.health.band} ${pulseA52.health.score})`);
+    assert(pulseA52.overdueDelivery === 1 && pulseA52.openHighRisks === 1 && pulseA52.openHighIssues === 1 && pulseA52.openHighRisks === healthA52.signals.openHighOrCriticalRisks, 'It counts overdue open delivery (1: the done story is excluded), open high/critical risks (1) and issues (1)');
+    assert(Object.keys(pulseA52).sort().join() === 'code,health,id,name,openHighIssues,openHighRisks,overdueDelivery,status' && !/budget|revenue|cost|sow|margin|rate/i.test(JSON.stringify(dA52.projects)), 'The pulse carries no commercial or financial fields');
+
+    // --- E. Unified My Work ---
+    const w52 = dA52.myWork;
+    assert(ids52(w52.delivery) === [`S52-OVERDUE-${stamp52}`, `T52-TODAY-${stamp52}`, `ST52-${stamp52}`].sort().join() && w52.delivery.every((i: any) => i.project?.id === projA52.id), 'Delivery: the assigned open story, task and subtask (the subtask in its task\'s project); done and other people\'s work excluded');
+    const byId52 = (id: string) => [...w52.delivery, ...w52.followThrough, ...w52.requirements, ...w52.meetings].find((i: any) => i.id === id);
+    assert(byId52(`S52-OVERDUE-${stamp52}`).dueState === 'overdue' && byId52(`T52-TODAY-${stamp52}`).dueState === 'due-today' && byId52(`ST52-${stamp52}`).dueState === 'upcoming' && byId52(fup52.id).dueState === 'due-soon' && byId52(reqDraft52.id).dueState === 'due-soon', 'Due states: overdue, due today, due soon (within 7 days) and upcoming, from the stored dates');
+    assert(ids52(w52.followThrough) === [act52.id, fup52.id, wfr52.id].sort().join() && byId52(wfr52.id).dateKind === 'expected' && byId52(wfr52.id).date === day52(10), 'Follow-through: the owned open action item, follow-up and waiting-for item (completed excluded); waiting-for uses its expected date');
+    assert(ids52(w52.requirements) === reqDraft52.id && byId52(reqDraft52.id).dateKind === 'target', 'Requirements: the member\'s own draft / in-review requirements (approved excluded), with their target date');
+    assert(w52.approvals.length === 0 && dA52.canApprove === false, 'A team member has no approval items (requirement approvers only)');
+    assert(ids52(w52.meetings) === mtg52.id && byId52(mtg52.id).dateKind === 'starts', 'Meetings: scheduled ones the member attends in the next 7 days (later and cancelled ones excluded)');
+    const sample52 = byId52(act52.id);
+    assert(sample52.type === 'action-item' && sample52.title === 'S21B overdue action' && sample52.project.name === projA52.name && sample52.status === 'Open' && sample52.priority === 'High' && sample52.date === '2020-02-01' && sample52.link.page === 'meetings' && sample52.link.tab === 'action-items' && sample52.link.id === act52.id && !('description' in sample52) && !('createdBy' in sample52), 'Each item is a summary (type, title, project, status, priority, date, due state, link) — not the full record');
+    assert(dA52.attention[0].id === `S52-OVERDUE-${stamp52}` && dA52.attention.map((i: any) => i.reason).join() === 'Overdue,Overdue,Due today,Follow-up needed' && dA52.attentionTotal === 4, 'Attention: overdue first, then due today, then follow-up needed');
+    assert(dA52.summary.overdue === 2 && dA52.summary.dueToday === 1 && dA52.summary.blocked === 1 && dA52.summary.waitingOnOthers === 1 && dA52.summary.meetingsNext7Days === 1 && dA52.summary.approvals === 0, 'The summary counts match the items');
+
+    // --- F. Roles ---
+    const viewer52 = (await home52(viewerA52)).body.data;
+    assert(viewer52.projects.map((p: any) => p.id).join() === projA52.id && viewer52.canApprove === false && viewer52.myWork.approvals.length === 0 && viewer52.attention.length === 0, 'A viewer sees their project\'s pulse and no approvals or work of others');
+    const pmHome52 = (await home52(pmA52)).body.data;
+    assert(pmHome52.canApprove === true && ids52(pmHome52.myWork.approvals) === reqReview52.id && ids52(pmHome52.myWork.delivery) === `S52-OTHER-${stamp52}` && pmHome52.attention.some((i: any) => i.reason === 'Blocked'), 'A project manager gets the in-review requirement of their project to approve, and their own (blocked) work');
+    const prod52 = (await home52(prodA52)).body.data;
+    assert(prod52.canApprove === true && ids52(prod52.myWork.approvals) === reqReview52.id, 'A product manager on the project gets the same approval item');
+    const pmB52home = (await home52(pmB52)).body.data;
+    assert(ids52(pmB52home.myWork.approvals) === reqReviewB52.id, 'Approvals never cross projects: the manager of B gets only B\'s');
+    const adminApprovals52 = adminHome52.body.data.myWork.approvals.map((i: any) => i.id);
+    assert(adminHome52.body.data.canApprove === true && adminApprovals52.includes(reqReview52.id) && adminApprovals52.includes(reqReviewB52.id), 'An administrator gets in-review requirements of every project');
+
+    // --- G. Default landing and the legacy dashboard ---
+    const appSrc52 = fs35.readFileSync('PM-Portal/js/app.js', 'utf8');
+    const html52 = fs35.readFileSync('PM-Portal/index.html', 'utf8');
+    assert(/this\.currentPage = 'home';/.test(appSrc52) && /this\.switchPage\('home'\);/.test(appSrc52) && /<section id="page-home" class="page-container active">/.test(html52) && /pageId === 'home'\) \{\s*HomeModule\.init\(this\);/.test(appSrc52), 'The V2 Home is the default page after sign-in');
+    assert(/<section id="page-dashboard" class="page-container">/.test(html52) && /data-page="dashboard"[\s\S]*?Legacy Dashboard \(V1\.1\)/.test(html52) && /pageId === 'dashboard'\) \{\s*DashboardModule\.renderAllCharts\(\);/.test(appSrc52), 'The V1.1 dashboard is still reachable, labelled as the legacy dashboard');
+    assert(/class="brand-logo" data-page="home"/.test(html52) && /class="breadcrumb-link" data-page="home">Home</.test(html52), 'The logo and the Home breadcrumb go to the V2 Home');
+
+    // --- H. Navigation ---
+    const sidebar52 = html52.slice(html52.indexOf('<aside id="sidebar">'), html52.indexOf('</aside>'));
+    const navPages52 = [...sidebar52.matchAll(/data-page="([^"]+)"/g)].map((m) => m[1]);
+    const governanceTabs52 = ['governance', 'issues', 'dependencies', 'milestones', 'releases'];
+    const dead52 = navPages52.filter((p) => !html52.includes(`id="page-${p}"`) && !governanceTabs52.includes(p));
+    assert(dead52.length === 0 && /\['issues', 'governance', 'dependencies', 'milestones', 'releases'\]\.includes\(pageId\)/.test(appSrc52) && /pageId === 'milestones' \|\| pageId === 'releases'\) \{\s*GovernanceModule\.init\(this, pageId\);/.test(appSrc52) && /case 'milestones':/.test(fs35.readFileSync('PM-Portal/js/governance.js', 'utf8')) && /case 'releases':/.test(fs35.readFileSync('PM-Portal/js/governance.js', 'utf8')), `Every sidebar link has a page; Milestones and Releases open the existing Governance tabs (dead: ${dead52.join(',') || 'none'})`);
+    assert(!navPages52.includes('action-center') && /if \(pageId === 'action-center'\) pageId = 'my-work';/.test(appSrc52) && !/ActionCenterModule/.test(appSrc52) && /'2': 'my-work'/.test(fs35.readFileSync('PM-Portal/js/appIntegration.js', 'utf8')), 'The hidden Action Center is no longer offered: old links and shortcuts open the one My Work');
+    assert(navPages52.indexOf('home') < navPages52.indexOf('my-work') && navPages52.indexOf('my-work') < navPages52.indexOf('executive') && navPages52.filter((p) => p === 'my-work').length === 1, 'Home and My Work lead the navigation (one My Work entry)');
+    assert(/openTarget\(link\) \{\s*const pages = \['home', 'my-work', 'delivery', 'meetings', 'requirements', 'projects', 'governance'\];\s*if \(!link \|\| !pages\.includes\(link\.page\)\) return;/.test(appSrc52), 'Item links open only known pages');
+
+    // --- Safe rendering of the new views ---
+    const XSS52 = '<img src=x onerror=alert(1)>';
+    const hostile52 = { type: 'action-item', id: XSS52, title: XSS52, code: XSS52, project: { id: XSS52, code: XSS52, name: XSS52 }, status: XSS52, priority: XSS52, date: '2020-01-01', dateKind: 'due', dueState: 'overdue', reason: 'Overdue', link: { page: XSS52, tab: XSS52, id: XSS52 } };
+    HomeMod52.data = { user: { id: 'u', name: XSS52, role: 'admin' }, canApprove: true, summary: { overdue: 1 }, attention: [hostile52], attentionTotal: 1,
+      myWork: { delivery: [], followThrough: [hostile52], requirements: [], approvals: [{ ...hostile52, type: 'approval' }], meetings: [{ ...hostile52, type: 'meeting', dateKind: 'starts', date: XSS52 }] },
+      projects: [{ id: XSS52, code: XSS52, name: XSS52, status: XSS52, health: { band: XSS52, score: XSS52 }, overdueDelivery: XSS52, openHighRisks: 1, openHighIssues: 0 }], closedProjectsHidden: 0 };
+    const homeHtml52 = HomeMod52.render();
+    const rowHtml52 = MyWork52.renderTableRow(hostile52) + MyWork52.renderTableRow({ ...hostile52, type: 'story' });
+    assert(!/<img/i.test(homeHtml52 + rowHtml52) && (homeHtml52 + rowHtml52).includes('&lt;img src=x onerror=alert(1)&gt;') && !/onerror=alert\(1\)>/.test(homeHtml52 + rowHtml52), 'Home and My Work render every server value as escaped text (titles, codes, projects, statuses, bands, dates and link targets)');
+    const homeJs52 = fs35.readFileSync('PM-Portal/js/home.js', 'utf8');
+    assert(!/onclick=|localStorage|sessionStorage/.test(homeJs52) && /MyWorkService\.getHome\(\)/.test(homeJs52) && /static async getHome\(\) \{\s*const res = await apiClient\.get\('\/home'\);/.test(fs35.readFileSync('PM-Portal/js/services/myWorkService.js', 'utf8')), 'Home makes one request with no parameters, and uses no inline handlers or browser storage');
+    assert(/MyWorkService\.getHome\(\)/.test(fs35.readFileSync('PM-Portal/js/myWork.js', 'utf8')), 'My Work reads the same aggregation (one request)');
+
+    // --- Correction: delivery scope fails closed on a missing or broken project link ---
+    await story(`S52-NOPROJ-${stamp52}`, { title: 'S21B story without project', projectId: '', status: 'in-progress', assigneeId: memberA52.id });
+    await task(`T52-GONE-${stamp52}`, { title: 'S21B task in deleted project', projectId: `PRJ-GONE-${stamp52}`, status: 'in-progress', assigneeId: memberA52.id });
+    await SubRepo52.create({ id: `ST52-ORPHAN-${stamp52}`, taskId: `TSK-MISSING-${stamp52}`, title: 'S21B orphaned subtask', status: 'ready', priority: 'low', assigneeId: memberA52.id } as any);
+    cleanup52.push(() => SubRepo52.delete(`ST52-ORPHAN-${stamp52}`));
+    const broken52 = (await home52(memberA52)).body.data;
+    assert(ids52(broken52.myWork.delivery) === ids52(w52.delivery) && broken52.myWork.delivery.every((i: any) => i.project?.id === projA52.id) && !JSON.stringify(broken52).includes('PRJ-GONE') && !JSON.stringify(broken52).includes('orphaned') && !JSON.stringify(broken52).includes('without project'), 'Delivery work with no project, a deleted project, or an orphaned subtask is not shown: every delivery item resolves to an accessible project');
+
+    // --- Correction: the My Work quick status action uses the server's method ---
+    const { myWorkRoutes: routes52 } = await import('../server/routes/myWorkRoutes');
+    const statusRoute52 = (routes52 as any).stack.find((l: any) => l.route?.path === '/my-work/status').route;
+    const { apiClient: browserApi52 } = await import('../PM-Portal/js/services/apiClient.js');
+    const savedRequest52 = browserApi52.request;
+    const savedMyWork52 = { app: MyWork52.app, loadData: MyWork52.loadData, render: MyWork52.render };
+    const sent52: string[] = [];
+    const toasts52: string[] = [];
+    try {
+      // The browser request goes to the real controller only when its method and path match a registered route, as Express would.
+      (browserApi52 as any).request = async (endpoint: string, options: any) => {
+        sent52.push(`${options.method} ${endpoint}`);
+        if (endpoint !== '/my-work/status' || !statusRoute52.methods[String(options.method).toLowerCase()]) throw Object.assign(new Error('Not found'), { status: 404 });
+        const r = await run41(MyWorkCtl52.updateItemStatus, reqAs40(memberA52, { body: JSON.parse(options.body) }));
+        if (r.statusCode >= 400) throw Object.assign(new Error(r.body?.error?.message || 'failed'), { status: r.statusCode });
+        return r.body;
+      };
+      Object.assign(MyWork52, { app: { showToast: (m: string, t: string) => toasts52.push(`${t}: ${m}`) }, loadData: async () => {}, render: () => {} });
+      await MyWork52.handleStatusUpdate(`S52-OVERDUE-${stamp52}`, 'story', 'in-review');
+      assert(Object.keys(statusRoute52.methods).join() === 'post' && sent52.join() === `POST /my-work/status` && (await StoryRepo52.findById(`S52-OVERDUE-${stamp52}`))!.status === 'in-review' && toasts52[0] === 'success: Item transitioned to in-review', 'The My Work quick action sends POST /my-work/status (the registered method) and the assignee\'s story moves to in-review');
+      assert(!/apiClient\.patch\('\/my-work\/status'/.test(fs35.readFileSync('PM-Portal/js/services/myWorkService.js', 'utf8')), 'The My Work UI no longer sends PATCH to /my-work/status');
+    } finally {
+      (browserApi52 as any).request = savedRequest52;
+      Object.assign(MyWork52, savedMyWork52);
+    }
+    const mwStatus52 = (u: any, body: any) => run41(MyWorkCtl52.updateItemStatus, reqAs40(u, { body }));
+    const outsiderStatus52 = await mwStatus52(memberB52, { itemId: `S52-OVERDUE-${stamp52}`, itemType: 'story', status: 'done' });
+    const badStatus52 = await mwStatus52(memberA52, { itemId: `S52-OVERDUE-${stamp52}`, itemType: 'story', status: 'shipped' });
+    const anonStatus52 = await mwStatus52(null, { itemId: `S52-OVERDUE-${stamp52}`, itemType: 'story', status: 'done' });
+    const memberTask52 = await mwStatus52(memberA52, { itemId: `T52-TODAY-${stamp52}`, itemType: 'task', status: 'in-progress' });
+    assert(outsiderStatus52.statusCode === 403 && badStatus52.statusCode === 400 && anonStatus52.statusCode === 401 && (await StoryRepo52.findById(`S52-OVERDUE-${stamp52}`))!.status === 'in-review', 'The server rules are unchanged: a user outside the project gets 403, an unknown status 400, no identity 401, and the story is untouched');
+    assert(memberTask52.statusCode === 200 && (await TaskRepo52.findById(`T52-TODAY-${stamp52}`))!.status === 'in-progress', 'The assignee can also move their task');
+  } finally {
+    HomeMod52.data = null;
+    for (const fn of cleanup52.reverse()) await fn();
+    for (const u of [pmA52, pmB52, memberA52, memberB52, viewerA52, prodA52]) await UserRepo40.update(u.id, { isActive: false });
   }
 
   console.log('\n========================================');

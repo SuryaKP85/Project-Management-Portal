@@ -1,14 +1,28 @@
 /**
- * My Work Personal Workspace Module for Surya PM Portal V2.0
- * Shows all assigned work items across active sprints and projects for the current user
+ * My Work — Sprint 21B: one workspace for everything that is the signed-in
+ * user's: assigned stories, tasks and subtasks; owned action items, follow-ups
+ * and waiting-for items; owned requirements in draft or review; requirements
+ * awaiting their approval (approver roles only); meetings in the next 7 days.
+ * Read from GET /home (the server decides the scope); stories and tasks keep
+ * their quick status actions and details view.
  */
 
 import { MyWorkService } from './services/myWorkService.js';
-import { escapeHtml } from './safeHtml.js';
+import { escapeHtml, dataArgs } from './safeHtml.js';
 import { DeliveryService } from './services/deliveryService.js';
 import { StoryService } from './services/storyService.js';
 import { TaskService } from './services/taskService.js';
 import { MicrosoftService } from './services/microsoftService.js';
+import { bindOpenLinks, dueBadge, itemLink, projectLabel, typeLabel } from './home.js';
+
+const CATEGORIES = [
+  { key: 'all', label: 'All' },
+  { key: 'delivery', label: 'Delivery' },
+  { key: 'followThrough', label: 'Follow-through' },
+  { key: 'requirements', label: 'My requirements' },
+  { key: 'approvals', label: 'Approvals', approverOnly: true },
+  { key: 'meetings', label: 'Meetings' },
+];
 
 const escapeOutlook = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
@@ -17,7 +31,8 @@ const escapeOutlook = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => (
 export const MyWorkModule = {
   app: null,
   workData: null,
-  activeFilter: 'all', // 'all' | 'active-sprint' | 'in-progress' | 'blocked' | 'done'
+  error: null,
+  activeFilter: 'all', // a CATEGORIES key
   searchQuery: '',
 
   async init(appInstance) {
@@ -88,14 +103,11 @@ export const MyWorkModule = {
 
   async loadData() {
     try {
-      const data = await MyWorkService.getMyWork();
-      this.workData = data || {
-        stories: [],
-        tasks: [],
-        subtasks: [],
-        summary: { totalItems: 0, completedItems: 0, inProgressItems: 0, totalPoints: 0, totalEstimatedHours: 0, totalActualHours: 0 },
-      };
+      this.workData = await MyWorkService.getHome();
+      this.error = null;
     } catch (err) {
+      this.workData = null;
+      this.error = err;
       console.error('[MyWorkModule] loadData error:', err);
     }
   },
@@ -104,6 +116,7 @@ export const MyWorkModule = {
     const container = document.getElementById('my-work-workspace');
     if (!container || container.dataset.eventsBound) return;
     container.dataset.eventsBound = 'true';
+    bindOpenLinks(container, this.app);
 
     container.addEventListener('click', async (e) => {
       const btn = e.target.closest('button, a');
@@ -111,6 +124,7 @@ export const MyWorkModule = {
 
       const action = btn.dataset.action;
       if (!action) return;
+      e.preventDefault();
 
       if (action === 'update-status') {
         const itemId = btn.dataset.itemId;
@@ -124,10 +138,6 @@ export const MyWorkModule = {
         const itemId = btn.dataset.itemId;
         const itemType = btn.dataset.itemType;
         await this.openDetailsModal(itemId, itemType);
-      } else if (action === 'log-time') {
-        const itemId = btn.dataset.itemId;
-        const itemType = btn.dataset.itemType;
-        this.openLogTimeModal(itemId, itemType);
       }
     });
   },
@@ -143,107 +153,65 @@ export const MyWorkModule = {
     }
   },
 
+  /** The items of the selected category; "all" is ordered overdue first, then by date. */
+  itemsFor(filter) {
+    const work = this.workData?.myWork || {};
+    if (filter !== 'all') return work[filter] || [];
+    const rank = { overdue: 0, 'due-today': 1, 'due-soon': 2, upcoming: 3, none: 4 };
+    return CATEGORIES.filter((c) => c.key !== 'all').flatMap((c) => work[c.key] || [])
+      .sort((a, b) => (rank[a.dueState] ?? 4) - (rank[b.dueState] ?? 4) || String(a.date || '9999').localeCompare(String(b.date || '9999')));
+  },
+
   render() {
     const container = document.getElementById('my-work-workspace');
     if (!container) return;
+    if (!this.workData) {
+      container.innerHTML = `<p class="text-danger small" role="alert"><i class="fa-solid fa-circle-exclamation me-1"></i>My Work could not be loaded: ${escapeHtml(this.error?.message || 'unknown error')}</p>`;
+      return;
+    }
 
-    const data = this.workData || {};
-    const summary = data.summary || {};
-    const allItems = [
-      ...(data.stories || []).map((s) => ({ ...s, itemType: 'story' })),
-      ...(data.tasks || []).map((t) => ({ ...t, itemType: 'task' })),
-      ...(data.subtasks || []).map((st) => ({ ...st, itemType: 'subtask' })),
-    ];
-
-    const filtered = this.filterItems(allItems);
+    const summary = this.workData.summary || {};
+    const categories = CATEGORIES.filter((c) => !c.approverOnly || this.workData.canApprove);
+    if (!categories.some((c) => c.key === this.activeFilter)) this.activeFilter = 'all';
+    const filtered = this.filterItems(this.itemsFor(this.activeFilter));
 
     container.innerHTML = `
-      <!-- Top Metrics Strip -->
-      <div class="stats-grid-executive mb-4">
-        <div class="kpi-card">
-          <div class="kpi-header">
-            <span class="kpi-title">Assigned Items</span>
-            <div class="kpi-icon-wrapper kpi-icon-primary"><i class="fa-solid fa-list-check text-primary"></i></div>
-          </div>
-          <h2 class="kpi-value">${summary.totalItems || 0}</h2>
-          <div class="kpi-footer"><span class="kpi-trend neutral">Personal Work Queue</span></div>
-        </div>
-
-        <div class="kpi-card">
-          <div class="kpi-header">
-            <span class="kpi-title">In Progress</span>
-            <div class="kpi-icon-wrapper kpi-icon-warning"><i class="fa-solid fa-spinner fa-spin-pulse text-warning"></i></div>
-          </div>
-          <h2 class="kpi-value text-warning">${summary.inProgressItems || 0}</h2>
-          <div class="kpi-footer"><span class="kpi-trend neutral">Active Engineering Units</span></div>
-        </div>
-
-        <div class="kpi-card">
-          <div class="kpi-header">
-            <span class="kpi-title">Story Points</span>
-            <div class="kpi-icon-wrapper kpi-icon-info"><i class="fa-solid fa-book-open text-info"></i></div>
-          </div>
-          <h2 class="kpi-value text-primary">${summary.totalPoints || 0} pts</h2>
-          <div class="kpi-footer"><span class="kpi-trend neutral">Committed Capacity</span></div>
-        </div>
-
-        <div class="kpi-card">
-          <div class="kpi-header">
-            <span class="kpi-title">Completed</span>
-            <div class="kpi-icon-wrapper kpi-icon-success"><i class="fa-solid fa-circle-check text-success"></i></div>
-          </div>
-          <h2 class="kpi-value text-success">${summary.completedItems || 0}</h2>
-          <div class="kpi-footer"><span class="kpi-trend positive">Delivered Output</span></div>
-        </div>
-      </div>
-
-      <!-- Controls & Filter Strip -->
       <div class="card shadow-sm border-0 mb-4 p-3 bg-white">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
-          <div class="btn-group flex-wrap" role="group">
-            <button type="button" class="btn btn-sm ${this.activeFilter === 'all' ? 'btn-primary' : 'btn-light'}" data-action="filter-tab" data-filter="all">
-              All Items (${allItems.length})
-            </button>
-            <button type="button" class="btn btn-sm ${this.activeFilter === 'in-progress' ? 'btn-primary' : 'btn-light'}" data-action="filter-tab" data-filter="in-progress">
-              <i class="fa-solid fa-spinner fa-spin-pulse me-1"></i> In Progress
-            </button>
-            <button type="button" class="btn btn-sm ${this.activeFilter === 'active-sprint' ? 'btn-primary' : 'btn-light'}" data-action="filter-tab" data-filter="active-sprint">
-              <i class="fa-solid fa-person-running me-1"></i> In Active Sprint
-            </button>
-            <button type="button" class="btn btn-sm ${this.activeFilter === 'blocked' ? 'btn-primary' : 'btn-light'}" data-action="filter-tab" data-filter="blocked">
-              <i class="fa-solid fa-triangle-exclamation text-danger me-1"></i> Blocked / Review
-            </button>
-            <button type="button" class="btn btn-sm ${this.activeFilter === 'done' ? 'btn-primary' : 'btn-light'}" data-action="filter-tab" data-filter="done">
-              <i class="fa-solid fa-circle-check text-success me-1"></i> Completed
-            </button>
+          <div class="btn-group flex-wrap" role="group" aria-label="Work categories">
+            ${categories.map((c) => `
+              <button type="button" class="btn btn-sm ${this.activeFilter === c.key ? 'btn-primary' : 'btn-light'}" data-action="filter-tab" data-filter="${escapeHtml(c.key)}">
+                ${escapeHtml(c.label)} (${escapeHtml(this.itemsFor(c.key).length)})
+              </button>`).join('')}
           </div>
-
-          <div class="search-bar" style="max-width: 240px;">
-            <i class="fa-solid fa-magnifying-glass"></i>
-            <input type="text" id="my-work-search" placeholder="Search my items..." value="${escapeHtml(this.searchQuery)}" />
+          <div class="d-flex align-items-center gap-3">
+            <span class="small"><span class="${summary.overdue ? 'text-danger fw-semibold' : 'text-muted'}">${escapeHtml(summary.overdue || 0)} overdue</span> · <span class="text-muted">${escapeHtml(summary.dueToday || 0)} due today</span></span>
+            <div class="search-bar" style="max-width: 240px;">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="my-work-search" placeholder="Search my items..." value="${escapeHtml(this.searchQuery)}" />
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Work Items Table -->
       <div class="card shadow-sm border-0 bg-white">
         <div class="table-responsive">
           <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
               <tr>
-                <th style="width: 100px;">Code</th>
-                <th>Work Item Title</th>
-                <th style="width: 130px;">Sprint</th>
-                <th style="width: 100px;">Priority</th>
-                <th style="width: 110px;">Effort</th>
-                <th style="width: 140px;">Status</th>
-                <th style="width: 160px;" class="text-end">Quick Actions</th>
+                <th style="width: 120px;">Due</th>
+                <th style="width: 110px;">Type</th>
+                <th>Item</th>
+                <th style="width: 200px;">Project</th>
+                <th style="width: 120px;">Status</th>
+                <th style="width: 90px;">Priority</th>
+                <th style="width: 180px;" class="text-end">Actions</th>
               </tr>
             </thead>
             <tbody>
               ${
                 filtered.length === 0
-                  ? `<tr><td colspan="7" class="p-5 text-center text-muted">No work items found matching this filter.</td></tr>`
+                  ? `<tr><td colspan="7" class="p-5 text-center text-muted">${this.searchQuery ? 'No items match your search.' : 'Nothing here: you are all caught up.'}</td></tr>`
                   : filtered.map((item) => this.renderTableRow(item)).join('')
               }
             </tbody>
@@ -255,64 +223,34 @@ export const MyWorkModule = {
     document.getElementById('my-work-search')?.addEventListener('input', (e) => {
       this.searchQuery = e.target.value;
       this.render();
+      const input = document.getElementById('my-work-search');
+      input?.focus();
+      input?.setSelectionRange?.(input.value.length, input.value.length);
     });
   },
 
   renderTableRow(item) {
-    const isStory = item.itemType === 'story';
-    const isSubtask = item.itemType === 'subtask';
-    const code = item.code || (isStory ? 'STR' : isSubtask ? 'SUB' : 'TSK');
-    const badgeType = isStory ? 'bg-primary' : isSubtask ? 'bg-info text-dark' : 'bg-success';
-    const effort = isStory ? `${escapeHtml(item.storyPoints || 0)} pts` : `${escapeHtml(item.actualEffortHrs || 0)}/${escapeHtml(item.estimatedEffortHrs || 0)}h`;
-
-    const nextStatuses = this.getNextStatusTransitions(item.status);
+    // Stories and tasks keep the quick status actions and the details view.
+    const quick = item.type === 'story' || item.type === 'task';
+    const title = quick
+      ? `<a href="#" class="text-decoration-none fw-semibold" data-action="view-details" data-item-id="${escapeHtml(item.id)}" data-item-type="${escapeHtml(item.type)}">${item.code ? `<span class="font-mono text-muted me-1">${escapeHtml(item.code)}</span>` : ''}${escapeHtml(item.title)}</a>`
+      : itemLink(item);
+    const actions = quick
+      ? this.getNextStatusTransitions(item.status).map((ns) => `
+          <button class="btn btn-sm btn-outline-${ns.color} py-1 px-2" data-action="update-status" data-item-id="${escapeHtml(item.id)}" data-item-type="${escapeHtml(item.type)}" data-new-status="${escapeHtml(ns.status)}" title="Move to ${ns.label}">
+            <i class="${ns.icon}"></i> ${ns.label}
+          </button>`).join('')
+      : `<a href="#" class="btn btn-sm btn-outline-secondary py-1 px-2" data-home-open="${dataArgs(item.link?.page, item.link?.tab, item.link?.id)}">Open</a>`;
 
     return `
       <tr>
-        <td>
-          <span class="badge ${badgeType} font-mono">${escapeHtml(code)}</span>
-        </td>
-        <td>
-          <div class="font-bold text-dark">
-            <a href="#" class="text-decoration-none text-dark" data-action="view-details" data-item-id="${escapeHtml(item.id)}" data-item-type="${escapeHtml(item.itemType)}">
-              ${escapeHtml(item.title)}
-            </a>
-          </div>
-          ${
-            item.featureName || item.storyTitle
-              ? `<div class="text-muted" style="font-size: 0.75rem;"><i class="fa-solid fa-puzzle-piece text-info me-1"></i>${escapeHtml(item.featureName || item.storyTitle)}</div>`
-              : ''
-          }
-        </td>
-        <td>
-          ${
-            item.sprint
-              ? `<span class="badge bg-light text-dark border font-mono"><i class="fa-solid fa-person-running text-primary me-1"></i>${escapeHtml(item.sprint)}</span>`
-              : `<span class="text-muted" style="font-size: 0.8rem;">Backlog</span>`
-          }
-        </td>
-        <td>
-          <span class="badge ${this.getPriorityBadge(item.priority)}" style="font-size: 0.7rem;">${escapeHtml(item.priority || 'medium')}</span>
-        </td>
-        <td>
-          <span class="font-mono font-semibold" style="font-size: 0.85rem;">${escapeHtml(effort)}</span>
-        </td>
-        <td>
-          <span class="badge ${this.getStatusBadge(item.status)}">${escapeHtml(item.status)}</span>
-        </td>
-        <td class="text-end">
-          <div class="d-inline-flex gap-1">
-            ${nextStatuses
-              .map(
-                (ns) => `
-              <button class="btn btn-sm btn-outline-${ns.color} py-1 px-2" data-action="update-status" data-item-id="${escapeHtml(item.id)}" data-item-type="${escapeHtml(item.itemType)}" data-new-status="${escapeHtml(ns.status)}" title="Move to ${ns.label}">
-                <i class="${ns.icon}"></i> ${ns.label}
-              </button>
-            `
-              )
-              .join('')}
-          </div>
-        </td>
+        <td>${dueBadge(item)}</td>
+        <td><span class="small">${escapeHtml(typeLabel(item.type))}</span></td>
+        <td>${title}</td>
+        <td><span class="small text-muted">${escapeHtml(projectLabel(item))}</span></td>
+        <td><span class="badge ${this.getStatusBadge(item.status)}">${escapeHtml(item.status)}</span></td>
+        <td>${item.priority ? `<span class="badge ${this.getPriorityBadge(String(item.priority).toLowerCase())}" style="font-size: 0.7rem;">${escapeHtml(item.priority)}</span>` : '<span class="text-muted small">—</span>'}</td>
+        <td class="text-end"><div class="d-inline-flex gap-1">${actions}</div></td>
       </tr>
     `;
   },
@@ -344,20 +282,9 @@ export const MyWorkModule = {
   },
 
   filterItems(items) {
-    return items.filter((item) => {
-      if (this.activeFilter === 'in-progress' && item.status !== 'in-progress') return false;
-      if (this.activeFilter === 'active-sprint' && (!item.sprint || item.sprint === 'Backlog')) return false;
-      if (this.activeFilter === 'blocked' && item.status !== 'blocked' && item.status !== 'in-review') return false;
-      if (this.activeFilter === 'done' && item.status !== 'done' && item.status !== 'completed') return false;
-
-      if (this.searchQuery) {
-        const q = this.searchQuery.toLowerCase();
-        const matchesTitle = item.title?.toLowerCase().includes(q);
-        const matchesCode = item.code?.toLowerCase().includes(q);
-        if (!matchesTitle && !matchesCode) return false;
-      }
-      return true;
-    });
+    if (!this.searchQuery) return items;
+    const q = this.searchQuery.toLowerCase();
+    return items.filter((item) => item.title?.toLowerCase().includes(q) || item.code?.toLowerCase().includes(q));
   },
 
   getStatusBadge(status) {

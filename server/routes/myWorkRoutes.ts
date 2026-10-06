@@ -4,5 +4,6 @@ import { authenticateToken } from '../middleware/authMiddleware';
 
 export const myWorkRoutes = Router();
 
+myWorkRoutes.get('/home', authenticateToken, MyWorkController.getHome);
 myWorkRoutes.get('/my-work', authenticateToken, MyWorkController.getMyWork);
 myWorkRoutes.post('/my-work/status', authenticateToken, MyWorkController.updateItemStatus);
