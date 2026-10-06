@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { ProjectScope, scopeActor } from '../services/projectScope';
 import { ProductService } from '../services/productService';
 
 /** Accepted identifier shape, matching the other id-validating controllers. */
@@ -33,7 +34,8 @@ export const ProductController = {
       if (!SCOPE_ID_PATTERN.test(id)) {
         return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid product identifier.' } });
       }
-      const health = await ProductService.getProductHealth(id);
+      // Sprint 22A: health is derived from (and lists) only the caller's accessible projects.
+      const health = await ProductService.getProductHealth(id, { scope: await ProjectScope.ids(scopeActor(req)) });
       if (!health) {
         return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Product not found' } });
       }

@@ -559,7 +559,8 @@ export const PortfoliosModule = {
 
   async openRoadmapModal(item = null) {
     const isEdit = !!item;
-    const esc = (v) => String(v ?? '').replace(/"/g, '&quot;');
+    // Sprint 22A: full escaping (also used for the description textarea, where quote-only escaping was unsafe).
+    const esc = escapeHtml;
     // Goal objectives are rendered as markup here, so they need full escaping
     // rather than the attribute-only helper used for the input values above.
     const escText = escapeHtml;
@@ -652,21 +653,21 @@ export const PortfoliosModule = {
                     <label class="form-label small fw-semibold">Portfolio Alignment</label>
                     <select class="form-select form-select-sm" id="rm-portfolio">
                       <option value="">No Portfolio</option>
-                      ${this.portfolios.map((p) => `<option value="${p.id}" ${sel(item?.portfolioId, p.id)}>${p.name}</option>`).join('')}
+                      ${this.portfolios.map((p) => `<option value="${esc(p.id)}" ${sel(item?.portfolioId, p.id)}>${esc(p.name)}</option>`).join('')}
                     </select>
                   </div>
                   <div class="col-md-6">
                     <label class="form-label small fw-semibold">Product Alignment</label>
                     <select class="form-select form-select-sm" id="rm-product">
                       <option value="">No Product</option>
-                      ${this.products.map((p) => `<option value="${p.id}" ${sel(item?.productId, p.id)}>${p.name}</option>`).join('')}
+                      ${this.products.map((p) => `<option value="${esc(p.id)}" ${sel(item?.productId, p.id)}>${esc(p.name)}</option>`).join('')}
                     </select>
                   </div>
                   <div class="col-md-6">
                     <label class="form-label small fw-semibold">Linked Project</label>
                     <select class="form-select form-select-sm" id="rm-project">
                       <option value="">Not chartered yet</option>
-                      ${this.projects.map((p) => `<option value="${p.id}" ${sel(item?.projectId, p.id)}>${p.code ? `[${p.code}] ` : ''}${p.name}</option>`).join('')}
+                      ${this.projects.map((p) => `<option value="${esc(p.id)}" ${sel(item?.projectId, p.id)}>${p.code ? `[${esc(p.code)}] ` : ''}${esc(p.name)}</option>`).join('')}
                     </select>
                     <div class="form-text text-xs">Linking a project makes progress derivable from that project.</div>
                   </div>
@@ -674,7 +675,7 @@ export const PortfoliosModule = {
                     <label class="form-label small fw-semibold">Owner</label>
                     <select class="form-select form-select-sm" id="rm-owner">
                       <option value="">Unassigned</option>
-                      ${this.users.map((u) => `<option value="${u.id}" ${sel(item?.ownerId, u.id)}>${u.firstName} ${u.lastName}</option>`).join('')}
+                      ${this.users.map((u) => `<option value="${escapeHtml(u.id)}" ${sel(item?.ownerId, u.id)}>${escapeHtml(u.firstName)} ${escapeHtml(u.lastName)}</option>`).join('')}
                     </select>
                   </div>
                   <div class="col-12">
@@ -867,8 +868,8 @@ export const PortfoliosModule = {
             <div class="card-body p-4 d-flex flex-column">
               <div class="d-flex justify-content-between align-items-start mb-2">
                 <div>
-                  <span class="text-muted small fw-semibold text-uppercase tracking-wider">${p.code || 'PORT'}</span>
-                  <h5 class="card-title fw-bold text-primary mb-1">${p.name}</h5>
+                  <span class="text-muted small fw-semibold text-uppercase tracking-wider">${escapeHtml(p.code || 'PORT')}</span>
+                  <h5 class="card-title fw-bold text-primary mb-1">${escapeHtml(p.name)}</h5>
                 </div>
                 <div class="d-flex gap-1">
                   ${healthBadge}
@@ -876,7 +877,7 @@ export const PortfoliosModule = {
                 </div>
               </div>
               <p class="card-text text-secondary small mb-3 flex-grow-1" style="min-height: 40px;">
-                ${p.description || 'Strategic enterprise business portfolio.'}
+                ${escapeHtml(p.description || 'Strategic enterprise business portfolio.')}
               </p>
 
               <div class="border-top pt-3 mt-auto">
@@ -888,7 +889,7 @@ export const PortfoliosModule = {
                 <div class="d-flex justify-content-between align-items-center mt-3 pt-2 border-top">
                   <div class="d-flex align-items-center gap-2">
                     <i class="fa-regular fa-user text-muted small"></i>
-                    <span class="small fw-semibold text-dark">${p.ownerName || 'Surya Prashanth'}</span>
+                    <span class="small fw-semibold text-dark">${escapeHtml(p.ownerName || 'Surya Prashanth')}</span>
                   </div>
                   <div class="d-flex gap-1">
                     <button class="btn btn-sm btn-light border edit-portfolio-btn" data-id="${p.id}" title="Edit Portfolio">
@@ -1000,7 +1001,7 @@ export const PortfoliosModule = {
         <tr>
           <td>
             <div class="fw-bold text-dark">${g.objective}</div>
-            <div class="small text-muted">${g.description || 'Target objective aligned with corporate strategy'}</div>
+            <div class="small text-muted">${escapeHtml(g.description || 'Target objective aligned with corporate strategy')}</div>
           </td>
           <td>
             <span class="badge bg-light text-dark border">
@@ -1008,7 +1009,7 @@ export const PortfoliosModule = {
             </span>
             ${
               prod
-                ? `<span class="badge bg-light text-primary border ms-1"><i class="fa-solid fa-cube me-1"></i> ${prod.name}</span>`
+                ? `<span class="badge bg-light text-primary border ms-1"><i class="fa-solid fa-cube me-1"></i> ${escapeHtml(prod.name)}</span>`
                 : ''
             }
           </td>
@@ -1023,7 +1024,7 @@ export const PortfoliosModule = {
             </div>
           </td>
           <td>${statusBadge}</td>
-          <td class="small text-muted">${g.ownerName || 'Surya Prashanth'}</td>
+          <td class="small text-muted">${escapeHtml(g.ownerName || 'Surya Prashanth')}</td>
           <td class="text-end">
             <button class="btn btn-sm btn-light border edit-goal-btn" data-id="${g.id}" title="Edit Goal">
               <i class="fa-solid fa-pencil text-secondary"></i>
@@ -1098,20 +1099,20 @@ export const PortfoliosModule = {
                 <div class="row g-3">
                   <div class="col-md-4">
                     <label class="form-label small fw-semibold">Portfolio Code *</label>
-                    <input type="text" class="form-control form-control-sm" id="pf-code" value="${portfolio?.code || `PORT-${Date.now().toString().slice(-4)}`}" required />
+                    <input type="text" class="form-control form-control-sm" id="pf-code" value="${escapeHtml(portfolio?.code || `PORT-${Date.now().toString().slice(-4)}`)}" required />
                   </div>
                   <div class="col-md-8">
                     <label class="form-label small fw-semibold">Portfolio Name *</label>
-                    <input type="text" class="form-control form-control-sm" id="pf-name" value="${portfolio?.name || ''}" placeholder="e.g., Enterprise Core & Infrastructure" required />
+                    <input type="text" class="form-control form-control-sm" id="pf-name" value="${escapeHtml(portfolio?.name || '')}" placeholder="e.g., Enterprise Core & Infrastructure" required />
                   </div>
                   <div class="col-12">
                     <label class="form-label small fw-semibold">Description</label>
-                    <textarea class="form-control form-control-sm" id="pf-desc" rows="3" placeholder="Strategic focus and business objectives">${portfolio?.description || ''}</textarea>
+                    <textarea class="form-control form-control-sm" id="pf-desc" rows="3" placeholder="Strategic focus and business objectives">${escapeHtml(portfolio?.description || '')}</textarea>
                   </div>
                   <div class="col-md-6">
                     <label class="form-label small fw-semibold">Portfolio Owner</label>
                     <select class="form-select form-select-sm" id="pf-owner">
-                      ${this.users.map((u) => `<option value="${u.id}" ${portfolio?.ownerId === u.id ? 'selected' : ''}>${u.firstName} ${u.lastName} (${u.role})</option>`).join('')}
+                      ${this.users.map((u) => `<option value="${escapeHtml(u.id)}" ${portfolio?.ownerId === u.id ? 'selected' : ''}>${escapeHtml(u.firstName)} ${escapeHtml(u.lastName)} (${escapeHtml(u.role)})</option>`).join('')}
                     </select>
                   </div>
                   <div class="col-md-3">
@@ -1204,20 +1205,20 @@ export const PortfoliosModule = {
                   </div>
                   <div class="col-12">
                     <label class="form-label small fw-semibold">Key Result / Description</label>
-                    <textarea class="form-control form-control-sm" id="goal-desc" rows="2" placeholder="Describe measurable targets">${goal?.description || ''}</textarea>
+                    <textarea class="form-control form-control-sm" id="goal-desc" rows="2" placeholder="Describe measurable targets">${escapeHtml(goal?.description || '')}</textarea>
                   </div>
                   <div class="col-md-6">
                     <label class="form-label small fw-semibold">Portfolio Alignment</label>
                     <select class="form-select form-select-sm" id="goal-portfolio">
                       <option value="">No Portfolio (Global)</option>
-                      ${this.portfolios.map((p) => `<option value="${p.id}" ${goal?.portfolioId === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
+                      ${this.portfolios.map((p) => `<option value="${escapeHtml(p.id)}" ${goal?.portfolioId === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}
                     </select>
                   </div>
                   <div class="col-md-6">
                     <label class="form-label small fw-semibold">Product Alignment (Optional)</label>
                     <select class="form-select form-select-sm" id="goal-product">
                       <option value="">No Product</option>
-                      ${this.products.map((p) => `<option value="${p.id}" ${goal?.productId === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
+                      ${this.products.map((p) => `<option value="${escapeHtml(p.id)}" ${goal?.productId === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}
                     </select>
                   </div>
                   <div class="col-md-4">
@@ -1235,7 +1236,7 @@ export const PortfoliosModule = {
                   <div class="col-md-6">
                     <label class="form-label small fw-semibold">Owner</label>
                     <select class="form-select form-select-sm" id="goal-owner">
-                      ${this.users.map((u) => `<option value="${u.id}" ${goal?.ownerId === u.id ? 'selected' : ''}>${u.firstName} ${u.lastName}</option>`).join('')}
+                      ${this.users.map((u) => `<option value="${escapeHtml(u.id)}" ${goal?.ownerId === u.id ? 'selected' : ''}>${escapeHtml(u.firstName)} ${escapeHtml(u.lastName)}</option>`).join('')}
                     </select>
                   </div>
                   <div class="col-md-6">

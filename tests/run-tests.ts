@@ -3338,9 +3338,13 @@ async function runTests() {
     const ro = await overview({}, role);
     assert(ro.meta.commercialsIncluded === false && !JSON.stringify(ro).includes('"budget"'), `${role} receives no budget figures anywhere in the payload`);
   }
+  // Sprint 22A: a manager's overview covers the projects they can access (seeded PM usr_pm_2).
+  const { ProjectAccessService: Access35 } = await import('../server/services/followThroughSupport');
   for (const role of COMMERCIAL35) {
-    const mg = await overview({}, role);
-    assert(mg.meta.commercialsIncluded === true && mg.projects.budget?.total === allProjects35.reduce((s: number, p: any) => s + (p.budget || 0), 0), `${role} receives the budget total`);
+    const mg = await Exec35.getOverview({}, { role, userId: 'usr_pm_2' } as any, { now: now35 });
+    const reach35 = new Set(await Access35.accessibleProjectIds({ userId: 'usr_pm_2', role } as any));
+    const expected35 = allProjects35.filter((p: any) => reach35.has(p.id)).reduce((s: number, p: any) => s + (p.budget || 0), 0);
+    assert(reach35.size > 0 && mg.meta.commercialsIncluded === true && mg.projects.budget?.total === expected35, `${role} receives the budget total of the projects they can access`);
   }
   assert(all35.portfolios.every((n: any) => n.rollup.budget !== undefined && n.products.every((pr: any) => pr.rollup.budget !== undefined)), 'Budget gating applies at every hierarchy level');
 
@@ -3485,7 +3489,7 @@ async function runTests() {
   assert(/data-page="executive"[\s\S]*?Executive Overview/.test(html36), 'Executive Overview navigation item exists');
   assert(/<section id="page-executive" class="page-container">/.test(html36), 'Executive Overview page section exists');
   // Sprint 21B: the V2 Home is the default page; the V1.1 dashboard stays reachable under a legacy label.
-  assert(/data-page="dashboard"[\s\S]*?Legacy Dashboard \(V1\.1\)/.test(html36) && /<section id="page-dashboard" class="page-container">/.test(html36) && /<section id="page-home" class="page-container active">/.test(html36), 'Existing V1.1 dashboard navigation and page remain (as the legacy dashboard; Home is the default)');
+  assert(/data-page="dashboard"[\s\S]*?PM Dashboard/.test(html36) && /<section id="page-dashboard" class="page-container">/.test(html36) && /<section id="page-home" class="page-container active">/.test(html36), 'Existing V1.1 dashboard navigation and page remain (labelled PM Dashboard; Home is the default)');
   assert((html36.match(/id="page-dashboard"/g) || []).length === 1 && (html36.match(/id="page-executive"/g) || []).length === 1, 'Both pages exist exactly once');
   assert(!/executive\/overview|ExecutiveOverview|executiveService|page-executive|Executive Overview/.test(dash36), 'dashboard.js has no executive-overview references');
   assert(/import { Storage } from '\.\/storage\.js';/.test(dash36) && /renderAllCharts\(\)/.test(dash36), 'dashboard.js keeps its V1.1 entry points');
@@ -5215,10 +5219,14 @@ async function runTests() {
     assert(legacyUrl44 === '/epics?0=P&1=R&2=J&3=-&4=1&5=0&6=1' && JSON.stringify(requested44) === JSON.stringify(['/epics?projectId=PRJ-101', '/features?projectId=PRJ-101', '/stories?projectId=PRJ-101', '/tasks?projectId=PRJ-101']), 'The old call produced ?0=P&1=R…; the fixed call sends ?projectId=PRJ-101 for all four levels');
     const levels44: Array<[any, string]> = [[DeliveryCtl44.listEpics, 'epics'], [DeliveryCtl44.listFeatures, 'features'], [DeliveryCtl44.listStories, 'stories'], [DeliveryCtl44.listTasks, 'tasks']];
     for (const [handler, key] of levels44) {
-      const scoped = await c44(handler, memberA44, { query: Object.fromEntries(new URLSearchParams(`projectId=PRJ-101`)) });
-      const unscoped = await c44(handler, memberA44, { query: Object.fromEntries(new URLSearchParams(legacyUrl44.split('?')[1])) });
+      // An administrator (who can see every project) shows the filter at work.
+      const scoped = await c44(handler, adminUser40, { query: Object.fromEntries(new URLSearchParams(`projectId=PRJ-101`)) });
+      const unscoped = await c44(handler, adminUser40, { query: Object.fromEntries(new URLSearchParams(legacyUrl44.split('?')[1])) });
       const items = scoped.body.data[key];
-      assert(items.length > 0 && items.every((i: any) => i.projectId === 'PRJ-101') && unscoped.body.data[key].some((i: any) => i.projectId === 'PRJ-102'), `Project detail ${key}: only PRJ-101 items are returned, while the old query leaked PRJ-102 items`);
+      assert(items.length > 0 && items.every((i: any) => i.projectId === 'PRJ-101') && unscoped.body.data[key].some((i: any) => i.projectId === 'PRJ-102'), `Project detail ${key}: only PRJ-101 items are returned, while the old query returned PRJ-102 items too`);
+      // Sprint 22A: for a member, the old malformed (unfiltered) query no longer leaks other projects' items.
+      const memberUnscoped = await c44(handler, memberA44, { query: Object.fromEntries(new URLSearchParams(legacyUrl44.split('?')[1])) });
+      assert(!memberUnscoped.body.data[key].some((i: any) => i.projectId === 'PRJ-101' || i.projectId === 'PRJ-102'), `Project detail ${key}: for a member, the unfiltered query returns nothing from projects they cannot access`);
     }
   } finally {
     apiClientModule44.apiClient.get = originalGet44;
@@ -5592,14 +5600,18 @@ async function runTests() {
     const hijackTask46 = await call46(DelCtl46.updateTask, outsider46, { assigneeId: outsider46.id }, { id: taskB46.id });
     assert(selfAssign46.statusCode === 403 && hijackTask46.statusCode === 403 && (await TaskRepo46.findAll({ projectId: projA46.id })).length === taskCountA46 && JSON.stringify(await TaskRepo46.findById(taskB46.id)) === snapTaskB46, 'A user cannot create or take over a task in a project they cannot reach');
     assert(!(await Access46.canAccess({ userId: outsider46.id, role: 'team-member' }, projA46.id)) && !(await Access46.canAccess({ userId: outsider46.id, role: 'team-member' }, projB46.id)), 'The failed assignment gives the user no project access');
-    const assignedToOutsider46 = (await call46(DelCtl46.createTask, pmB46, { title: 'S16 assigned by manager', projectId: projB46.id, assigneeId: outsider46.id })).body.data.task;
+    // Sprint 22A: an assignee must belong to the project, so the API refuses this assignment...
+    const outsiderAssign46 = await call46(DelCtl46.createTask, pmB46, { title: 'S16 assigned by manager', projectId: projB46.id, assigneeId: outsider46.id });
+    assert(outsiderAssign46.statusCode === 400 && /not part of this project/.test(outsiderAssign46.body?.error?.message || ''), 'Sprint 22A: a task cannot be assigned to someone outside the project');
+    // ...but an assignment that already exists (made before the rule) still allows only status changes.
+    const assignedToOutsider46: any = await TaskRepo46.create({ id: `task_s16_out_${stamp46}`, code: `TSK-S16O-${stamp46}`, title: 'S16 assigned by manager', projectId: projB46.id, status: 'backlog', priority: 'medium', assigneeId: outsider46.id } as any);
     cleanup46.push(() => TaskRepo46.delete(assignedToOutsider46.id));
     const ownStatus46 = await call46(DelCtl46.updateTask, outsider46, { status: 'done' }, { id: assignedToOutsider46.id });
     const ownTitle46 = await call46(DelCtl46.updateTask, outsider46, { title: 'Renamed' }, { id: assignedToOutsider46.id });
     const ownReassign46 = await call46(DelCtl46.updateTask, outsider46, { assigneeId: pmC46.id }, { id: assignedToOutsider46.id });
     assert(ownStatus46.statusCode === 200 && ownStatus46.body.data.task.status === 'done' && ownTitle46.statusCode === 403 && ownReassign46.statusCode === 403, 'An assignee outside the project can change only the status of their own item');
     // The assignee exception never becomes project access.
-    const storyB46 = (await call46(DelCtl46.createStory, pmB46, { title: 'S16 story B', projectId: projB46.id, assigneeId: outsider46.id })).body.data.story;
+    const storyB46: any = await StoryRepo46.create({ id: `story_s16_out_${stamp46}`, code: `STR-S16O-${stamp46}`, title: 'S16 story B', projectId: projB46.id, status: 'backlog', priority: 'medium', storyPoints: 3, assigneeId: outsider46.id } as any);
     cleanup46.push(() => StoryRepo46.delete(storyB46.id));
     const snapAssigned46 = JSON.stringify(await TaskRepo46.findById(assignedToOutsider46.id));
     const assigneeBoundary46 = await Promise.all([
@@ -6194,9 +6206,10 @@ async function runTests() {
       { userId: viewerA48.id, name: 'Viewer', role: 'Stakeholder' },
     ] } });
     // Read access without write access: assigned work only (not listed, not managing).
+    // (Sprint 22A: the API no longer assigns non-members, so the existing assignment is stored directly.)
     for (const u of [pmNo48, prodNo48]) {
-      const st = await call48(DelCtl48.createStory, pmA48, { body: { title: 'S18 access story', projectId: projA48.id, assigneeId: u.id } });
-      if (st.body?.data?.story) cleanup48.push(() => StoryRepo48.delete(st.body.data.story.id));
+      const st: any = await StoryRepo48.create({ id: `story_s18_access_${u.id}`, code: `STR-S18A-${u.id}`, title: 'S18 access story', projectId: projA48.id, status: 'backlog', priority: 'medium', storyPoints: 3, assigneeId: u.id } as any);
+      cleanup48.push(() => StoryRepo48.delete(st.id));
     }
     const approvedReq48 = async (title: string, extra: any = {}) => {
       const created = req48(await call48(ReqCtl48.create, pmA48, { body: { projectId: projA48.id, title, description: 'Users sign in with the corporate identity provider.', priority: 'high', type: 'functional', ...extra } }));
@@ -6806,7 +6819,11 @@ async function runTests() {
       return r;
     };
     const patch49 = (id: string, body: any, user: any = pmA49) => call49(DelCtl49.updateStory, user, body, { id });
-    for (const u of [pmNo49, prodNo49]) await newStory49({ title: 'S19 access story', assigneeId: u.id });
+    // (Sprint 22A: the API no longer assigns non-members, so the existing assignment is stored directly.)
+    for (const u of [pmNo49, prodNo49]) {
+      const st: any = await StoryRepo49.create({ id: `story_s19_access_${u.id}`, code: `STR-S19A-${u.id}`, title: 'S19 access story', projectId: projA49.id, status: 'backlog', priority: 'medium', storyPoints: 3, assigneeId: u.id } as any);
+      cleanup49.push(() => StoryRepo49.delete(st.id));
+    }
 
     // --- A. Canonical user story ---
     const us49 = story49(await newStory49({ title: 'S19 User story', userStory: { asA: '  Admin  ', iWant: 'to\u0007review', soThat: 'audits pass', extra: 'dropped' } }));
@@ -7857,7 +7874,7 @@ if (step === 'fresh') {
     const appSrc52 = fs35.readFileSync('PM-Portal/js/app.js', 'utf8');
     const html52 = fs35.readFileSync('PM-Portal/index.html', 'utf8');
     assert(/this\.currentPage = 'home';/.test(appSrc52) && /this\.switchPage\('home'\);/.test(appSrc52) && /<section id="page-home" class="page-container active">/.test(html52) && /pageId === 'home'\) \{\s*HomeModule\.init\(this\);/.test(appSrc52), 'The V2 Home is the default page after sign-in');
-    assert(/<section id="page-dashboard" class="page-container">/.test(html52) && /data-page="dashboard"[\s\S]*?Legacy Dashboard \(V1\.1\)/.test(html52) && /pageId === 'dashboard'\) \{\s*DashboardModule\.renderAllCharts\(\);/.test(appSrc52), 'The V1.1 dashboard is still reachable, labelled as the legacy dashboard');
+    assert(/<section id="page-dashboard" class="page-container">/.test(html52) && /data-page="dashboard"[\s\S]*?PM Dashboard/.test(html52) && /<h1 class="page-title">PM Dashboard<\/h1>/.test(html52) && /'dashboard': 'PM Dashboard'/.test(appSrc52) && /label: 'PM Dashboard'/.test(fs35.readFileSync('PM-Portal/js/appIntegration.js', 'utf8')) && !/Legacy Dashboard/.test(html52 + appSrc52 + fs35.readFileSync('PM-Portal/js/appIntegration.js', 'utf8')) && /pageId === 'dashboard'\) \{\s*DashboardModule\.renderAllCharts\(\);/.test(appSrc52), 'The V1.1 dashboard is still reachable, labelled "PM Dashboard" in the sidebar, page title, breadcrumb and command palette (no "Legacy Dashboard" label left)');
     assert(/class="brand-logo" data-page="home"/.test(html52) && /class="breadcrumb-link" data-page="home">Home</.test(html52), 'The logo and the Home breadcrumb go to the V2 Home');
 
     // --- H. Navigation ---
@@ -7929,6 +7946,351 @@ if (step === 'fresh') {
     for (const u of [pmA52, pmB52, memberA52, memberB52, viewerA52, prodA52]) await UserRepo40.update(u.id, { isActive: false });
   }
 
+
+  // 53. Security & project data isolation (Sprint 22A)
+  // One project boundary (ProjectAccessService via ProjectScope) for every
+  // project-scoped V2 read and write; the current account's role; a private
+  // JWT secret before network exposure; inert rendering of stored names;
+  // activity privacy; /ai/query metered and audited.
+  console.log('\n--- 53. Security & Project Data Isolation (Sprint 22A) ---');
+  const { ProjectController: ProjCtl53 } = await import('../server/controllers/projectController');
+  const { DeliveryController: DelCtl53 } = await import('../server/controllers/deliveryController');
+  const { RiskController: RiskCtl53 } = await import('../server/controllers/riskController');
+  const { IssueController: IssueCtl53 } = await import('../server/controllers/issueController');
+  const { DependencyController: DepCtl53 } = await import('../server/controllers/dependencyController');
+  const { MilestoneController: MlsCtl53 } = await import('../server/controllers/milestoneController');
+  const { ReleaseController: RelCtl53 } = await import('../server/controllers/releaseController');
+  const { GovernanceController: GovCtl53 } = await import('../server/controllers/governanceController');
+  const { SprintController: SprintCtl53 } = await import('../server/controllers/sprintController');
+  const { BacklogController: BacklogCtl53 } = await import('../server/controllers/backlogController');
+  const { VelocityController: VelCtl53 } = await import('../server/controllers/velocityController');
+  const { ExecutiveController: ExecCtl53 } = await import('../server/controllers/executiveController');
+  const { ActivityController: ActCtl53, ACTIVITY_MAX_LIMIT: ACT_MAX53 } = await import('../server/controllers/activityController');
+  const { AIController: AiCtl53 } = await import('../server/controllers/aiController');
+  const { MyWorkController: MyWorkCtl53 } = await import('../server/controllers/myWorkController');
+  const { authenticateToken: authToken53, requireRoles: requireRoles53 } = await import('../server/middleware/authMiddleware');
+  const { generateToken: genToken53 } = await import('../server/auth/jwt');
+  const { resolveListenHost: listenHost53, isUnsafeJwtSecret: unsafeSecret53, DEFAULT_JWT_SECRET: DEFAULT_SECRET53 } = await import('../server/config/env');
+  const { resetRateLimits: resetLimits53 } = await import('../server/middleware/rateLimit');
+  const { aiRoutes: aiRoutes53 } = await import('../server/routes/aiRoutes');
+  const { StoryRepository: StoryRepo53 } = await import('../server/repositories/storyRepository');
+  const { TaskRepository: TaskRepo53 } = await import('../server/repositories/taskRepository');
+  const { VelocityRepository: VelRepo53 } = await import('../server/repositories/velocityRepository');
+  const { GovernanceLinkRepository: LinkRepo53 } = await import('../server/repositories/governanceLinkRepository');
+  const { ActivityRepository: ActRepo53 } = await import('../server/repositories/activityRepository');
+  const { RiskRepository: RiskRepo53 } = await import('../server/repositories/riskRepository');
+
+  const stamp53 = Date.now();
+  const mk53 = (key: string, role: any) => Auth40.register({ email: `s22a.${key}.${stamp53}@company.com`, password: 'Sprint22a@12345', firstName: `S22A${key}`, lastName: 'Scope', role }, login40.user);
+  const pmA53 = await mk53('pma', 'project-manager');
+  const pmB53 = await mk53('pmb', 'project-manager');
+  const memberA53 = await mk53('membera', 'team-member');
+  const viewerA53 = await mk53('viewera', 'viewer');
+  const memberB53 = await mk53('memberb', 'team-member');
+  const outsider53 = await mk53('outsider', 'team-member');
+  const req53 = (u: any, over: any = {}) => reqAs40(u, { query: {}, params: {}, body: {}, ...over });
+  const as53 = (handler: any, u: any, over: any = {}) => run41(handler, req53(u, over));
+  const cleanup53: Array<() => Promise<unknown>> = [];
+  const SECRET53 = `S22A Secret B ${stamp53}`;
+  const XSS53 = '<img src=x onerror="window.__xss53=1">';
+
+  try {
+    // --- Fixtures: project A (pmA, memberA, viewerA) and project B (pmB, memberB) ---
+    const projA53 = (await call46(ProjCtl53.create, pmA53, { name: `S22A Project A ${stamp53}`, client: 'Client A', budget: 1234 })).body.data.project;
+    const projB53 = (await call46(ProjCtl53.create, pmB53, { name: `${SECRET53} project`, client: `${SECRET53} client`, budget: 9876 })).body.data.project;
+    cleanup53.push(() => ProjRepo24.delete(projA53.id), () => ProjRepo24.delete(projB53.id));
+    await call46(ProjCtl53.update, pmA53, { members: [{ userId: memberA53.id, name: 'Member A', role: 'Developer' }, { userId: viewerA53.id, name: 'Viewer A', role: 'Observer' }] }, { id: projA53.id });
+    await call46(ProjCtl53.update, pmB53, { members: [{ userId: memberB53.id, name: 'Member B', role: 'Developer' }] }, { id: projB53.id });
+
+    const tree53 = async (pm: any, proj: any, tag: string, assignee: any) => {
+      const epic = (await call46(DelCtl53.createEpic, pm, { name: `${tag} epic`, projectId: proj.id })).body.data.epic;
+      const feature = (await call46(DelCtl53.createFeature, pm, { name: `${tag} feature`, projectId: proj.id, epicId: epic.id })).body.data.feature;
+      const story = (await call46(DelCtl53.createStory, pm, { title: `${tag} story`, projectId: proj.id, featureId: feature.id, assigneeId: assignee.id })).body.data.story;
+      const task = (await call46(DelCtl53.createTask, pm, { title: `${tag} task`, projectId: proj.id, storyId: story.id, assigneeId: assignee.id })).body.data.task;
+      const subtask = (await call46(DelCtl53.createSubtask, pm, { title: `${tag} subtask`, taskId: task.id })).body.data.subtask;
+      return { epic, feature, story, task, subtask };
+    };
+    const dA53 = await tree53(pmA53, projA53, 'S22A A', memberA53);
+    const dB53 = await tree53(pmB53, projB53, SECRET53, memberB53);
+    const govFor53 = async (pm: any, proj: any, tag: string, d: any) => {
+      const risk = (await as53(RiskCtl53.createRisk, pm, { body: { projectId: proj.id, title: `${tag} risk`, probability: 4, impact: 4, category: 'Schedule', status: 'Identified' } })).body.data.risk;
+      const risk2 = (await as53(RiskCtl53.createRisk, pm, { body: { projectId: proj.id, title: `${tag} risk two`, probability: 2, impact: 2, category: 'Schedule', status: 'Identified' } })).body.data.risk;
+      const issue = (await as53(IssueCtl53.createIssue, pm, { body: { projectId: proj.id, title: `${tag} issue`, severity: 'High', priority: 'High', status: 'Open', category: 'Technical' } })).body.data.issue;
+      const dependency = (await as53(DepCtl53.createDependency, pm, { body: { sourceEntityType: 'story', sourceEntityId: d.story.id, targetEntityType: 'task', targetEntityId: d.task.id, dependencyType: 'Blocks', title: `${tag} dependency`, criticality: 'High' } })).body.data.dependency;
+      const milestone = (await as53(MlsCtl53.createMilestone, pm, { body: { projectId: proj.id, name: `${tag} milestone`, targetDate: '2026-12-01', status: 'Planned', type: 'delivery' } })).body.data.milestone;
+      const release = (await as53(RelCtl53.createRelease, pm, { body: { projectId: proj.id, name: `${tag} release`, version: '1.0.0', status: 'Planned', releaseDate: '2026-12-15' } })).body.data.release;
+      const link = (await as53(RiskCtl53.linkItem, pm, { params: { id: risk.id }, body: { targetType: 'story', targetId: d.story.id, targetCode: d.story.code, targetName: d.story.title } })).body.data.link;
+      const sprint = (await as53(SprintCtl53.createSprint, pm, { body: { name: `${tag} sprint`, projectId: proj.id, startDate: '2026-11-01', endDate: '2026-11-14' } })).body.data;
+      return { risk, risk2, issue, dependency, milestone, release, link, sprint };
+    };
+    const gA53 = await govFor53(pmA53, projA53, 'S22A A', dA53);
+    const gB53 = await govFor53(pmB53, projB53, SECRET53, dB53);
+    for (const g of [gA53, gB53]) {
+      cleanup53.push(() => RiskRepo53.delete(g.risk.id), () => RiskRepo53.delete(g.risk2.id), () => IssueRepo35.delete(g.issue.id), () => DepRepo35.delete(g.dependency.id), () => MlsRepo35.delete(g.milestone.id), () => RelRepo35.delete(g.release.id));
+    }
+    assert([gA53, gB53].every((g) => g.risk && g.risk2 && g.issue && g.dependency?.projectId && g.milestone && g.release && g.link && g.sprint?.id), 'Fixture: each project has a risk, issue, dependency, milestone, release, governance link and sprint created by its own manager');
+    await VelRepo53.record({ sprintId: gB53.sprint.id, sprintName: gB53.sprint.name, projectId: projB53.id, startDate: '2026-11-01', endDate: '2026-11-14', completedDate: new Date().toISOString(), committedPoints: 13, completedPoints: 8, committedHours: 10, completedHours: 5 } as any);
+    const has53 = (r: any, ...ids: string[]) => { const t = JSON.stringify(r.body); return ids.some((id) => t.includes(id)); };
+    const leaksB53 = (r: any) => has53(r, SECRET53, projB53.id);
+
+    // --- A. Projects ---
+    const projectsA53 = await as53(ProjCtl53.list, memberA53);
+    const projectIdsA53 = projectsA53.body.data.projects.map((p: any) => p.id);
+    assert(projectIdsA53.includes(projA53.id) && !projectIdsA53.includes(projB53.id) && !leaksB53(projectsA53), 'A. A member of project A lists project A and not project B');
+    const projectB404s53 = await Promise.all([as53(ProjCtl53.getById, memberA53, { params: { id: projB53.id } }), as53(ProjCtl53.getHealth, memberA53, { params: { id: projB53.id } }), as53(ProjCtl53.getHealth, memberA53, { params: { id: projB53.code } })]);
+    const healthList53 = await as53(ProjCtl53.listHealth, memberA53, { query: { limit: '50' } });
+    assert(projectB404s53.every((r) => r.statusCode === 404 && !leaksB53(r)) && !leaksB53(healthList53) && healthList53.body.data.results.some((h: any) => h.projectId === projA53.id), 'A. Project B detail and health (by id or code) are 404 for them; the health batch covers only their projects');
+
+    // --- Commercial fields ---
+    const viewerProjects53 = await as53(ProjCtl53.list, viewerA53);
+    const viewerProjA53 = viewerProjects53.body.data.projects.find((p: any) => p.id === projA53.id);
+    const pmProjA53 = (await as53(ProjCtl53.getById, pmA53, { params: { id: projA53.id } })).body.data.project;
+    const memberDetail53 = (await as53(ProjCtl53.getById, memberA53, { params: { id: projA53.id } })).body.data.project;
+    assert(viewerProjA53 && !('budget' in viewerProjA53) && !('client' in viewerProjA53) && !('budget' in memberDetail53) && !('client' in memberDetail53) && pmProjA53.budget === 1234 && pmProjA53.client === 'Client A', 'Commercial fields: viewers and team members get no budget or client; project managers (commercial roles) still do');
+
+    // --- B. Delivery reads ---
+    const lists53: Array<[any, string, string, string]> = [
+      [DelCtl53.listEpics, 'epics', dA53.epic.id, dB53.epic.id], [DelCtl53.listFeatures, 'features', dA53.feature.id, dB53.feature.id],
+      [DelCtl53.listStories, 'stories', dA53.story.id, dB53.story.id], [DelCtl53.listTasks, 'tasks', dA53.task.id, dB53.task.id],
+      [DelCtl53.listSubtasks, 'subtasks', dA53.subtask.id, dB53.subtask.id],
+    ];
+    for (const [handler, key, idA, idB] of lists53) {
+      const r = await as53(handler, memberA53);
+      const ids = r.body.data[key].map((x: any) => x.id);
+      assert(ids.includes(idA) && !ids.includes(idB) && !leaksB53(r), `B. ${key}: project A's are listed, project B's are not`);
+    }
+    const gets53: Array<[any, string, string]> = [[DelCtl53.getEpic, dA53.epic.id, dB53.epic.id], [DelCtl53.getFeature, dA53.feature.id, dB53.feature.id], [DelCtl53.getStory, dA53.story.id, dB53.story.id], [DelCtl53.getTask, dA53.task.id, dB53.task.id], [DelCtl53.getSubtask, dA53.subtask.id, dB53.subtask.id]];
+    const getResults53 = await Promise.all(gets53.flatMap(([h, a, b]) => [as53(h, memberA53, { params: { id: a } }), as53(h, memberA53, { params: { id: b } })]));
+    assert(getResults53.every((r, i) => (i % 2 === 0 ? r.statusCode === 200 : r.statusCode === 404 && !leaksB53(r))), 'B. Single delivery records: project A\'s open, project B\'s are 404 (a subtask through its task)');
+    const traceB53 = await as53(DelCtl53.getTrace, memberA53, { params: { entityType: 'story', id: dB53.story.id } });
+    const traceA53 = await as53(DelCtl53.getTrace, memberA53, { params: { entityType: 'story', id: dA53.story.id } });
+    const summary53 = (await as53(DelCtl53.getSummary, memberA53)).body.data.summary;
+    const visibleCount53 = (await Promise.all(lists53.map(([h, key]) => as53(h, memberA53).then((r) => r.body.data[key].length)))).reduce((a, b) => a + b, 0);
+    assert(traceB53.statusCode === 404 && traceA53.statusCode === 200 && summary53.totals.allItems === visibleCount53, `B. Delivery trace of a project B story is 404; the delivery summary counts only what the member can list (${traceB53.statusCode},${traceA53.statusCode},${summary53.totals.allItems},${visibleCount53})`);
+
+    // --- C. Governance reads ---
+    const govLists53: Array<[any, string, string, string]> = [
+      [RiskCtl53.listRisks, 'risks', gA53.risk.id, gB53.risk.id], [IssueCtl53.listIssues, 'issues', gA53.issue.id, gB53.issue.id],
+      [DepCtl53.listDependencies, 'dependencies', gA53.dependency.id, gB53.dependency.id], [MlsCtl53.listMilestones, 'milestones', gA53.milestone.id, gB53.milestone.id],
+      [RelCtl53.listReleases, 'releases', gA53.release.id, gB53.release.id],
+    ];
+    for (const [handler, key, idA, idB] of govLists53) {
+      const r = await as53(handler, memberA53);
+      const paged = await as53(handler, memberA53, { query: { page: '1', limit: '500' } });
+      const ids = r.body.data[key].map((x: any) => x.id);
+      assert(ids.includes(idA) && !ids.includes(idB) && !leaksB53(r) && !leaksB53(paged), `C. ${key}: only project A's (paged lists too)`);
+    }
+    const govGets53 = await Promise.all([
+      as53(RiskCtl53.getRisk, memberA53, { params: { id: gB53.risk.id } }), as53(IssueCtl53.getIssue, memberA53, { params: { id: gB53.issue.id } }),
+      as53(DepCtl53.getDependency, memberA53, { params: { id: gB53.dependency.id } }), as53(MlsCtl53.getMilestone, memberA53, { params: { id: gB53.milestone.id } }),
+      as53(RelCtl53.getRelease, memberA53, { params: { id: gB53.release.id } }), as53(GovCtl53.getTraceability, memberA53, { params: { entityType: 'project', id: projB53.id } }),
+      as53(GovCtl53.getTraceability, memberA53, { params: { entityType: 'risk', id: gB53.risk.id } }), as53(RiskCtl53.runProjectAudit, memberA53, { params: { projectId: projB53.id } }),
+    ]);
+    assert(govGets53.every((r) => r.statusCode === 404 && !leaksB53(r)), 'C. Project B risk, issue, dependency, milestone, release, traceability and audit scan are 404 for a project A member');
+    const aggregates53 = await Promise.all([
+      as53(GovCtl53.getSummary, memberA53), as53(RiskCtl53.getHeatmap, memberA53), as53(IssueCtl53.getRootCauses, memberA53),
+      as53(DepCtl53.getGraph, memberA53), as53(DepCtl53.getKPIs, memberA53), as53(DepCtl53.getChain, memberA53, { params: { entityId: dB53.story.id } }),
+      as53(GovCtl53.getTraceability, memberA53, { params: { entityType: 'project', id: projA53.id } }),
+    ]);
+    assert(aggregates53.every((r) => r.statusCode === 200 && !leaksB53(r)) && aggregates53[0].body.data.projectScorecards.every((sc: any) => sc.projectId !== projB53.id) && aggregates53[5].body.data.chain.upstream.length + aggregates53[5].body.data.chain.downstream.length === 0, 'C. Governance summary, heatmap, root causes, dependency graph / KPIs / chain and traceability carry nothing from project B');
+
+    // --- D. Agile reads ---
+    const sprints53 = await as53(SprintCtl53.listSprints, memberA53);
+    const sprintB404s53 = await Promise.all([SprintCtl53.getSprint, SprintCtl53.getSprintItems, SprintCtl53.getSprintCapacity, SprintCtl53.getSprintBurndown].map((h) => as53(h, memberA53, { params: { id: gB53.sprint.id } })));
+    const backlog53 = await as53(BacklogCtl53.getBacklog, memberA53, { query: { includeSprintItems: 'true' } });
+    const velocity53 = await as53(VelCtl53.getVelocity, memberA53);
+    const velocityB53 = await as53(VelCtl53.getVelocity, memberA53, { query: { projectId: projB53.id } });
+    assert(sprints53.body.data.some((s: any) => s.id === gA53.sprint.id) && !leaksB53(sprints53) && sprintB404s53.every((r) => r.statusCode === 404 && !leaksB53(r)), 'D. Sprints: project A\'s listed; project B\'s sprint, items, capacity and burndown are 404');
+    assert(backlog53.body.data.some((i: any) => i.id === dA53.story.id) && !leaksB53(backlog53) && !leaksB53(velocity53) && velocityB53.statusCode === 404, 'D. Backlog and velocity hold nothing from project B; project B velocity is 404');
+    const legacyMyWork53 = await as53(MyWorkCtl53.getMyWork, memberA53);
+    assert(!legacyMyWork53.body.data.activeSprints.some((s: any) => s.projectId === projB53.id), 'D. The legacy /my-work returns no other project\'s active sprints');
+
+    // --- E. Executive Overview ---
+    const execA53 = await as53(ExecCtl53.getOverview, memberA53);
+    const execAdmin53 = await as53(ExecCtl53.getOverview, adminUser40);
+    assert(execA53.statusCode === 200 && !leaksB53(execA53) && JSON.stringify(execA53.body).includes(projA53.name), 'E. A member\'s Executive Overview covers their projects only (nothing from project B)');
+
+    // --- F. Activity privacy ---
+    await ActRepo53.create({ id: `act_s22a_login_${stamp53}`, entityType: 'auth', entityId: memberB53.id, action: 'login', actorId: memberB53.id, actorName: 'Member B', details: { email: memberB53.email, role: 'team-member' }, ipAddress: '10.9.8.7', createdAt: new Date().toISOString() } as any);
+    await ActRepo53.create({ id: `act_s22a_story_${stamp53}`, entityType: 'story', entityId: dA53.story.id, action: 'update', actorId: pmA53.id, actorName: 'PM A', details: { projectId: projA53.id }, ipAddress: '10.1.2.3', createdAt: new Date().toISOString() } as any);
+    const actA53 = await as53(ActCtl53.list, memberA53, { query: { limit: '200' } });
+    const acts53 = actA53.body.data.activities;
+    assert(acts53.some((a: any) => a.entityId === dA53.story.id) && !leaksB53(actA53) && !acts53.some((a: any) => ['auth', 'ai', 'user', 'system'].includes(a.entityType)) && !JSON.stringify(acts53).includes('10.1.2.3') && !JSON.stringify(acts53).includes('ipAddress'), 'F. Activity: project A entries only; no sign-in or AI entries and no IP addresses for a project member');
+    const actEntityB53 = await as53(ActCtl53.list, memberA53, { query: { entityType: 'story', entityId: dB53.story.id } });
+    const actAuth53 = await as53(ActCtl53.list, memberA53, { query: { entityType: 'auth', entityId: memberB53.id } });
+    const actAdmin53 = await as53(ActCtl53.list, adminUser40, { query: { limit: '100000' } });
+    assert(actEntityB53.statusCode === 404 && actAuth53.statusCode === 404 && actAdmin53.body.data.activities.length <= ACT_MAX53 && ACT_MAX53 === 200 && actAdmin53.body.data.activities.some((a: any) => a.ipAddress === '10.9.8.7' || a.ipAddress === '10.1.2.3'), 'F. A project B record\'s history and sign-in history are 404; limit is capped at 200; administrators keep IP addresses');
+
+    // --- G. Cross-project writes (a project A manager against project B) ---
+    const snap53 = async () => JSON.stringify(await Promise.all([RiskRepo53.findById(gB53.risk.id), IssueRepo35.findById(gB53.issue.id), DepRepo35.findById(gB53.dependency.id), MlsRepo35.findById(gB53.milestone.id), RelRepo35.findById(gB53.release.id)]));
+    const beforeB53 = await snap53();
+    const writesB53 = await Promise.all([
+      as53(RiskCtl53.updateRisk, pmA53, { params: { id: gB53.risk.id }, body: { title: 'hijacked' } }),
+      as53(IssueCtl53.updateIssue, pmA53, { params: { id: gB53.issue.id }, body: { title: 'hijacked' } }),
+      as53(DepCtl53.updateDependency, pmA53, { params: { id: gB53.dependency.id }, body: { title: 'hijacked' } }),
+      as53(MlsCtl53.updateMilestone, pmA53, { params: { id: gB53.milestone.id }, body: { name: 'hijacked' } }),
+      as53(RelCtl53.updateRelease, pmA53, { params: { id: gB53.release.id }, body: { name: 'hijacked' } }),
+      as53(RiskCtl53.deleteRisk, pmA53, { params: { id: gB53.risk.id } }),
+      as53(IssueCtl53.deleteIssue, pmA53, { params: { id: gB53.issue.id } }),
+      as53(MlsCtl53.deleteMilestone, pmA53, { params: { id: gB53.milestone.id } }),
+      as53(RelCtl53.deleteRelease, pmA53, { params: { id: gB53.release.id } }),
+      as53(DepCtl53.deleteDependency, pmA53, { params: { id: gB53.dependency.id } }),
+      as53(RiskCtl53.createRisk, pmA53, { body: { projectId: projB53.id, title: 'planted', probability: 1, impact: 1 } }),
+      as53(MlsCtl53.createMilestone, pmA53, { body: { projectId: projB53.id, name: 'planted', targetDate: '2026-12-01' } }),
+      as53(SprintCtl53.updateSprint, pmA53, { params: { id: gB53.sprint.id }, body: { name: 'hijacked' } }),
+      as53(SprintCtl53.deleteSprint, pmA53, { params: { id: gB53.sprint.id } }),
+    ]);
+    assert(writesB53.every((r) => r.statusCode === 404) && (await snap53()) === beforeB53 && !!(await RiskRepo53.findById(gB53.risk.id)), `G. Edits, deletes and creates against project B's risk, issue, dependency, milestone, release and sprint are 404 and change nothing (${writesB53.map((r) => r.statusCode).join(',')})`);
+    const moveA53 = await as53(RiskCtl53.updateRisk, pmA53, { params: { id: gA53.risk.id }, body: { projectId: projB53.id } });
+    const memberEdit53 = await as53(RiskCtl53.updateRisk, viewerA53, { params: { id: gA53.risk.id }, body: { title: 'viewer edit' } });
+    assert(moveA53.statusCode === 404 && (await RiskRepo53.findById(gA53.risk.id))!.projectId === projA53.id && memberEdit53.statusCode === 403, 'G. A risk cannot be moved into a project the manager cannot write; a viewer of project A cannot change its risk (403)');
+    const projB_edit53 = await call46(ProjCtl53.update, pmA53, { name: 'taken over' }, { id: projB53.id });
+    assert(projB_edit53.statusCode === 403 && (await ProjRepo24.findById(projB53.id))!.name === projB53.name, 'G. Project B itself cannot be changed by the manager of project A');
+
+    // --- Link delete IDOR (Part 9) ---
+    const linksBefore53 = (await LinkRepo53.getLinksFor('risk', gB53.risk.id)).map((l: any) => l.id);
+    const wrongParent53 = await as53(RiskCtl53.unlinkItem, pmB53, { params: { id: gB53.risk2.id, linkId: gB53.link.id } });
+    const crossProject53 = await as53(RiskCtl53.unlinkItem, pmA53, { params: { id: gA53.risk.id, linkId: gB53.link.id } });
+    const viaIssue53 = await as53(IssueCtl53.unlinkItem, memberA53, { params: { id: gA53.issue.id, linkId: gB53.link.id } });
+    assert(wrongParent53.statusCode === 404 && crossProject53.statusCode === 404 && viaIssue53.statusCode === 404 && JSON.stringify((await LinkRepo53.getLinksFor('risk', gB53.risk.id)).map((l: any) => l.id)) === JSON.stringify(linksBefore53), 'Link IDOR: a link is never removed through another parent (same project, another project, or another record type)');
+    const ownUnlink53 = await as53(RiskCtl53.unlinkItem, pmA53, { params: { id: gA53.risk.id, linkId: gA53.link.id } });
+    const crossLink53 = await as53(RiskCtl53.linkItem, pmA53, { params: { id: gA53.risk.id }, body: { targetType: 'story', targetId: dB53.story.id, targetCode: 'X', targetName: 'X' } });
+    assert(ownUnlink53.statusCode === 200 && ownUnlink53.body.data.removed === true && crossLink53.statusCode === 404, 'Link IDOR: the parent\'s own link can still be removed; a link to a record in another project is refused');
+
+    // --- Part 7: sprint movement ---
+    const addOk53 = await as53(SprintCtl53.addSprintItem, memberA53, { params: { id: gA53.sprint.id }, body: { itemId: dA53.story.id, itemType: 'story' } });
+    const addToB53 = await as53(SprintCtl53.addSprintItem, memberA53, { params: { id: gB53.sprint.id }, body: { itemId: dA53.story.id, itemType: 'story' } });
+    const pmBPullsA53 = await as53(SprintCtl53.addSprintItem, pmB53, { params: { id: gB53.sprint.id }, body: { itemId: dA53.story.id, itemType: 'story' } });
+    const adminCross53 = await as53(SprintCtl53.addSprintItem, adminUser40, { params: { id: gB53.sprint.id }, body: { itemId: dA53.task.id, itemType: 'task' } });
+    const adminSame53 = await as53(SprintCtl53.addSprintItem, adminUser40, { params: { id: gB53.sprint.id }, body: { itemId: dB53.task.id, itemType: 'task' } });
+    const storyA53 = await StoryRepo53.findById(dA53.story.id);
+    const taskA53 = await TaskRepo53.findById(dA53.task.id);
+    assert(addOk53.statusCode === 200 && storyA53!.sprintId === gA53.sprint.id, 'Sprint move: a project A item into a project A sprint is allowed');
+    assert(addToB53.statusCode === 404 && pmBPullsA53.statusCode === 404 && adminCross53.statusCode === 400 && taskA53!.sprintId !== gB53.sprint.id && adminSame53.statusCode === 200, 'Sprint move: A item → B sprint is refused (member of A: 404, manager of B: 404, admin: 400 cross-project); same-project still works for an admin');
+    const removeOther53 = await as53(SprintCtl53.removeSprintItem, pmB53, { params: { id: gB53.sprint.id, itemId: dA53.story.id }, query: { itemType: 'story' } });
+    const carryCross53 = await as53(SprintCtl53.completeSprint, pmA53, { params: { id: gA53.sprint.id }, body: { carryoverAction: 'carryover', targetSprintId: gB53.sprint.id } });
+    assert(removeOther53.statusCode === 404 && (await StoryRepo53.findById(dA53.story.id))!.sprintId === gA53.sprint.id && carryCross53.statusCode === 400 && (await (await import('../server/repositories/sprintRepository')).SprintRepository.findById(gA53.sprint.id))!.status !== 'completed', 'Sprint move: another project\'s item cannot be removed; carry-over into another project\'s sprint is refused before anything is recorded');
+
+    // --- Part 8: backlog writes ---
+    const orderBefore53 = (await StoryRepo53.findById(dB53.story.id))!.backlogOrder;
+    const reorderB53 = await as53(BacklogCtl53.reorder, memberA53, { body: { items: [{ id: dA53.story.id, type: 'story', backlogOrder: 5 }, { id: dB53.story.id, type: 'story', backlogOrder: 1 }] } });
+    const assignB53 = await as53(BacklogCtl53.assign, memberA53, { body: { itemId: dA53.task.id, itemType: 'task', sprintId: gB53.sprint.id } });
+    const assignOtherItem53 = await as53(BacklogCtl53.assign, memberA53, { body: { itemId: dB53.task.id, itemType: 'task', sprintId: null } });
+    assert(reorderB53.statusCode === 404 && (await StoryRepo53.findById(dB53.story.id))!.backlogOrder === orderBefore53 && (await StoryRepo53.findById(dA53.story.id))!.backlogOrder !== 5 && assignB53.statusCode === 404 && assignOtherItem53.statusCode === 404, 'Backlog: a reorder touching another project\'s item changes nothing; assigning to another project\'s sprint, or another project\'s item, is refused');
+    const reorderOwn53 = await as53(BacklogCtl53.reorder, memberA53, { body: { items: [{ id: dA53.story.id, type: 'story', backlogOrder: 7 }] } });
+    assert(reorderOwn53.statusCode === 200 && (await StoryRepo53.findById(dA53.story.id))!.backlogOrder === 7, 'Backlog: reordering your own project\'s items still works');
+
+    // --- H. Assignment ---
+    const assignMember53 = await call46(DelCtl53.createStory, pmA53, { title: 'S22A assigned to member', projectId: projA53.id, assigneeId: memberA53.id });
+    const assignOutsider53 = await call46(DelCtl53.createStory, pmA53, { title: 'S22A assigned to outsider', projectId: projA53.id, assigneeId: outsider53.id });
+    const reassignOutsider53 = await call46(DelCtl53.updateStory, pmA53, { assigneeId: outsider53.id }, { id: dA53.story.id });
+    const subtaskOutsider53 = await call46(DelCtl53.createSubtask, pmA53, { title: 'S22A sub', taskId: dA53.task.id, assigneeId: outsider53.id });
+    cleanup53.push(() => StoryRepo53.delete(assignMember53.body.data.story.id));
+    assert(assignMember53.statusCode === 201 && [assignOutsider53, reassignOutsider53, subtaskOutsider53].every((r) => r.statusCode === 400) && !(await Access46.canAccess({ userId: outsider53.id, role: 'team-member' }, projA53.id)), 'H. A project member can be assigned; an active user outside the project cannot (create, reassign, subtask) and gains no access');
+
+    // --- Part 11: /projects/migrate ---
+    const legacyId53 = `LEGACY-${stamp53}`;
+    const migrate53 = await as53(ProjCtl53.migrate, pmA53, { body: { projects: [
+      { id: projB53.id, name: 'Overwrite B', managerId: pmA53.id },
+      { id: legacyId53, name: 'S22A legacy import', managerId: '', members: [] },
+      { id: `LEGACY-BAD-${stamp53}`, name: 'Bad manager', managerId: 'usr_nobody' },
+    ] } });
+    cleanup53.push(() => ProjRepo24.delete(legacyId53));
+    const imported53 = await ProjRepo24.findById(legacyId53);
+    assert(migrate53.statusCode === 200 && migrate53.body.data.imported === 1 && migrate53.body.data.skipped === 2 && migrate53.body.data.projects.map((p: any) => p.id).join() === legacyId53 && !leaksB53(migrate53) && (await ProjRepo24.findById(projB53.id))!.name === projB53.name && imported53!.managerId === pmA53.id, 'Migrate: existing projects are never overwritten, invalid records are skipped, the importer manages what they import, and only the imported projects are returned');
+
+    // --- I. Current role ---
+    const demoted53 = await mk53('demoted', 'project-manager');
+    const token53 = genToken53({ ...demoted53, role: 'project-manager' } as any);
+    await UserRepo40.update(demoted53.id, { role: 'viewer' } as any);
+    const authReq53: any = { headers: { authorization: `Bearer ${token53}` }, cookies: {} };
+    const authRes53: any = { statusCode: 200, body: null, status(c: number) { this.statusCode = c; return this; }, json(b: any) { this.body = b; return this; } };
+    let passed53 = false;
+    await authToken53(authReq53, authRes53, () => { passed53 = true; });
+    let elevated53 = false;
+    requireRoles53(['project-manager'])(authReq53, authRes53, () => { elevated53 = true; });
+    assert(passed53 && authReq53.user.role === 'viewer' && !elevated53 && authRes53.statusCode === 403, 'I. A token issued while the user was a project manager carries their current role (viewer) and no longer passes a project-manager check');
+
+    // --- J. XSS: stored names render inert ---
+    const hadDocument53 = 'document' in globalThis;
+    const savedDocument53 = (globalThis as any).document;
+    const els53: Record<string, any> = {};
+    const fakeEl53 = (id = ''): any => (els53[id] ||= { id, innerHTML: '', value: '', textContent: '', dataset: {}, style: {}, classList: { add() {}, remove() {}, toggle() {}, contains: () => false }, addEventListener() {}, removeEventListener() {}, querySelector: () => fakeEl53(`${id}>q`), querySelectorAll: () => [], appendChild() {}, setAttribute() {}, getAttribute: () => null, closest: () => null });
+    (globalThis as any).document = { getElementById: (id: string) => fakeEl53(id), querySelector: () => fakeEl53('q'), querySelectorAll: () => [], createElement: () => fakeEl53('new'), addEventListener() {} };
+    try {
+      const inert53 = (html: string) => !/<img/i.test(html) && !/onerror="window/.test(html) && html.includes('&lt;img');
+      const { ProductsModule: Products53 } = await import('../PM-Portal/js/products.js');
+      Object.assign(Products53, { products: [{ id: 'prod_x', code: XSS53, name: XSS53, description: XSS53, category: XSS53, portfolioId: 'pf_x', teamId: 'tm_x', ownerName: XSS53, health: 'healthy', stage: 'ga' }], portfolios: [{ id: 'pf_x', name: XSS53 }], teams: [{ id: 'tm_x', name: XSS53, department: XSS53 }], projects: [{ id: 'p_x', name: XSS53, productId: 'prod_x' }], users: [{ id: 'u_x', firstName: XSS53, lastName: XSS53, role: XSS53 }], searchQuery: '', filterStage: 'all', filterHealth: 'all', filterPortfolio: 'all' });
+      Products53.render();
+      const productsHtml53 = fakeEl53('products-content-area').innerHTML;
+      const { SprintPlanningModule: Planning53 } = await import('../PM-Portal/js/sprintPlanning.js');
+      let planningBody53 = '';
+      Object.assign(Planning53, { app: { openModal: (_t: string, body: string) => { planningBody53 = body; }, showToast() {} }, projects: [{ id: 'p_x', name: XSS53, code: XSS53 }], features: [{ id: 'f_x', code: XSS53, name: XSS53 }], users: [{ id: 'u_x', firstName: XSS53, lastName: XSS53, role: XSS53 }] });
+      Planning53.openCreateBacklogItemModal();
+      const { GovernanceModule: Gov53 } = await import('../PM-Portal/js/governance.js');
+      const govContainer53 = fakeEl53('gov-risks');
+      Object.assign(Gov53, { risks: [{ id: 'r_x', code: XSS53, title: XSS53, description: XSS53, projectId: 'p_x', severity: 'High', status: 'Identified', category: XSS53, ownerName: XSS53, probability: 3, impact: 3, riskScore: 9 }], projects: [{ id: 'p_x', name: XSS53, code: XSS53 }], users: [{ id: 'u_x', firstName: XSS53, lastName: XSS53, role: XSS53 }], filterProjectId: 'all', filterSeverity: 'all', searchQuery: '' });
+      Gov53.renderRisksTab(govContainer53);
+      assert(inert53(productsHtml53) && inert53(planningBody53) && inert53(govContainer53.innerHTML) && (globalThis as any).__xss53 === undefined, 'J. Hostile product, portfolio, team, user, project, feature and risk names render as text in Products, Sprint Planning and Governance (no <img>, no handler)');
+    } finally {
+      if (hadDocument53) (globalThis as any).document = savedDocument53; else delete (globalThis as any).document;
+    }
+    const src53 = (f: string) => fs35.readFileSync(f, 'utf8');
+    assert(/\$\{escapeHtml\(r\.name\)\}/.test(src53('PM-Portal/js/app.js')) && /width: \$\{percent\(r\.allocation\)\}%/.test(src53('PM-Portal/js/app.js')) && /\$\{escapeHtml\(p\.name\)\}<\/option>/.test(src53('PM-Portal/js/resourcePlanner.js')) && /\$\{escapeHtml\(o\.title\)\}/.test(src53('PM-Portal/js/governance.js')) && /const esc = escapeHtml;/.test(src53('PM-Portal/js/portfolios.js')), 'J. Resources rows, Resource Planner project options, release-scope options and the roadmap form escape stored values');
+    // Found by the signed-in browser check: user names in the Risks page owner list (now escaped), and the Portfolios page.
+    assert(/\$\{escapeHtml\(u\.firstName \|\| ''\)\} \$\{escapeHtml\(u\.lastName \|\| ''\)\}/.test(src53('PM-Portal/js/riskModule.js')) && /\$\{escapeHtml\(p\.name \|\| p\.id\)\}/.test(src53('PM-Portal/js/riskModule.js')) && /\$\{escapeHtml\(u\.firstName\)\} \$\{escapeHtml\(u\.lastName\)\} \(\$\{escapeHtml\(u\.role\)\}\)/.test(src53('PM-Portal/js/portfolios.js')), 'J. Risks page owner/project options and Portfolios owner options escape user and project names');
+    // Sweep: no markup line in these pages interpolates a raw name, title, description, client or person name.
+    const SWEEP53 = ['governance', 'riskModule', 'portfolios', 'products', 'sprintPlanning', 'resourcePlanner', 'riskEngine', 'aiForecast', 'aiRecommendations', 'dashboard', 'gantt', 'leaveTracker', 'timeLogging', 'weekendPlanner', 'forecastEngine', 'customers', 'aiDashboard'];
+    const rawSink53 = /\$\{[a-zA-Z_]+\??\.(firstName|lastName|name|title|description|client|ownerName|projectName)( *(\|\||\?\?) *[^}]*)?\}/;
+    const offenders53 = SWEEP53.flatMap((m) => src53(`PM-Portal/js/${m}.js`).split(/\r?\n/).map((line, i) => [m, i + 1, line] as [string, number, string]))
+      .filter(([, , line]) => /</.test(line) && rawSink53.test(line.replace(/escapeHtml\([^)]*\)/g, '')) && !/showToast\(|openModal\(|csvContent|textContent/.test(line));
+    assert(offenders53.length === 0, `J. No page in the sweep renders a raw stored name into markup (${offenders53.map(([m, n]) => m + ':' + n).join(', ') || 'none'})`);
+    assert(/^import \{ renderNotifications \} from '\.\/notifications\.js';/m.test(src53('PM-Portal/js/app.js')) && !/innerHTML/.test(src53('PM-Portal/js/notifications.js').replace(/\/\*[\s\S]*?\*\//g, '')), 'J. The Sprint 21A notification renderer is unchanged (DOM-built, no markup)');
+
+    // --- K. JWT secret and network exposure ---
+    const strong53 = 'k9'.repeat(24);
+    const hostErr53 = (env: any) => { try { listenHost53(env); return null; } catch (e: any) { return e; } };
+    assert(unsafeSecret53(undefined) && unsafeSecret53(DEFAULT_SECRET53) && unsafeSecret53('enterprise_super_secret_jwt_key_surya_pm_portal_v2') && unsafeSecret53('short') && !unsafeSecret53(strong53), 'K. Missing, default, sample and short secrets are unsafe; a long random one is not');
+    assert(JSON.stringify(listenHost53({})) === JSON.stringify({ host: '127.0.0.1', loopbackOnly: true }) && listenHost53({ JWT_SECRET: DEFAULT_SECRET53, PM_PORTAL_HOST: 'localhost' }).host === 'localhost' && JSON.stringify(listenHost53({ JWT_SECRET: strong53 })) === JSON.stringify({ host: '0.0.0.0', loopbackOnly: false }) && listenHost53({ JWT_SECRET: strong53, PM_PORTAL_HOST: '192.168.1.5' }).host === '192.168.1.5', 'K. Without a private secret the server listens on this computer only; with one it keeps listening on every interface (or PM_PORTAL_HOST)');
+    const netErr53 = hostErr53({ JWT_SECRET: DEFAULT_SECRET53, PM_PORTAL_HOST: '0.0.0.0' });
+    assert(!!netErr53 && /PM_PORTAL_HOST=0\.0\.0\.0/.test(netErr53.message) && /JWT_SECRET/.test(netErr53.message) && !netErr53.message.includes(DEFAULT_SECRET53) && !!hostErr53({ PM_PORTAL_HOST: '10.0.0.5' }), 'K. A network address with a known or missing secret is refused, with instructions and without printing the secret');
+    const { spawnSync: spawn53 } = await import('child_process');
+    const child53 = spawn53(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'server.ts'], { env: { ...process.env, PM_PORTAL_DATA_MODE: 'memory', PM_PORTAL_HOST: '0.0.0.0', JWT_SECRET: '', NODE_ENV: 'development', PORT: '3999' }, encoding: 'utf8', timeout: 60000 });
+    const out53 = `${child53.stdout}${child53.stderr}`;
+    assert(child53.status === 1 && /did not start/.test(out53) && /PM_PORTAL_HOST=0\.0\.0\.0/.test(out53) && !out53.includes(DEFAULT_SECRET53) && !/running on/.test(out53), 'K. The server refuses to start when exposed to the network without a private JWT secret (nothing listens, the secret is not printed)');
+    const serverSrc53 = src53('server.ts');
+    assert(/const \{ host: HOST, loopbackOnly \} = resolveListenHost\(\);/.test(serverSrc53) && /app\.listen\(PORT, HOST,/.test(serverSrc53) && !/app\.listen\(PORT, '0\.0\.0\.0'/.test(serverSrc53) && serverSrc53.indexOf('resolveListenHost()') < serverSrc53.indexOf('await initDatabase()'), 'K. Startup resolves the address before loading any data and listens only there');
+
+    // --- L. /ai/query: metered and audited ---
+    const aiLayer53 = (aiRoutes53 as any).stack.find((l: any) => l.route?.path === '/ai/query').route.stack.map((s: any) => s.handle);
+    const assistantLayer53 = (aiRoutes53 as any).stack.find((l: any) => l.route?.path === '/ai/assistant/query').route.stack.map((s: any) => s.handle);
+    const limiter53 = assistantLayer53[2];
+    assert(aiLayer53.includes(limiter53), 'L. /ai/query uses the same per-user rate limiter as the assistant');
+    resetLimits53();
+    const limitStatuses53: number[] = [];
+    for (let i = 0; i < 25; i++) {
+      const res: any = { statusCode: 200, headers: {}, status(c: number) { this.statusCode = c; return this; }, json() { return this; }, setHeader(k: string, v: any) { this.headers[k] = v; return this; }, set() { return this; } };
+      let through = false;
+      await limiter53(req53(memberA53, { ip: '127.0.0.1' }), res, () => { through = true; });
+      limitStatuses53.push(through ? 200 : res.statusCode);
+    }
+    resetLimits53();
+    assert(limitStatuses53.includes(429) && limitStatuses53.filter((c) => c === 200).length <= 20, `L. Repeated /ai/query calls are rate limited (${limitStatuses53.filter((c) => c === 429).length} refused)`);
+    const prompt53 = `S22A secret prompt ${stamp53}`;
+    const aiRes53 = await as53(AiCtl53.query, memberA53, { body: { prompt: prompt53 } });
+    const aiAudit53 = (await ActRepo53.findRecent(50)).find((a: any) => a.entityType === 'ai' && a.actorId === memberA53.id && a.details?.endpoint === '/ai/query');
+    assert(aiRes53.statusCode === 200 && !!aiAudit53 && aiAudit53.details.promptLength === prompt53.length && !JSON.stringify(aiAudit53).includes(prompt53), 'L. An /ai/query call is audited (who, scope, size) without storing the prompt');
+
+    // --- M. Administrators stay global ---
+    const adminLists53 = await Promise.all([as53(ProjCtl53.list, adminUser40), as53(RiskCtl53.listRisks, adminUser40), as53(DelCtl53.listStories, adminUser40), as53(SprintCtl53.listSprints, adminUser40)]);
+    assert(adminLists53.every((r) => has53(r, projA53.id) && has53(r, projB53.id)) && has53(execAdmin53, projB53.id) && has53(execAdmin53, projA53.id) && adminLists53[0].body.data.projects.find((p: any) => p.id === projB53.id).budget === 9876, 'M. An administrator still sees every project (with commercial fields) in lists and the Executive Overview');
+    const adminWrite53 = await as53(RiskCtl53.updateRisk, adminUser40, { params: { id: gB53.risk.id }, body: { title: `${SECRET53} risk (admin)` } });
+    assert(adminWrite53.statusCode === 200, 'M. An administrator can still change any project\'s records');
+  } finally {
+    for (const fn of cleanup53.reverse()) { try { await fn(); } catch { /* fixture already removed */ } }
+    for (const u of [pmA53, pmB53, memberA53, viewerA53, memberB53, outsider53]) await UserRepo40.update(u.id, { isActive: false });
+    resetLimits53();
+  }
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('========================================\n');

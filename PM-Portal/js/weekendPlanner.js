@@ -4,6 +4,7 @@ import { Storage } from './storage.js';
 import { Calculations } from './calculations.js';
 import { Filters } from './filters.js';
 import { Excel } from './excel.js';
+import { escapeHtml } from './safeHtml.js';
 
 export const WeekendPlannerModule = {
   app: null,
@@ -590,9 +591,9 @@ export const WeekendPlannerModule = {
 
           standbyHTML += `
             <div class="d-inline-flex align-items-center gap-1.5 px-2.5 py-1 rounded border" style="background-color: var(--bg-card); border-color: var(--border-color); font-size: 0.8rem;">
-              <span class="font-bold text-primary">${m.employee}</span>
+              <span class="font-bold text-primary">${escapeHtml(m.employee)}</span>
               <span class="text-secondary">(${m.project} - ${m.hours} Hrs)</span>
-              <span class="badge ${badgeClass}" style="font-size: 0.65rem;">${m.status}</span>
+              <span class="badge ${badgeClass}" style="font-size: 0.65rem;">${escapeHtml(m.status)}</span>
             </div>
           `;
         });
@@ -601,7 +602,7 @@ export const WeekendPlannerModule = {
       timelineRow.innerHTML = `
         <div style="min-width: 160px;">
           <span class="font-bold text-xs uppercase tracking-wider text-secondary d-block">Weekend Date</span>
-          <span class="font-semibold text-primary" style="font-size: 0.85rem;"><i class="fa-regular fa-calendar-check me-1 text-primary"></i> ${wk.label}</span>
+          <span class="font-semibold text-primary" style="font-size: 0.85rem;"><i class="fa-regular fa-calendar-check me-1 text-primary"></i> ${escapeHtml(wk.label)}</span>
         </div>
         <div class="d-flex flex-wrap gap-2 align-items-center flex-grow-1 justify-content-start px-2">
           ${standbyHTML}
@@ -646,15 +647,15 @@ export const WeekendPlannerModule = {
       recRow.innerHTML = `
         <div>
           <div class="font-bold text-primary" style="font-size: 0.85rem;">
-            ${proj.id} - ${proj.name}
+            ${proj.id} - ${escapeHtml(proj.name)}
           </div>
           <div class="text-xs text-secondary mt-1">
             <span class="badge bg-danger-subtle text-danger px-1.5 py-0.5" style="font-size: 0.65rem;">${proj.risk} Risk</span>
             <span class="ms-2">Progress: <strong>${proj.progress}%</strong></span>
-            <span class="ms-2">Manager: <strong>${proj.manager}</strong></span>
+            <span class="ms-2">Manager: <strong>${escapeHtml(proj.manager)}</strong></span>
           </div>
         </div>
-        <button class="btn-enterprise btn-enterprise-primary btn-sm px-3 py-1.5 font-bold" style="font-size: 0.75rem;" onclick="window.prefillWeekendForm('${proj.id}', '${leadResource.name}')">
+        <button class="btn-enterprise btn-enterprise-primary btn-sm px-3 py-1.5 font-bold" style="font-size: 0.75rem;" onclick="window.prefillWeekendForm('${proj.id}', '${escapeHtml(leadResource.name)}')">
           <i class="fa-solid fa-bolt me-1"></i> Pre-fill Push Schedule
         </button>
       `;
@@ -719,11 +720,11 @@ export const WeekendPlannerModule = {
       if (log.status === 'Rejected') badgeClass = 'rejected';
 
       tr.innerHTML = `
-        <td style="padding: 12px 16px;"><span class="font-semibold text-primary">${log.date}</span></td>
-        <td><span class="font-bold text-primary">${log.employee}</span></td>
+        <td style="padding: 12px 16px;"><span class="font-semibold text-primary">${escapeHtml(log.date)}</span></td>
+        <td><span class="font-bold text-primary">${escapeHtml(log.employee)}</span></td>
         <td><span class="text-secondary font-semibold">${log.project}</span></td>
         <td><span class="font-bold text-center d-block" style="width: 50px;">${log.hours} Hrs</span></td>
-        <td style="max-width: 320px;"><span class="text-xs text-secondary d-block" style="word-break: break-word;">${log.task}</span></td>
+        <td style="max-width: 320px;"><span class="text-xs text-secondary d-block" style="word-break: break-word;">${escapeHtml(log.task)}</span></td>
         <td style="text-align: right; padding-right: 20px;">
           <select class="form-select select-enterprise d-inline-block w-auto" style="font-size: 0.75rem; padding-top: 2px; padding-bottom: 2px;" onchange="window.updateWeekendApproval('${log.id}', this.value)">
             <option value="Approved" ${log.status === 'Approved' ? 'selected' : ''}>Approved</option>

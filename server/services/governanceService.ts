@@ -36,8 +36,12 @@ export interface GovernanceDashboardSummary {
 }
 
 export const GovernanceService = {
-  async getDashboardSummary(filter?: { portfolioId?: string; productId?: string }): Promise<GovernanceDashboardSummary> {
-    const [allRisks, allIssues, allDeps, allMilestones, allReleases, allProjects, recentActs] = await Promise.all([
+  /**
+   * Sprint 22A: scope = the caller's accessible project ids (null = every project). Every count,
+   * scorecard and activity is computed from the scoped records only.
+   */
+  async getDashboardSummary(filter?: { portfolioId?: string; productId?: string }, scope: Set<string> | null = null): Promise<GovernanceDashboardSummary> {
+    const [risksAll, issuesAll, depsAll, milestonesAll, releasesAll, projectsAll, recentActsAll] = await Promise.all([
       RiskRepository.findAll(filter),
       IssueRepository.findAll(filter),
       DependencyRepository.findAll(),
@@ -46,6 +50,16 @@ export const GovernanceService = {
       ProjectRepository.findAll(),
       ActivityRepository.findRecent(30),
     ]);
+    const inScope = (projectId?: string) => !scope || (!!projectId && scope.has(projectId));
+    const allRisks = risksAll.filter((r) => inScope(r.projectId));
+    const allIssues = issuesAll.filter((i) => inScope(i.projectId));
+    // Dependencies and releases without a project are org-level and stay visible.
+    const allDeps = depsAll.filter((d) => !d.projectId || inScope(d.projectId));
+    const allMilestones = milestonesAll.filter((m) => inScope(m.projectId));
+    const allReleases = releasesAll.filter((r) => !r.projectId || inScope(r.projectId));
+    const allProjects = projectsAll.filter((p) => inScope(p.id));
+    const visibleIds = new Set<string>([...allRisks, ...allIssues, ...allDeps, ...allMilestones, ...allReleases].map((x) => x.id));
+    const recentActs = scope ? recentActsAll.filter((a) => visibleIds.has(a.entityId)) : recentActsAll;
 
     // Calculate KPIs
     const criticalRisksCount = allRisks.filter((r) => r.severity === 'Critical' && r.status !== 'Closed').length;
@@ -73,7 +87,7 @@ export const GovernanceService = {
       (r) => r.status !== 'Released' && (r.health === 'At Risk' || r.health === 'Off Track')
     ).length;
 
-    const heatmap = await RiskService.getHeatmap(filter);
+    const heatmap = await RiskService.getHeatmap(filter, scope);
 
     // Project-by-project governance scorecard
     const projectScorecards = allProjects.map((p) => {

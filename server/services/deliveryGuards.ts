@@ -8,7 +8,7 @@ import { StoryRepository } from '../repositories/storyRepository';
 import { TaskRepository } from '../repositories/taskRepository';
 import { applyJiraReference } from './jiraReference';
 import { normaliseCriteria, normaliseUserStory, readUserStory } from './storyDetails';
-import { forbidden, httpError, validationError } from './followThroughSupport';
+import { forbidden, httpError, requireProjectUser, validationError } from './followThroughSupport';
 
 /**
  * Sprint 16 — server-side guards for project and delivery writes.
@@ -118,6 +118,14 @@ async function activeUser(value: unknown, field: string): Promise<string | undef
   return user.id;
 }
 
+/** An assignee: an active user who is part of the project (manager, member, or already working in it). '' / null clears. */
+async function projectAssignee(value: unknown, projectId: string): Promise<string | undefined> {
+  if (blank(value)) return undefined;
+  const project = await ProjectRepository.findById(projectId);
+  if (!project) throw notFound('Project not found.');
+  return (await requireProjectUser(value, project, 'assigneeId')).id;
+}
+
 async function team(value: unknown): Promise<string | undefined> {
   if (blank(value)) return undefined;
   if (typeof value !== 'string' || !(await TeamRepository.findById(value))) throw validationError("Field 'teamId' does not match a team.");
@@ -154,7 +162,9 @@ async function validateFields(kind: DeliveryKind, fields: Record<string, any>, p
       case 'status': out[field] = oneOf(value, DELIVERY_STATUSES, 'status'); break;
       case 'priority': out[field] = oneOf(value, DELIVERY_PRIORITIES, 'priority'); break;
       case 'health': out[field] = oneOf(value, DELIVERY_HEALTH, 'health'); break;
-      case 'ownerId': case 'assigneeId': case 'reporterId': out[field] = await activeUser(value, field); break;
+      case 'ownerId': case 'reporterId': out[field] = await activeUser(value, field); break;
+      // Sprint 22A: an assignee must belong to the project (an assignment grants read access to it).
+      case 'assigneeId': out[field] = await projectAssignee(value, projectId); break;
       case 'teamId': out[field] = await team(value); break;
       case 'startDate': case 'targetDate': case 'dueDate': case 'completionDate': out[field] = date(value, field); break;
       case 'storyPoints': out[field] = number(value, field, 0, 1000, true); break;

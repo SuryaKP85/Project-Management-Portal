@@ -46,7 +46,8 @@ export const ExecutiveController = {
 
       const overview = await ExecutiveDashboardService.getOverview(
         { portfolioId: portfolioId.value, productId: productId.value },
-        { role: req.user.role }
+        // Sprint 22A: the caller's id scopes the overview to their accessible projects.
+        { role: req.user.role, userId: req.user.userId }
       );
       res.json({ success: true, data: overview });
     } catch (err) {

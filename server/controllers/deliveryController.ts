@@ -1,5 +1,20 @@
 import { Request, Response, NextFunction } from 'express';
 import { DeliveryService } from '../services/deliveryService';
+import { TaskRepository } from '../repositories/taskRepository';
+import { ProjectScope, scopeActor } from '../services/projectScope';
+
+/** Sprint 22A: a delivery record the caller cannot see is reported exactly like a missing one. */
+async function visible<T extends { projectId?: string }>(req: Request, record: T | null): Promise<T | null> {
+  return record && (await ProjectScope.canRead(scopeActor(req), record.projectId)) ? record : null;
+}
+
+/** Subtasks have no project of their own: they belong to their task's project. */
+async function scopedSubtasks<T extends { taskId: string }>(req: Request, subtasks: T[]): Promise<T[]> {
+  const actor = scopeActor(req);
+  if (actor.role === 'admin' || subtasks.length === 0) return subtasks;
+  const taskProject = new Map((await TaskRepository.findAll()).map((t) => [t.id, t.projectId]));
+  return ProjectScope.filter(actor, subtasks, (st) => taskProject.get(st.taskId));
+}
 
 function getActor(req: Request) {
   if (!req.user) return null;
@@ -19,7 +34,7 @@ export const DeliveryController = {
   // ================= EPICS =================
   async listEpics(req: Request, res: Response, next: NextFunction) {
     try {
-      const epics = await DeliveryService.getAllEpics(req.query);
+      const epics = await ProjectScope.filter(scopeActor(req), await DeliveryService.getAllEpics(req.query), (x) => x.projectId);
       res.json({ success: true, data: { epics } });
     } catch (err) {
       next(err);
@@ -28,7 +43,7 @@ export const DeliveryController = {
 
   async getEpic(req: Request, res: Response, next: NextFunction) {
     try {
-      const epic = await DeliveryService.getEpicById(req.params.id);
+      const epic = await visible(req, await DeliveryService.getEpicById(req.params.id));
       if (!epic) {
         return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Epic not found' } });
       }
@@ -86,7 +101,7 @@ export const DeliveryController = {
   // ================= FEATURES =================
   async listFeatures(req: Request, res: Response, next: NextFunction) {
     try {
-      const features = await DeliveryService.getAllFeatures(req.query);
+      const features = await ProjectScope.filter(scopeActor(req), await DeliveryService.getAllFeatures(req.query), (x) => x.projectId);
       res.json({ success: true, data: { features } });
     } catch (err) {
       next(err);
@@ -95,7 +110,7 @@ export const DeliveryController = {
 
   async getFeature(req: Request, res: Response, next: NextFunction) {
     try {
-      const feature = await DeliveryService.getFeatureById(req.params.id);
+      const feature = await visible(req, await DeliveryService.getFeatureById(req.params.id));
       if (!feature) {
         return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Feature not found' } });
       }
@@ -153,7 +168,7 @@ export const DeliveryController = {
   // ================= STORIES =================
   async listStories(req: Request, res: Response, next: NextFunction) {
     try {
-      const stories = await DeliveryService.getAllStories(req.query);
+      const stories = await ProjectScope.filter(scopeActor(req), await DeliveryService.getAllStories(req.query), (x) => x.projectId);
       res.json({ success: true, data: { stories } });
     } catch (err) {
       next(err);
@@ -162,7 +177,7 @@ export const DeliveryController = {
 
   async getStory(req: Request, res: Response, next: NextFunction) {
     try {
-      const story = await DeliveryService.getStoryById(req.params.id);
+      const story = await visible(req, await DeliveryService.getStoryById(req.params.id));
       if (!story) {
         return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Story not found' } });
       }
@@ -220,7 +235,7 @@ export const DeliveryController = {
   // ================= TASKS =================
   async listTasks(req: Request, res: Response, next: NextFunction) {
     try {
-      const tasks = await DeliveryService.getAllTasks(req.query);
+      const tasks = await ProjectScope.filter(scopeActor(req), await DeliveryService.getAllTasks(req.query), (x) => x.projectId);
       res.json({ success: true, data: { tasks } });
     } catch (err) {
       next(err);
@@ -229,7 +244,7 @@ export const DeliveryController = {
 
   async getTask(req: Request, res: Response, next: NextFunction) {
     try {
-      const task = await DeliveryService.getTaskById(req.params.id);
+      const task = await visible(req, await DeliveryService.getTaskById(req.params.id));
       if (!task) {
         return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Task not found' } });
       }
@@ -287,7 +302,7 @@ export const DeliveryController = {
   // ================= SUBTASKS =================
   async listSubtasks(req: Request, res: Response, next: NextFunction) {
     try {
-      const subtasks = await DeliveryService.getAllSubtasks(req.query);
+      const subtasks = await scopedSubtasks(req, await DeliveryService.getAllSubtasks(req.query));
       res.json({ success: true, data: { subtasks } });
     } catch (err) {
       next(err);
@@ -296,7 +311,7 @@ export const DeliveryController = {
 
   async getSubtask(req: Request, res: Response, next: NextFunction) {
     try {
-      const subtask = await DeliveryService.getSubtaskById(req.params.id);
+      const subtask = (await scopedSubtasks(req, [await DeliveryService.getSubtaskById(req.params.id)].filter(Boolean) as any[]))[0] || null;
       if (!subtask) {
         return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Subtask not found' } });
       }
@@ -355,7 +370,7 @@ export const DeliveryController = {
   async getTrace(req: Request, res: Response, next: NextFunction) {
     try {
       const { entityType, id } = req.params;
-      const chain = await DeliveryService.getTrace(entityType, id);
+      const chain = await ProjectScope.scopeTrace(scopeActor(req), await DeliveryService.getTrace(entityType, id));
       if (!chain) {
         return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Traceability node not found' } });
       }
@@ -367,7 +382,7 @@ export const DeliveryController = {
 
   async getSummary(req: Request, res: Response, next: NextFunction) {
     try {
-      const summary = await DeliveryService.getDeliverySummary();
+      const summary = await DeliveryService.getDeliverySummary(await ProjectScope.ids(scopeActor(req)));
       res.json({ success: true, data: { summary } });
     } catch (err) {
       next(err);

@@ -2,6 +2,7 @@
 
 import { Storage } from './storage.js';
 import { AIEngine } from './aiEngine.js';
+import { escapeHtml } from './safeHtml.js';
 
 export const AIRecommendationsModule = {
   /**
@@ -211,15 +212,15 @@ export const AIRecommendationsModule = {
             </span>
           </div>
 
-          <h6 class="font-bold text-xs mb-1" style="color: var(--text-primary);">${rec.title}</h6>
-          <p class="text-xs text-secondary mb-2" style="line-height: 1.45;">${rec.description}</p>
+          <h6 class="font-bold text-xs mb-1" style="color: var(--text-primary);">${escapeHtml(rec.title)}</h6>
+          <p class="text-xs text-secondary mb-2" style="line-height: 1.45;">${escapeHtml(rec.description)}</p>
 
           <div class="d-flex flex-wrap justify-content-between align-items-center pt-2 border-top border-dashed gap-2">
             <span class="text-xxs text-success font-medium">
               <i class="fa-solid fa-bolt me-1"></i> ${rec.impactLabel}
             </span>
             <button class="btn btn-sm btn-primary py-1 px-2.5 text-xxs font-semibold rec-action-btn" data-rec-id="${rec.id}">
-              ${rec.actionLabel}
+              ${escapeHtml(rec.actionLabel)}
             </button>
           </div>
         </div>

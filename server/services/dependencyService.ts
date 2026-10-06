@@ -145,7 +145,13 @@ export const VALID_CRITICALITIES: DependencyCriticality[] = [
   'Critical',
 ];
 
-async function resolveEntity(
+/** Sprint 22A: a dependency is in scope when it has no project (org-level) or its project is accessible. */
+function inDependencyScope(d: Dependency, scope: Set<string> | null): boolean {
+  return !scope || !d.projectId || scope.has(d.projectId);
+}
+
+/** Sprint 22A: also the shared entity -> project resolver (server/services/projectScope.ts). */
+export async function resolveEntity(
   type: string,
   id: string,
   fallbackName?: string,
@@ -415,8 +421,10 @@ export const DependencyService = {
     return this.getAllDependencies(filter);
   },
 
-  async getDependencyChain(entityId: string): Promise<DependencyChainResult> {
-    const { blockingThisItem, thisItemBlocks } = await DependencyRepository.getDependencyChain(entityId);
+  async getDependencyChain(entityId: string, scope: Set<string> | null = null): Promise<DependencyChainResult> {
+    const chain = await DependencyRepository.getDependencyChain(entityId);
+    const blockingThisItem = chain.blockingThisItem.filter((d) => inDependencyScope(d, scope));
+    const thisItemBlocks = chain.thisItemBlocks.filter((d) => inDependencyScope(d, scope));
 
     // Canonical chain shape consumed by the Governance UI and the Sprint 5C
     // suite. The legacy blockingThisItem/thisItemBlocks keys are retained so
@@ -765,7 +773,7 @@ export const DependencyService = {
     return deleted;
   },
 
-  async getGraph(filter?: { search?: string; projectId?: string }): Promise<{
+  async getGraph(filter?: { search?: string; projectId?: string }, scope: Set<string> | null = null): Promise<{
     nodes: DependencyGraphNode[];
     edges: DependencyGraphEdge[];
     summary: DependencyGraphSummary;
@@ -773,10 +781,11 @@ export const DependencyService = {
     overdueCount: number;
     totalCount: number;
   }> {
-    return this.getDependencyGraph(filter);
+    return this.getDependencyGraph(filter, scope);
   },
 
-  async getDependencyGraph(filter?: { search?: string; projectId?: string }): Promise<{
+  /** Sprint 22A: scope = the caller's accessible project ids (null = every project); project-less dependencies stay visible. */
+  async getDependencyGraph(filter?: { search?: string; projectId?: string }, scope: Set<string> | null = null): Promise<{
     nodes: DependencyGraphNode[];
     edges: DependencyGraphEdge[];
     summary: DependencyGraphSummary;
@@ -784,7 +793,7 @@ export const DependencyService = {
     overdueCount: number;
     totalCount: number;
   }> {
-    const deps = await DependencyRepository.findAll(filter);
+    const deps = (await DependencyRepository.findAll(filter)).filter((d) => inDependencyScope(d, scope));
     const nodeMap = new Map<string, DependencyGraphNode>();
     const edges: DependencyGraphEdge[] = [];
 
@@ -847,7 +856,7 @@ export const DependencyService = {
     };
   },
 
-  async getKPIs(projectId?: string): Promise<{
+  async getKPIs(projectId?: string, scope: Set<string> | null = null): Promise<{
     total: number;
     critical: number;
     criticalCount: number;
@@ -858,7 +867,7 @@ export const DependencyService = {
     byStatus: Record<DependencyStatus, number>;
     byCriticality: Record<DependencyCriticality, number>;
   }> {
-    const all = await DependencyRepository.findAll(projectId ? { projectId } : undefined);
+    const all = (await DependencyRepository.findAll(projectId ? { projectId } : undefined)).filter((d) => inDependencyScope(d, scope));
     const critical = all.filter((d) => d.criticality === 'Critical' || d.isCritical).length;
     const blocked = all.filter((d) => d.status === 'Blocked' || d.status === 'At Risk').length;
     const inProgress = all.filter((d) => d.status === 'In Progress' || d.status === 'Open').length;

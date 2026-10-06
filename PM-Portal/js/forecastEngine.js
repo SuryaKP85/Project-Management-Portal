@@ -2,6 +2,7 @@
 
 import { Storage } from './storage.js';
 import { Calculations } from './calculations.js';
+import { escapeHtml } from './safeHtml.js';
 
 export const ForecastEngineModule = {
   app: null,
@@ -620,7 +621,7 @@ export const ForecastEngineModule = {
 
         card.innerHTML = `
           <div style="${headerStyle}" class="border-bottom pb-1 mb-1">${step.dateLabel}</div>
-          <div class="text-xs font-semibold text-secondary" style="font-size: 0.7rem; overflow: hidden; text-overflow: ellipsis;" title="${step.reason}">${step.reason}</div>
+          <div class="text-xs font-semibold text-secondary" style="font-size: 0.7rem; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(step.reason)}">${escapeHtml(step.reason)}</div>
           <div class="mt-1 pb-0.5"><span class="badge ${bodyBg} font-bold" style="font-size: 0.65rem;">${badgeText}</span></div>
           <div class="text-muted font-bold mt-1" style="font-size: 0.65rem;">Bal: ${step.rem}h</div>
         `;
@@ -802,11 +803,11 @@ export const ForecastEngineModule = {
       row.innerHTML = `
         <td style="padding: 12px 16px;">
           <span style="color: var(--brand-primary); font-weight: 700;">${p.id}</span>
-          <span class="d-block font-semibold text-secondary" style="font-size: 0.8rem;">${p.name}</span>
+          <span class="d-block font-semibold text-secondary" style="font-size: 0.8rem;">${escapeHtml(p.name)}</span>
         </td>
         <td>
-          <span class="font-semibold d-block" style="color: var(--text-primary);">${p.manager || '-'}</span>
-          <span class="text-muted text-xs d-block">${p.developer || 'No Dev assigned'}</span>
+          <span class="font-semibold d-block" style="color: var(--text-primary);">${escapeHtml(p.manager || '-')}</span>
+          <span class="text-muted text-xs d-block">${escapeHtml(p.developer || 'No Dev assigned')}</span>
         </td>
         <td class="text-center text-secondary">${targetStr}</td>
         <td class="text-center font-semibold text-primary" style="font-size: 0.825rem;">${forecastStr}</td>

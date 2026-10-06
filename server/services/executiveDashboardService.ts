@@ -32,6 +32,7 @@ import { DependencyRepository } from '../repositories/dependencyRepository';
 import { MilestoneRepository } from '../repositories/milestoneRepository';
 import { ReleaseRepository } from '../repositories/releaseRepository';
 import { ActivityRepository } from '../repositories/activityRepository';
+import { ProjectAccessService } from './followThroughSupport';
 import { ProjectHealthResult, HEALTH_MODEL_VERSION } from './projectHealthService';
 import { aggregateHealth, computeHealthFor, projectsInProduct, resolvePortfolioIdOf } from './healthRollupService';
 import { VALID_ROADMAP_STATUSES } from './roadmapService';
@@ -150,7 +151,7 @@ export function summariseProjects(
 export const ExecutiveDashboardService = {
   async getOverview(
     filter: ExecutiveOverviewFilter,
-    actor: { role: UserRole },
+    actor: { role: UserRole; userId?: string },
     options: ExecutiveOverviewOptions = {}
   ): Promise<ExecutiveOverview> {
     const includeCommercials = EXECUTIVE_COMMERCIAL_ROLES.includes(actor.role);
@@ -159,7 +160,7 @@ export const ExecutiveDashboardService = {
     const filtered = !!(filter.portfolioId || filter.productId);
 
     // One bulk pass; nothing below reads a repository per item.
-    const [projects, portfolios, products, goals, roadmapItems, roadmapLinks, risks, issues, dependencies, milestones, releases, activities] =
+    const [allProjects, portfolios, products, goals, roadmapItems, roadmapLinks, risks, issues, dependencies, milestones, releases, activities] =
       await Promise.all([
         ProjectRepository.findAll(),
         PortfolioRepository.findAll(),
@@ -174,6 +175,14 @@ export const ExecutiveDashboardService = {
         ReleaseRepository.findAll(),
         ActivityRepository.findRecent(ACTIVITY_SCAN_LIMIT),
       ]);
+
+    // Sprint 22A: a non-administrator sees only the projects they can access (ProjectAccessService),
+    // and every rollup, attention item, governance count and activity entry derives from those.
+    const accessible = actor.role === 'admin'
+      ? null
+      : new Set(actor.userId ? await ProjectAccessService.accessibleProjectIds({ userId: actor.userId, role: actor.role }) : []);
+    const projects = accessible ? allProjects.filter((p) => accessible.has(p.id)) : allProjects;
+    const restricted = !!accessible;
 
     // Scope resolution: unknown ids are a 404 concern, surfaced as a typed error.
     const portfolio = filter.portfolioId ? portfolios.find((pf) => pf.id === filter.portfolioId) : undefined;
@@ -264,15 +273,15 @@ export const ExecutiveDashboardService = {
       portfolios: portfolioNodes,
       productsWithoutPortfolio,
       insights: summariseInsights(scopedProjects, healthByProjectId),
-      strategy: summariseStrategy(filter, filtered, scopedProjects, scopedProjectIds, goals, roadmapItems, roadmapLinks),
+      strategy: summariseStrategy(filter, filtered, scopedProjects, scopedProjectIds, goals, roadmapItems, roadmapLinks, restricted),
       governance: summariseGovernance(
-        filtered,
+        filtered || restricted,
         scopedProjectIds,
         scopedProjectCodes,
         { risks, issues, dependencies, milestones, releases },
         now
       ),
-      recentActivity: summariseActivity(activities, filtered, {
+      recentActivity: summariseActivity(activities, filtered || restricted, {
         projectIds: scopedProjectIds,
         projectCodes: scopedProjectCodes,
         portfolioIds: new Set(portfolioNodes.map((n) => n.id)),
@@ -369,18 +378,22 @@ function summariseStrategy(
   scopedProjectIds: Set<string>,
   goals: Goal[],
   roadmapItems: RoadmapItem[],
-  roadmapLinks: GovernanceLink[]
+  roadmapLinks: GovernanceLink[],
+  restricted = false
 ): ExecutiveStrategySummary {
   const matchesFilter = (portfolioId?: string, productId?: string) =>
     (!filter.portfolioId || portfolioId === filter.portfolioId) && (!filter.productId || productId === filter.productId);
 
   const scopedGoals = filtered ? goals.filter((g) => matchesFilter(g.portfolioId, g.productId)) : goals;
   // A chartered initiative follows its project; an unchartered one is scoped by its own stored ids.
+  // Sprint 22A: for a restricted caller an initiative chartered to a project they cannot see is left out.
   const scopedItems = filtered
     ? roadmapItems.filter((i) =>
         i.projectId ? scopedProjectIds.has(i.projectId) : matchesFilter(i.portfolioId, i.productId)
       )
-    : roadmapItems;
+    : restricted
+      ? roadmapItems.filter((i) => !i.projectId || scopedProjectIds.has(i.projectId))
+      : roadmapItems;
 
   const goalCounts = zeroRecord(GOAL_STATUSES) as Record<string, number>;
   for (const g of scopedGoals) goalCounts[g.status] = (goalCounts[g.status] ?? 0) + 1;

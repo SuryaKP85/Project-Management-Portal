@@ -759,14 +759,22 @@ export const DeliveryService = {
   // ==========================================
   // DELIVERY METRICS / SUMMARY
   // ==========================================
-  async getDeliverySummary() {
-    const [epics, features, stories, tasks, subtasks] = await Promise.all([
+  /** Sprint 22A: scope = the caller's accessible project ids (null = every project); a subtask counts in its task's project. */
+  async getDeliverySummary(scope: Set<string> | null = null) {
+    const [epicsAll, featuresAll, storiesAll, tasksAll, subtasksAll] = await Promise.all([
       EpicRepository.findAll({}),
       FeatureRepository.findAll({}),
       StoryRepository.findAll({}),
       TaskRepository.findAll({}),
       SubtaskRepository.findAll({}),
     ]);
+    const inScope = (projectId?: string) => !scope || (!!projectId && scope.has(projectId));
+    const taskProject = new Map(tasksAll.map((t) => [t.id, t.projectId]));
+    const epics = epicsAll.filter((e) => inScope(e.projectId));
+    const features = featuresAll.filter((x) => inScope(x.projectId));
+    const stories = storiesAll.filter((x) => inScope(x.projectId));
+    const tasks = tasksAll.filter((x) => inScope(x.projectId));
+    const subtasks = subtasksAll.filter((x) => inScope(taskProject.get(x.taskId)));
 
     const totalWorkItems = epics.length + features.length + stories.length + tasks.length + subtasks.length;
     const completedWorkItems =

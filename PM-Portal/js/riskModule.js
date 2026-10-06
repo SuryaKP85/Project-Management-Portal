@@ -6,6 +6,7 @@
 import { RiskService } from './services/riskService.js';
 import { apiClient } from './services/apiClient.js';
 import { RiskEngineModule } from './riskEngine.js';
+import { escapeHtml } from './safeHtml.js';
 
 export const RiskModule = {
   app: null,
@@ -133,7 +134,7 @@ export const RiskModule = {
               <div class="col-lg-2 col-md-3 col-6">
                 <select id="v2-risk-filter-project" class="form-select form-select-sm">
                   <option value="all">All Projects</option>
-                  ${this.projects.map(p => `<option value="${p.id}">${p.name || p.id}</option>`).join('')}
+                  ${this.projects.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name || p.id)}</option>`).join('')}
                 </select>
               </div>
               <div class="col-lg-2 col-md-3 col-6">
@@ -283,7 +284,7 @@ export const RiskModule = {
                     <label class="form-label font-bold text-xs text-uppercase">Project <span class="text-danger">*</span></label>
                     <select class="form-select" id="form-risk-project" required>
                       <option value="">Select project...</option>
-                      ${this.projects.map(p => `<option value="${p.id}">${p.name || p.id}</option>`).join('')}
+                      ${this.projects.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name || p.id)}</option>`).join('')}
                     </select>
                   </div>
                   <div class="col-md-6">
@@ -353,7 +354,7 @@ export const RiskModule = {
                     <label class="form-label font-bold text-xs text-uppercase">Owner</label>
                     <select class="form-select" id="form-risk-owner">
                       <option value="">Unassigned</option>
-                      ${this.users.map(u => `<option value="${u.id}">${u.firstName || ''} ${u.lastName || ''} (${u.email})</option>`).join('')}
+                      ${this.users.map(u => `<option value="${escapeHtml(u.id)}">${escapeHtml(u.firstName || '')} ${escapeHtml(u.lastName || '')} (${escapeHtml(u.email)})</option>`).join('')}
                     </select>
                   </div>
                   <div class="col-md-6">
@@ -741,11 +742,11 @@ export const RiskModule = {
       return `
         <tr data-id="${r.id}">
           <td>
-            <span class="badge bg-secondary-subtle text-secondary font-monospace">${r.code || 'RSK-?'}</span>
+            <span class="badge bg-secondary-subtle text-secondary font-monospace">${escapeHtml(r.code || 'RSK-?')}</span>
           </td>
           <td>
-            <div class="font-bold text-truncate" style="max-width: 260px;" title="${r.title}">${r.title}</div>
-            ${r.description ? `<div class="text-secondary text-xs text-truncate" style="max-width: 260px;">${r.description}</div>` : ''}
+            <div class="font-bold text-truncate" style="max-width: 260px;" title="${escapeHtml(r.title)}">${escapeHtml(r.title)}</div>
+            ${r.description ? `<div class="text-secondary text-xs text-truncate" style="max-width: 260px;">${escapeHtml(r.description)}</div>` : ''}
           </td>
           <td>
             <span class="text-truncate d-inline-block" style="max-width: 140px;" title="${projName}">
@@ -753,22 +754,22 @@ export const RiskModule = {
             </span>
           </td>
           <td>
-            <span class="badge bg-light text-dark border">${r.category}</span>
+            <span class="badge bg-light text-dark border">${escapeHtml(r.category)}</span>
           </td>
           <td style="text-align: center;">
             <span class="font-semibold">${r.probability} × ${r.impact}</span>
           </td>
           <td style="text-align: center;">
             <span class="badge" style="background-color: ${sev.bg}; color: ${sev.text}; border: 1px solid ${sev.border}; font-size: 0.8rem; padding: 4px 8px;">
-              ${r.riskScore} — ${r.severity}
+              ${r.riskScore} — ${escapeHtml(r.severity)}
             </span>
           </td>
           <td style="text-align: center;">
-            <span class="${statBadge}">${r.status}</span>
+            <span class="${statBadge}">${escapeHtml(r.status)}</span>
           </td>
           <td>
-            <span class="text-truncate d-inline-block" style="max-width: 130px;" title="${ownerName}">
-              <i class="fa-solid fa-user text-secondary me-1"></i> ${ownerName}
+            <span class="text-truncate d-inline-block" style="max-width: 130px;" title="${escapeHtml(ownerName)}">
+              <i class="fa-solid fa-user text-secondary me-1"></i> ${escapeHtml(ownerName)}
             </span>
           </td>
           <td>
@@ -940,7 +941,7 @@ export const RiskModule = {
             </div>
             <div class="col-md-6">
               <div class="text-xs text-secondary font-bold text-uppercase">Category</div>
-              <div class="badge bg-light text-dark border mt-1">${risk.category}</div>
+              <div class="badge bg-light text-dark border mt-1">${escapeHtml(risk.category)}</div>
             </div>
 
             <!-- Score & Severity Card -->
@@ -956,31 +957,31 @@ export const RiskModule = {
                   <div class="text-xs text-secondary font-bold text-uppercase mb-1">Severity Band</div>
                   <span class="badge" style="font-size: 0.95rem; padding: 6px 12px; background-color: ${
                     risk.severity === 'Critical' ? '#ef4444' : risk.severity === 'High' ? '#ea580c' : risk.severity === 'Medium' ? '#d97706' : '#059669'
-                  }">${risk.severity}</span>
+                  }">${escapeHtml(risk.severity)}</span>
                 </div>
               </div>
             </div>
 
             <div class="col-md-6">
               <div class="text-xs text-secondary font-bold text-uppercase">Status</div>
-              <div class="badge bg-primary mt-1">${risk.status}</div>
+              <div class="badge bg-primary mt-1">${escapeHtml(risk.status)}</div>
             </div>
             <div class="col-md-6">
               <div class="text-xs text-secondary font-bold text-uppercase">Owner</div>
-              <div class="mt-1">${ownerName}</div>
+              <div class="mt-1">${escapeHtml(ownerName)}</div>
             </div>
 
             ${risk.description ? `
               <div class="col-12">
                 <div class="text-xs text-secondary font-bold text-uppercase">Description</div>
-                <div class="p-2 rounded mt-1 text-sm" style="background-color: var(--bg-light);">${risk.description}</div>
+                <div class="p-2 rounded mt-1 text-sm" style="background-color: var(--bg-light);">${escapeHtml(risk.description)}</div>
               </div>
             ` : ''}
 
             ${risk.mitigationPlan ? `
               <div class="col-12">
                 <div class="text-xs text-secondary font-bold text-uppercase">Mitigation Plan</div>
-                <div class="p-2 rounded mt-1 text-sm text-success font-monospace" style="background-color: var(--bg-light);">${risk.mitigationPlan}</div>
+                <div class="p-2 rounded mt-1 text-sm text-success font-monospace" style="background-color: var(--bg-light);">${escapeHtml(risk.mitigationPlan)}</div>
               </div>
             ` : ''}
 

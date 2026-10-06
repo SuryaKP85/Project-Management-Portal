@@ -3,6 +3,7 @@
 import { Storage } from './storage.js';
 import { Filters } from './filters.js';
 import { Calculations } from './calculations.js';
+import { escapeHtml } from './safeHtml.js';
 
 export const CustomersModule = {
   app: null,
@@ -90,13 +91,13 @@ export const CustomersModule = {
       tr.innerHTML = `
         <td><div class="table-project-title font-mono font-bold">${c.id}</div></td>
         <td>
-          <div class="font-bold text-primary-custom" style="color: var(--brand-primary); font-size: 1rem;">${c.name}</div>
+          <div class="font-bold text-primary-custom" style="color: var(--brand-primary); font-size: 1rem;">${escapeHtml(c.name)}</div>
           <small class="text-muted d-block">${c.projects} active enterprise projects</small>
         </td>
-        <td><span class="text-secondary-custom font-semibold">${c.industry || 'General'}</span></td>
+        <td><span class="text-secondary-custom font-semibold">${escapeHtml(c.industry || 'General')}</span></td>
         <td>
-          <div class="font-semibold text-secondary-custom">${c.contact || 'N/A'}</div>
-          <small class="text-muted d-block" style="font-size: 0.75rem;">${c.email || 'No email registered'}</small>
+          <div class="font-semibold text-secondary-custom">${escapeHtml(c.contact || 'N/A')}</div>
+          <small class="text-muted d-block" style="font-size: 0.75rem;">${escapeHtml(c.email || 'No email registered')}</small>
         </td>
         <td><span class="status-badge rounded-pill px-3 py-1 font-bold ${statusClass}">${statusLabel}</span></td>
         <td class="text-center" style="padding: 12px 16px;">
@@ -488,8 +489,8 @@ export const CustomersModule = {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><span class="font-mono font-bold text-muted">${p.id}</span></td>
-        <td><div class="font-bold text-secondary-custom">${p.name}</div></td>
-        <td><div class="font-semibold text-muted">${p.manager}</div></td>
+        <td><div class="font-bold text-secondary-custom">${escapeHtml(p.name)}</div></td>
+        <td><div class="font-semibold text-muted">${escapeHtml(p.manager)}</div></td>
         <td>${riskBadge}</td>
         <td>
           <div class="d-flex align-items-center gap-2" style="min-width: 110px;">
@@ -513,7 +514,7 @@ export const CustomersModule = {
 
       ganttRow.innerHTML = `
         <div class="d-flex justify-content-between align-items-center mb-2">
-          <span class="font-bold text-secondary-custom" style="font-size: 0.9rem;">${p.name}</span>
+          <span class="font-bold text-secondary-custom" style="font-size: 0.9rem;">${escapeHtml(p.name)}</span>
           <span class="font-mono text-muted" style="font-size: 0.75rem;">${pStart} to ${pEnd}</span>
         </div>
         <div class="progress" style="height: 18px; border-radius: 9px; background-color: var(--border-color); overflow: hidden;">
@@ -569,7 +570,7 @@ export const CustomersModule = {
       }
 
       riskTr.innerHTML = `
-        <td><div class="font-bold text-secondary-custom">${p.name}</div></td>
+        <td><div class="font-bold text-secondary-custom">${escapeHtml(p.name)}</div></td>
         <td>${scoreBadge}</td>
         <td><small class="text-muted font-semibold d-block" style="line-height:1.3;">${strategy}</small></td>
       `;
@@ -600,10 +601,10 @@ export const CustomersModule = {
 
       tr.innerHTML = `
         <td><span class="font-mono font-bold text-muted">${t.id}</span></td>
-        <td><span class="font-semibold text-secondary-custom" style="font-size:0.8rem;">${typeIcon} ${t.type}</span></td>
+        <td><span class="font-semibold text-secondary-custom" style="font-size:0.8rem;">${typeIcon} ${escapeHtml(t.type)}</span></td>
         <td><div class="text-secondary-custom font-semibold">${t.desc}</div></td>
-        <td><span class="${sevClass}" style="font-size:0.7rem;">${t.severity}</span></td>
-        <td><div class="text-muted font-semibold">${t.owner}</div></td>
+        <td><span class="${sevClass}" style="font-size:0.7rem;">${escapeHtml(t.severity)}</span></td>
+        <td><div class="text-muted font-semibold">${escapeHtml(t.owner)}</div></td>
       `;
       ticketBody.appendChild(tr);
     });
@@ -637,7 +638,7 @@ export const CustomersModule = {
       div.className = 'border rounded-3 p-3 mb-3';
       div.style.backgroundColor = 'var(--bg-card)';
       
-      let milestonesHtml = `<h6 class="font-bold text-secondary-custom mb-3" style="font-size: 0.9rem;"><i class="fa-regular fa-folder text-primary me-2"></i>${p.name}</h6>`;
+      let milestonesHtml = `<h6 class="font-bold text-secondary-custom mb-3" style="font-size: 0.9rem;"><i class="fa-regular fa-folder text-primary me-2"></i>${escapeHtml(p.name)}</h6>`;
       milestonesHtml += `<div class="d-flex flex-column gap-2">`;
       
       prjMilestones.forEach(m => {
@@ -654,9 +655,9 @@ export const CustomersModule = {
           <div class="d-flex align-items-center justify-content-between p-2 rounded border border-dashed bg-light-custom" style="font-size:0.8rem;">
             <div class="d-flex align-items-center gap-2">
               ${icon}
-              <span class="${strike}">${m.name}</span>
+              <span class="${strike}">${escapeHtml(m.name)}</span>
             </div>
-            <span class="badge ${badgeClass}" style="font-size:0.65rem;">${m.status}</span>
+            <span class="badge ${badgeClass}" style="font-size:0.65rem;">${escapeHtml(m.status)}</span>
           </div>
         `;
       });
@@ -676,8 +677,8 @@ export const CustomersModule = {
       team.forEach(t => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-          <td><span class="font-bold text-secondary-custom">${t.name}</span></td>
-          <td><span class="text-secondary-custom font-semibold">${t.role}</span></td>
+          <td><span class="font-bold text-secondary-custom">${escapeHtml(t.name)}</span></td>
+          <td><span class="text-secondary-custom font-semibold">${escapeHtml(t.role)}</span></td>
           <td>
             <div class="d-flex align-items-center gap-2">
               <span class="table-progress-bar" style="width: 80px;">
@@ -879,11 +880,11 @@ export const CustomersModule = {
       projectsRowsHtml += `
         <tr>
           <td><strong style="color:var(--brand-primary);">${p.id}</strong></td>
-          <td><strong>${p.name}</strong></td>
-          <td>${p.manager}</td>
+          <td><strong>${escapeHtml(p.name)}</strong></td>
+          <td>${escapeHtml(p.manager)}</td>
           <td>${p.risk}</td>
           <td><strong>${p.progress}%</strong></td>
-          <td><span style="text-transform: capitalize; font-weight: bold; color: var(--brand-success);">${p.status}</span></td>
+          <td><span style="text-transform: capitalize; font-weight: bold; color: var(--brand-success);">${escapeHtml(p.status)}</span></td>
         </tr>
       `;
 
@@ -891,7 +892,7 @@ export const CustomersModule = {
       let strategy = p.risk === 'Low' ? 'Bi-weekly reviews.' : (p.risk === 'Medium' ? 'Prune product backlog.' : 'Tiger team escalation.');
       riskSummaryHtml += `
         <tr>
-          <td><strong>${p.name}</strong></td>
+          <td><strong>${escapeHtml(p.name)}</strong></td>
           <td><strong>${p.risk} Risk</strong></td>
           <td>${strategy}</td>
         </tr>
@@ -902,7 +903,7 @@ export const CustomersModule = {
       const completedCount = milestones.filter(m => m.isCompleted).length;
       milestonesSummaryHtml += `
         <tr>
-          <td><strong>${p.name}</strong></td>
+          <td><strong>${escapeHtml(p.name)}</strong></td>
           <td>${completedCount} / 6 Milestones Passed</td>
           <td>${Math.round((completedCount/6)*100)}% roadmap progress</td>
         </tr>
@@ -911,19 +912,19 @@ export const CustomersModule = {
       // Build resources
       resourcesSummaryHtml += `
         <tr>
-          <td>${p.manager}</td>
+          <td>${escapeHtml(p.manager)}</td>
           <td>Project Manager</td>
           <td>30% Allocation</td>
           <td>${p.id}</td>
         </tr>
         <tr>
-          <td>${p.developer}</td>
+          <td>${escapeHtml(p.developer)}</td>
           <td>Lead Developer</td>
           <td>100% Allocation</td>
           <td>${p.id}</td>
         </tr>
         <tr>
-          <td>${p.qa}</td>
+          <td>${escapeHtml(p.qa)}</td>
           <td>QA Analyst</td>
           <td>50% Allocation</td>
           <td>${p.id}</td>
@@ -951,15 +952,15 @@ export const CustomersModule = {
           <div class="row g-3 mb-4" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 0;">
             <div class="col-md-3">
               <span style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: bold;">Client Account</span>
-              <strong style="display: block; font-size: 1rem; color: #0f172a; margin-top: 2px;">${customer.name}</strong>
+              <strong style="display: block; font-size: 1rem; color: #0f172a; margin-top: 2px;">${escapeHtml(customer.name)}</strong>
             </div>
             <div class="col-md-3">
               <span style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: bold;">Sector Industry</span>
-              <strong style="display: block; font-size: 1rem; color: #0f172a; margin-top: 2px;">${customer.industry}</strong>
+              <strong style="display: block; font-size: 1rem; color: #0f172a; margin-top: 2px;">${escapeHtml(customer.industry)}</strong>
             </div>
             <div class="col-md-3">
               <span style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: bold;">Executive Lead</span>
-              <strong style="display: block; font-size: 1rem; color: #0f172a; margin-top: 2px;">${customer.contact}</strong>
+              <strong style="display: block; font-size: 1rem; color: #0f172a; margin-top: 2px;">${escapeHtml(customer.contact)}</strong>
             </div>
             <div class="col-md-3">
               <span style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; font-weight: bold;">Contract Registry</span>
@@ -1067,7 +1068,7 @@ export const CustomersModule = {
 
           <!-- Footer/SLA -->
           <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; font-size: 0.75rem; color: #64748b; line-height: 1.4; text-align: center;">
-            <strong>Confidentiality Notice & SLA Guarantee:</strong> This performance document is compiled automatically for <strong>${customer.name}</strong> under non-disclosure security profiles. All estimated and accrued effort indexes are verified with staff timesheets. Premium SLA delivery guarantees active backup failovers 24/7/365.
+            <strong>Confidentiality Notice & SLA Guarantee:</strong> This performance document is compiled automatically for <strong>${escapeHtml(customer.name)}</strong> under non-disclosure security profiles. All estimated and accrued effort indexes are verified with staff timesheets. Premium SLA delivery guarantees active backup failovers 24/7/365.
           </div>
 
         </div>
@@ -1343,7 +1344,7 @@ export const CustomersModule = {
       warningNotice = `
         <div class="p-2.5 rounded bg-warning-subtle border border-warning text-warning-emphasis mb-3">
           <div class="font-bold mb-1"><i class="fa-solid fa-triangle-exclamation me-1"></i> Linked Projects Warning</div>
-          <div style="font-size: 0.825rem;">Customer '<strong>${target.name}</strong>' is currently assigned to <strong>${linkedProjects.length} active enterprise project(s)</strong> (${linkedProjects.map(p => p.id).join(', ')}).</div>
+          <div style="font-size: 0.825rem;">Customer '<strong>${escapeHtml(target.name)}</strong>' is currently assigned to <strong>${linkedProjects.length} active enterprise project(s)</strong> (${linkedProjects.map(p => p.id).join(', ')}).</div>
         </div>
       `;
     }
@@ -1351,7 +1352,7 @@ export const CustomersModule = {
     const bodyHtml = `
       <div class="p-2">
         ${warningNotice}
-        <p class="mb-1 text-danger font-semibold">Are you sure you want to delete customer <strong>${target.name}</strong> (${target.id})?</p>
+        <p class="mb-1 text-danger font-semibold">Are you sure you want to delete customer <strong>${escapeHtml(target.name)}</strong> (${target.id})?</p>
         <p class="text-secondary text-xs mb-0">This action cannot be undone.</p>
       </div>
     `;

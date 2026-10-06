@@ -8,6 +8,8 @@ import { BurndownService } from '../services/burndownService';
 import { ActivityRepository } from '../repositories/activityRepository';
 import { NotificationService } from '../services/notificationService';
 import crypto from 'crypto';
+import { ProjectScope, scopeActor } from '../services/projectScope';
+import { notAvailable } from '../services/followThroughSupport';
 
 function getActor(req: Request) {
   if (!req.user) return { id: 'usr_admin_1', name: 'Admin User' };
@@ -17,29 +19,61 @@ function getActor(req: Request) {
   };
 }
 
+/** Sprint 22A: access errors keep their status (404 / 403); other errors keep this handler's fallback. */
+function failWith(res: Response, err: any, fallback: number) {
+  const status = Number(err?.status) >= 400 && Number(err?.status) < 500 ? Number(err.status) : fallback;
+  return res.status(status).json({ success: false, message: err?.message, ...(err?.code ? { error: { code: err.code, message: err.message } } : {}) });
+}
+
+/** The sprint when the caller can see its project; otherwise null (a 404 that reveals nothing). */
+async function visibleSprint(req: Request, id: string) {
+  const sprint = await SprintRepository.findById(id);
+  return sprint && (await ProjectScope.canRead(scopeActor(req), sprint.projectId)) ? sprint : null;
+}
+
+/** The sprint when the caller can change its project: 404 when not visible, 403 when read-only. */
+async function writableSprint(req: Request, id: string) {
+  const sprint = await visibleSprint(req, id);
+  if (!sprint) throw notAvailable('Sprint');
+  await ProjectScope.assertWrite(scopeActor(req), sprint.projectId, 'Sprint');
+  return sprint;
+}
+
+/** A story or task to move in or out of a sprint: visible, and in the sprint's own project. */
+async function sprintProjectItem(req: Request, sprintProjectId: string, itemType: unknown, itemId: string) {
+  const item: any = itemType === 'task' ? await TaskRepository.findById(itemId) : await StoryRepository.findById(itemId);
+  if (!item || !(await ProjectScope.canRead(scopeActor(req), item.projectId))) {
+    throw notAvailable(itemType === 'task' ? 'Task' : 'Story');
+  }
+  if (item.projectId !== sprintProjectId) {
+    throw Object.assign(new Error('Only work from the sprint\'s own project can be planned into it.'), { status: 400, code: 'VALIDATION_ERROR' });
+  }
+  return item;
+}
+
 export const SprintController = {
   async listSprints(req: Request, res: Response) {
     try {
       const { projectId, status } = req.query;
-      const sprints = await SprintRepository.findAll({
+      const sprints = await ProjectScope.filter(scopeActor(req), await SprintRepository.findAll({
         projectId: projectId ? String(projectId) : undefined,
         status: status ? String(status) : undefined,
-      });
+      }), (sp) => sp.projectId);
       return res.json({ success: true, data: sprints });
     } catch (err: any) {
-      return res.status(500).json({ success: false, message: err.message });
+      return failWith(res, err, 500);
     }
   },
 
   async getSprint(req: Request, res: Response) {
     try {
-      const sprint = await SprintRepository.findById(req.params.id);
+      const sprint = await visibleSprint(req, req.params.id);
       if (!sprint) {
         return res.status(404).json({ success: false, message: 'Sprint not found' });
       }
       return res.json({ success: true, data: sprint });
     } catch (err: any) {
-      return res.status(500).json({ success: false, message: err.message });
+      return failWith(res, err, 500);
     }
   },
 
@@ -49,6 +83,7 @@ export const SprintController = {
       if (!name || !projectId || !startDate || !endDate) {
         return res.status(400).json({ success: false, message: 'Name, projectId, startDate, and endDate are required' });
       }
+      await ProjectScope.assertWrite(scopeActor(req), String(projectId), 'Project');
 
       const sprint = await SprintRepository.create({
         name,
@@ -77,13 +112,18 @@ export const SprintController = {
 
       return res.status(201).json({ success: true, data: sprint });
     } catch (err: any) {
-      return res.status(400).json({ success: false, message: err.message });
+      return failWith(res, err, 400);
     }
   },
 
   async updateSprint(req: Request, res: Response) {
     try {
-      const sprint = await SprintRepository.update(req.params.id, req.body);
+      const current = await writableSprint(req, req.params.id);
+      const { id: _id, projectId: movedTo, ...updates } = req.body || {};
+      if (movedTo !== undefined && movedTo !== current.projectId) {
+        return res.status(400).json({ success: false, message: 'A sprint cannot be moved to another project.' });
+      }
+      const sprint = await SprintRepository.update(req.params.id, updates);
       if (!sprint) {
         return res.status(404).json({ success: false, message: 'Sprint not found' });
       }
@@ -96,19 +136,19 @@ export const SprintController = {
         action: 'update',
         actorId: actor.id,
         actorName: actor.name,
-        details: { sprintName: sprint.name, updates: req.body },
+        details: { sprintName: sprint.name, updates },
         createdAt: new Date().toISOString(),
       });
 
       return res.json({ success: true, data: sprint });
     } catch (err: any) {
-      return res.status(400).json({ success: false, message: err.message });
+      return failWith(res, err, 400);
     }
   },
 
   async startSprint(req: Request, res: Response) {
     try {
-      const sprint = await SprintRepository.findById(req.params.id);
+      const sprint = await writableSprint(req, req.params.id);
       if (!sprint) {
         return res.status(404).json({ success: false, message: 'Sprint not found' });
       }
@@ -148,19 +188,26 @@ export const SprintController = {
 
       return res.json({ success: true, data: updated, message: `Sprint "${sprint.name}" started successfully.` });
     } catch (err: any) {
-      return res.status(500).json({ success: false, message: err.message });
+      return failWith(res, err, 500);
     }
   },
 
   async completeSprint(req: Request, res: Response) {
     try {
-      const sprint = await SprintRepository.findById(req.params.id);
+      const sprint = await writableSprint(req, req.params.id);
       if (!sprint) {
         return res.status(404).json({ success: false, message: 'Sprint not found' });
       }
 
       const { carryoverAction = 'carryover', targetSprintId } = req.body;
       // carryoverAction: 'carryover' (to targetSprint or create new), 'backlog', 'cancelled'
+      // Sprint 22A: carried-over work stays in the sprint's project (checked before anything is recorded).
+      if (carryoverAction !== 'backlog' && carryoverAction !== 'cancelled' && targetSprintId) {
+        const target = await SprintRepository.findById(String(targetSprintId));
+        if (!target || target.projectId !== sprint.projectId || !(await ProjectScope.canRead(scopeActor(req), target.projectId))) {
+          return res.status(400).json({ success: false, message: 'The target sprint must be a sprint of the same project.' });
+        }
+      }
 
       // Get all stories and tasks in sprint
       const allStories = await StoryRepository.findAll({ sprintId: sprint.id });
@@ -279,13 +326,13 @@ export const SprintController = {
         message: `Sprint "${sprint.name}" completed successfully.`,
       });
     } catch (err: any) {
-      return res.status(500).json({ success: false, message: err.message });
+      return failWith(res, err, 500);
     }
   },
 
   async getSprintItems(req: Request, res: Response) {
     try {
-      const sprint = await SprintRepository.findById(req.params.id);
+      const sprint = await visibleSprint(req, req.params.id);
       if (!sprint) {
         return res.status(404).json({ success: false, message: 'Sprint not found' });
       }
@@ -308,13 +355,13 @@ export const SprintController = {
         },
       });
     } catch (err: any) {
-      return res.status(500).json({ success: false, message: err.message });
+      return failWith(res, err, 500);
     }
   },
 
   async addSprintItem(req: Request, res: Response) {
     try {
-      const sprint = await SprintRepository.findById(req.params.id);
+      const sprint = await writableSprint(req, req.params.id);
       if (!sprint) {
         return res.status(404).json({ success: false, message: 'Sprint not found' });
       }
@@ -323,6 +370,7 @@ export const SprintController = {
       if (!itemId) {
         return res.status(400).json({ success: false, message: 'itemId is required' });
       }
+      await sprintProjectItem(req, sprint.projectId, itemType, String(itemId));
 
       let updatedItem: any = null;
       if (itemType === 'task') {
@@ -368,19 +416,20 @@ export const SprintController = {
 
       return res.json({ success: true, data: updatedItem });
     } catch (err: any) {
-      return res.status(500).json({ success: false, message: err.message });
+      return failWith(res, err, 500);
     }
   },
 
   async removeSprintItem(req: Request, res: Response) {
     try {
-      const sprint = await SprintRepository.findById(req.params.id);
+      const sprint = await writableSprint(req, req.params.id);
       if (!sprint) {
         return res.status(404).json({ success: false, message: 'Sprint not found' });
       }
 
       const { itemId } = req.params;
       const { itemType } = req.query;
+      await sprintProjectItem(req, sprint.projectId, itemType, itemId);
 
       let updatedItem: any = null;
       if (itemType === 'task') {
@@ -412,37 +461,40 @@ export const SprintController = {
 
       return res.json({ success: true, data: updatedItem, message: 'Item returned to backlog' });
     } catch (err: any) {
-      return res.status(500).json({ success: false, message: err.message });
+      return failWith(res, err, 500);
     }
   },
 
   async getSprintCapacity(req: Request, res: Response) {
     try {
+      if (!(await visibleSprint(req, req.params.id))) throw notAvailable('Sprint');
       const capacity = await CapacityService.calculateSprintCapacity(req.params.id);
       return res.json({ success: true, data: capacity });
     } catch (err: any) {
-      return res.status(400).json({ success: false, message: err.message });
+      return failWith(res, err, 400);
     }
   },
 
   async getSprintBurndown(req: Request, res: Response) {
     try {
+      if (!(await visibleSprint(req, req.params.id))) throw notAvailable('Sprint');
       const burndown = await BurndownService.getSprintBurndown(req.params.id);
       return res.json({ success: true, data: burndown });
     } catch (err: any) {
-      return res.status(400).json({ success: false, message: err.message });
+      return failWith(res, err, 400);
     }
   },
 
   async deleteSprint(req: Request, res: Response) {
     try {
+      await writableSprint(req, req.params.id);
       const deleted = await SprintRepository.delete(req.params.id);
       if (!deleted) {
         return res.status(404).json({ success: false, message: 'Sprint not found' });
       }
       return res.json({ success: true, message: 'Sprint deleted successfully' });
     } catch (err: any) {
-      return res.status(500).json({ success: false, message: err.message });
+      return failWith(res, err, 500);
     }
   },
 };

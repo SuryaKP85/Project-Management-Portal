@@ -363,8 +363,9 @@ export const RiskService = {
     return deleted;
   },
 
-  async getHeatmap(filter?: { projectId?: string; productId?: string; status?: string }): Promise<RiskHeatmapData> {
-    const risks = await RiskRepository.findAll(filter);
+  /** Sprint 22A: scope = the caller's accessible project ids (null = every project). */
+  async getHeatmap(filter?: { projectId?: string; productId?: string; status?: string }, scope: Set<string> | null = null): Promise<RiskHeatmapData> {
+    const risks = (await RiskRepository.findAll(filter)).filter((r) => !scope || scope.has(r.projectId));
 
     // Initialize 5x5 grid (rows: prob 5 down to 1; cols: impact 1 to 5)
     const matrix: HeatmapCell[][] = [];

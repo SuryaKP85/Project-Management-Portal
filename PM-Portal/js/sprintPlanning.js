@@ -280,7 +280,7 @@ export const SprintPlanningModule = {
           <div class="d-flex align-items-center gap-2 flex-wrap">
             <select class="form-select form-select-sm" id="planning-filter-project" style="width: 180px;">
               <option value="all">All Projects</option>
-              ${this.projects.map((p) => `<option value="${p.id}" ${this.filterProjectId === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
+              ${this.projects.map((p) => `<option value="${escapeHtml(p.id)}" ${this.filterProjectId === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}
             </select>
             <button class="btn btn-sm btn-outline-primary" data-action="view-velocity">
               <i class="fa-solid fa-chart-simple me-1"></i> Velocity History
@@ -429,7 +429,7 @@ export const SprintPlanningModule = {
 
                 <div class="d-flex justify-content-between mt-2 pt-2 border-top text-muted" style="font-size: 0.75rem;">
                   <span><strong>Goal:</strong> ${escapeHtml(sprint.goal || 'No goal set')}</span>
-                  <span><strong>Hours:</strong> ${committedHours} / ${sprint.capacityHours || 160}h</span>
+                  <span><strong>Hours:</strong> ${escapeHtml(committedHours)} / ${escapeHtml(sprint.capacityHours || 160)}h</span>
                 </div>
               </div>
 
@@ -584,7 +584,7 @@ export const SprintPlanningModule = {
         <div class="mb-3">
           <label class="form-label font-bold">Project</label>
           <select class="form-select" id="new-sprint-project" required>
-            ${this.projects.map((p) => `<option value="${p.id}">${p.name} (${p.code})</option>`).join('')}
+            ${this.projects.map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)} (${escapeHtml(p.code)})</option>`).join('')}
           </select>
         </div>
 
@@ -678,7 +678,7 @@ export const SprintPlanningModule = {
         <div class="mb-3">
           <label class="form-label font-bold">Project</label>
           <select class="form-select" id="new-item-project" required>
-            ${this.projects.map((p) => `<option value="${p.id}">${p.name} (${p.code})</option>`).join('')}
+            ${this.projects.map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)} (${escapeHtml(p.code)})</option>`).join('')}
           </select>
         </div>
 
@@ -686,7 +686,7 @@ export const SprintPlanningModule = {
           <label class="form-label font-bold">Parent Feature (Optional)</label>
           <select class="form-select" id="new-item-feature">
             <option value="">None (Top-level item)</option>
-            ${this.features.map((f) => `<option value="${f.id}">${f.code} &bull; ${f.name}</option>`).join('')}
+            ${this.features.map((f) => `<option value="${escapeHtml(f.id)}">${escapeHtml(f.code)} &bull; ${escapeHtml(f.name)}</option>`).join('')}
           </select>
         </div>
 
@@ -715,7 +715,7 @@ export const SprintPlanningModule = {
           <label class="form-label font-bold">Assignee</label>
           <select class="form-select" id="new-item-assignee">
             <option value="">Unassigned</option>
-            ${this.users.map((u) => `<option value="${u.id}">${u.firstName} ${u.lastName} (${u.role})</option>`).join('')}
+            ${this.users.map((u) => `<option value="${escapeHtml(u.id)}">${escapeHtml(u.firstName)} ${escapeHtml(u.lastName)} (${escapeHtml(u.role)})</option>`).join('')}
           </select>
         </div>
       </div>

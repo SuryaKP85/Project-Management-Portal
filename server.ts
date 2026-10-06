@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'path';
 import cookieParser from 'cookie-parser';
 import { createServer as createViteServer } from 'vite';
-import { assertProductionSecrets, config } from './server/config/env';
+import { assertProductionSecrets, config, resolveListenHost } from './server/config/env';
 import { initDatabase } from './server/config/database';
 import { dataFilePath, dataMode, durableResponses, flushNow } from './server/config/persistence';
 import { corsPolicy } from './server/middleware/corsPolicy';
@@ -15,6 +15,8 @@ async function startServer() {
 
   // 1. Sprint 20: configuration that must be safe before anything runs.
   assertProductionSecrets();
+  // Sprint 22A: without a private JWT_SECRET the server is reachable from this computer only.
+  const { host: HOST, loopbackOnly } = resolveListenHost();
   const cors = corsPolicy();
   const mode = dataMode();
 
@@ -59,7 +61,7 @@ async function startServer() {
   // 5. Vite Middleware for Development / Static serving for Production
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true, host: '0.0.0.0' },
+      server: { middlewareMode: true, host: HOST },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -74,10 +76,13 @@ async function startServer() {
   // 6. Global Error Handler
   app.use(errorHandler);
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Surya PM OS V2.0 Server running on http://0.0.0.0:${PORT}`);
-    console.log(`📡 V2 REST API endpoint active at http://0.0.0.0:${PORT}/api/v1/health`);
-    console.log(`🖥️ PM Portal Application accessible at http://0.0.0.0:${PORT}/PM-Portal/index.html`);
+  app.listen(PORT, HOST, () => {
+    console.log(`🚀 Surya PM OS V2.0 Server running on http://${HOST}:${PORT}`);
+    console.log(`📡 V2 REST API endpoint active at http://${HOST}:${PORT}/api/v1/health`);
+    console.log(`🖥️ PM Portal Application accessible at http://${HOST}:${PORT}/PM-Portal/index.html`);
+    if (loopbackOnly) {
+      console.log('🔒 Listening on this computer only: JWT_SECRET is not set to a private value. Set a random JWT_SECRET of at least 32 characters (and optionally PM_PORTAL_HOST) to allow access from the network.');
+    }
   });
 }
 

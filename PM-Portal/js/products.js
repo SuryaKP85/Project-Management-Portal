@@ -6,6 +6,7 @@ import { PortfolioService } from './services/portfolioService.js';
 import { TeamService } from './services/teamService.js';
 import { ProjectService } from './services/projectService.js';
 import { UserService } from './services/userService.js';
+import { escapeHtml } from './safeHtml.js';
 
 export const ProductsModule = {
   app: null,
@@ -132,9 +133,9 @@ export const ProductsModule = {
             <div class="card-body p-4 d-flex flex-column">
               <div class="d-flex justify-content-between align-items-start mb-2">
                 <div>
-                  <span class="text-muted small fw-semibold text-uppercase tracking-wider">${p.code || 'PROD'}</span>
-                  <h5 class="card-title fw-bold text-dark mb-1">${p.name}</h5>
-                  <span class="badge bg-light text-secondary border small">${p.category || 'Core Platform'}</span>
+                  <span class="text-muted small fw-semibold text-uppercase tracking-wider">${escapeHtml(p.code || 'PROD')}</span>
+                  <h5 class="card-title fw-bold text-dark mb-1">${escapeHtml(p.name)}</h5>
+                  <span class="badge bg-light text-secondary border small">${escapeHtml(p.category || 'Core Platform')}</span>
                 </div>
                 <div class="d-flex flex-column align-items-end gap-1">
                   ${stageBadges[p.stage] || '<span class="badge bg-primary">Active</span>'}
@@ -143,21 +144,21 @@ export const ProductsModule = {
               </div>
 
               <p class="card-text text-secondary small mb-3 flex-grow-1" style="min-height: 44px;">
-                ${p.description || 'Enterprise product service module.'}
+                ${escapeHtml(p.description || 'Enterprise product service module.')}
               </p>
 
               <div class="bg-light p-2 rounded-2 mb-3 small">
                 <div class="d-flex justify-content-between py-1">
                   <span class="text-muted">Portfolio:</span>
-                  <span class="fw-semibold text-primary">${port ? port.name : 'Standalone'}</span>
+                  <span class="fw-semibold text-primary">${escapeHtml(port ? port.name : 'Standalone')}</span>
                 </div>
                 <div class="d-flex justify-content-between py-1 border-top">
                   <span class="text-muted">Dedicated Team:</span>
-                  <span class="fw-semibold text-dark">${team ? team.name : 'Shared Resources'}</span>
+                  <span class="fw-semibold text-dark">${escapeHtml(team ? team.name : 'Shared Resources')}</span>
                 </div>
                 <div class="d-flex justify-content-between py-1 border-top">
                   <span class="text-muted">Lead / Owner:</span>
-                  <span class="fw-semibold text-dark">${p.ownerName || 'Surya Prashanth'}</span>
+                  <span class="fw-semibold text-dark">${escapeHtml(p.ownerName || 'Surya Prashanth')}</span>
                 </div>
               </div>
 
@@ -170,7 +171,7 @@ export const ProductsModule = {
                     linkedProjects.length > 0
                       ? linkedProjects
                           .slice(0, 3)
-                          .map((prj) => `<span class="badge bg-white text-dark border small">${prj.name || prj.id}</span>`)
+                          .map((prj) => `<span class="badge bg-white text-dark border small">${escapeHtml(prj.name || prj.id)}</span>`)
                           .join('') +
                         (linkedProjects.length > 3
                           ? `<span class="badge bg-light text-muted border small">+${linkedProjects.length - 3} more</span>`
@@ -180,10 +181,10 @@ export const ProductsModule = {
                 </div>
 
                 <div class="d-flex justify-content-end gap-1 pt-2 border-top">
-                  <button class="btn btn-sm btn-light border edit-product-btn" data-id="${p.id}" title="Edit Product">
+                  <button class="btn btn-sm btn-light border edit-product-btn" data-id="${escapeHtml(p.id)}" title="Edit Product">
                     <i class="fa-solid fa-pencil text-secondary"></i> Edit
                   </button>
-                  <button class="btn btn-sm btn-light border text-danger delete-product-btn" data-id="${p.id}" title="Delete Product">
+                  <button class="btn btn-sm btn-light border text-danger delete-product-btn" data-id="${escapeHtml(p.id)}" title="Delete Product">
                     <i class="fa-solid fa-trash"></i>
                   </button>
                 </div>
@@ -233,19 +234,19 @@ export const ProductsModule = {
                 <div class="row g-3">
                   <div class="col-md-4">
                     <label class="form-label small fw-semibold">Product Code *</label>
-                    <input type="text" class="form-control form-control-sm" id="prod-code" value="${product?.code || `PROD-${Date.now().toString().slice(-4)}`}" required />
+                    <input type="text" class="form-control form-control-sm" id="prod-code" value="${escapeHtml(product?.code || `PROD-${Date.now().toString().slice(-4)}`)}" required />
                   </div>
                   <div class="col-md-8">
                     <label class="form-label small fw-semibold">Product Name *</label>
-                    <input type="text" class="form-control form-control-sm" id="prod-name" value="${product?.name || ''}" placeholder="e.g., Ares Autonomous Flight Core" required />
+                    <input type="text" class="form-control form-control-sm" id="prod-name" value="${escapeHtml(product?.name || '')}" placeholder="e.g., Ares Autonomous Flight Core" required />
                   </div>
                   <div class="col-12">
                     <label class="form-label small fw-semibold">Product Description</label>
-                    <textarea class="form-control form-control-sm" id="prod-desc" rows="3" placeholder="Target mission and commercial roadmap">${product?.description || ''}</textarea>
+                    <textarea class="form-control form-control-sm" id="prod-desc" rows="3" placeholder="Target mission and commercial roadmap">${escapeHtml(product?.description || '')}</textarea>
                   </div>
                   <div class="col-md-6">
                     <label class="form-label small fw-semibold">Market Category</label>
-                    <input type="text" class="form-control form-control-sm" id="prod-cat" value="${product?.category || 'Mission Avionics'}" placeholder="e.g., Mission Avionics, Cloud Platform" />
+                    <input type="text" class="form-control form-control-sm" id="prod-cat" value="${escapeHtml(product?.category || 'Mission Avionics')}" placeholder="e.g., Mission Avionics, Cloud Platform" />
                   </div>
                   <div class="col-md-6">
                     <label class="form-label small fw-semibold">Lifecycle Stage</label>
@@ -261,20 +262,20 @@ export const ProductsModule = {
                     <label class="form-label small fw-semibold">Associated Portfolio</label>
                     <select class="form-select form-select-sm" id="prod-portfolio">
                       <option value="">No Portfolio (Standalone)</option>
-                      ${this.portfolios.map((p) => `<option value="${p.id}" ${product?.portfolioId === p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
+                      ${this.portfolios.map((p) => `<option value="${escapeHtml(p.id)}" ${product?.portfolioId === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}
                     </select>
                   </div>
                   <div class="col-md-6">
                     <label class="form-label small fw-semibold">Assigned Delivery Team</label>
                     <select class="form-select form-select-sm" id="prod-team">
                       <option value="">Shared Resources</option>
-                      ${this.teams.map((t) => `<option value="${t.id}" ${product?.teamId === t.id ? 'selected' : ''}>${t.name} (${t.department})</option>`).join('')}
+                      ${this.teams.map((t) => `<option value="${escapeHtml(t.id)}" ${product?.teamId === t.id ? 'selected' : ''}>${escapeHtml(t.name)} (${escapeHtml(t.department)})</option>`).join('')}
                     </select>
                   </div>
                   <div class="col-md-6">
                     <label class="form-label small fw-semibold">Product Lead / Owner</label>
                     <select class="form-select form-select-sm" id="prod-owner">
-                      ${this.users.map((u) => `<option value="${u.id}" ${product?.ownerId === u.id ? 'selected' : ''}>${u.firstName} ${u.lastName} (${u.role})</option>`).join('')}
+                      ${this.users.map((u) => `<option value="${escapeHtml(u.id)}" ${product?.ownerId === u.id ? 'selected' : ''}>${escapeHtml(u.firstName)} ${escapeHtml(u.lastName)} (${escapeHtml(u.role)})</option>`).join('')}
                     </select>
                   </div>
                   <div class="col-md-3">

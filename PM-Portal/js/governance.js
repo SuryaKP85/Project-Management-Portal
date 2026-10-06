@@ -13,6 +13,7 @@ import { ProjectService } from './services/projectService.js';
 import { UserService } from './services/userService.js';
 import { DeliveryService } from './services/deliveryService.js';
 import { AuthService } from './services/authService.js';
+import { escapeHtml } from './safeHtml.js';
 
 export const GovernanceModule = {
   app: null,
@@ -226,7 +227,7 @@ export const GovernanceModule = {
     } else if (bridgeFailure) {
       // Signing in again will not help: the portal account authenticated
       // locally but has no counterpart on the V2 API server.
-      message = `Signed in locally as <strong>${bridgeFailure.email}</strong>, but this account is not provisioned on the V2 API server, so governance data cannot be loaded.`;
+      message = `Signed in locally as <strong>${escapeHtml(bridgeFailure.email)}</strong>, but this account is not provisioned on the V2 API server, so governance data cannot be loaded.`;
       action = `<div class="text-xs text-secondary">Ask an administrator to provision this account, or sign in with a portal account that exists on the server. If the server was restarted recently, sign in again to refresh the session.</div>`;
     } else {
       message = 'Your secure session has expired or was never established. Sign in again to load Risks, Issues, Dependencies, Milestones and Releases.';
@@ -252,7 +253,7 @@ export const GovernanceModule = {
     const currentVal = this.filterProjectId;
     sel.innerHTML = `
       <option value="all">All Projects</option>
-      ${this.projects.map((p) => `<option value="${p.id}" ${p.id === currentVal ? 'selected' : ''}>[${p.code || p.id}] ${p.name}</option>`).join('')}
+      ${this.projects.map((p) => `<option value="${p.id}" ${p.id === currentVal ? 'selected' : ''}>[${p.code || p.id}] ${escapeHtml(p.name)}</option>`).join('')}
     `;
   },
 
@@ -433,8 +434,8 @@ export const GovernanceModule = {
                       return `
                       <tr>
                         <td>
-                          <div class="font-bold text-truncate" style="max-width: 180px;">${sc.projectName}</div>
-                          <span class="badge bg-light text-secondary border font-monospace">${sc.projectCode}</span>
+                          <div class="font-bold text-truncate" style="max-width: 180px;">${escapeHtml(sc.projectName)}</div>
+                          <span class="badge bg-light text-secondary border font-monospace">${escapeHtml(sc.projectCode)}</span>
                         </td>
                         <td class="text-center">
                           ${sc.criticalRisks > 0 ? `<span class="badge bg-danger text-white">${sc.criticalRisks} Crit</span>` : `<span class="text-secondary">0</span>`}
@@ -450,7 +451,7 @@ export const GovernanceModule = {
                         </td>
                         <td class="text-center">${healthBadge}</td>
                         <td class="text-end">
-                          <button class="btn-enterprise btn-enterprise-secondary btn-sm" onclick="window.GovernanceModule.inspectProject('${sc.projectId}')" title="Inspect Governance Chain">
+                          <button class="btn-enterprise btn-enterprise-secondary btn-sm" onclick="window.GovernanceModule.inspectProject('${escapeHtml(sc.projectId)}')" title="Inspect Governance Chain">
                             <i class="fa-solid fa-magnifying-glass-chart"></i>
                           </button>
                         </td>
@@ -484,11 +485,11 @@ export const GovernanceModule = {
                     (a) => `
                   <div class="d-flex align-items-center justify-content-between p-2 rounded" style="background-color: var(--bg-main); border: 1px solid var(--border-color); font-size: 0.82rem;">
                     <div class="d-flex align-items-center gap-2">
-                      <span class="badge ${this.getActivityBadgeClass(a.entityType)} text-uppercase">${a.entityType}</span>
-                      <span class="font-bold">${a.actorName || 'Admin'}</span>
-                      <span class="text-secondary">${a.action}</span>
-                      <span class="font-semibold text-primary">[${a.details?.code || a.entityId}]</span>
-                      <span class="text-truncate" style="max-width: 350px;">${a.details?.title || a.details?.name || ''}</span>
+                      <span class="badge ${this.getActivityBadgeClass(a.entityType)} text-uppercase">${escapeHtml(a.entityType)}</span>
+                      <span class="font-bold">${escapeHtml(a.actorName || 'Admin')}</span>
+                      <span class="text-secondary">${escapeHtml(a.action)}</span>
+                      <span class="font-semibold text-primary">[${escapeHtml(a.details?.code || a.entityId)}]</span>
+                      <span class="text-truncate" style="max-width: 350px;">${escapeHtml(a.details?.title || a.details?.name || '')}</span>
                     </div>
                     <span class="text-xs text-secondary">${new Date(a.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   </div>
@@ -644,19 +645,19 @@ export const GovernanceModule = {
 
                   return `
                   <tr>
-                    <td><span class="badge bg-light text-secondary border font-monospace font-bold">${r.code}</span></td>
+                    <td><span class="badge bg-light text-secondary border font-monospace font-bold">${escapeHtml(r.code)}</span></td>
                     <td>
-                      <div class="font-bold text-primary" style="cursor: pointer;" onclick="window.GovernanceModule.openRiskDetails('${r.id}')">${r.title}</div>
-                      <div class="text-xs text-secondary text-truncate" style="max-width: 320px;">${r.description || 'No description entered'}</div>
-                      ${r.mitigationStrategy ? `<div class="text-xs text-muted mt-1"><i class="fa-solid fa-shield-check text-success me-1"></i>Mitigation: ${r.mitigationStrategy}</div>` : ''}
+                      <div class="font-bold text-primary" style="cursor: pointer;" onclick="window.GovernanceModule.openRiskDetails('${r.id}')">${escapeHtml(r.title)}</div>
+                      <div class="text-xs text-secondary text-truncate" style="max-width: 320px;">${escapeHtml(r.description || 'No description entered')}</div>
+                      ${r.mitigationStrategy ? `<div class="text-xs text-muted mt-1"><i class="fa-solid fa-shield-check text-success me-1"></i>Mitigation: ${escapeHtml(r.mitigationStrategy)}</div>` : ''}
                     </td>
-                    <td><span class="badge bg-secondary-subtle text-secondary">${r.category}</span></td>
-                    <td class="text-center font-bold">${r.probability}/5</td>
-                    <td class="text-center font-bold">${r.impact}/5</td>
+                    <td><span class="badge bg-secondary-subtle text-secondary">${escapeHtml(r.category)}</span></td>
+                    <td class="text-center font-bold">${escapeHtml(r.probability)}/5</td>
+                    <td class="text-center font-bold">${escapeHtml(r.impact)}/5</td>
                     <td class="text-center font-bold text-danger">${r.score}</td>
-                    <td><span class="badge ${sevBadge}">${r.severity}</span></td>
-                    <td><span class="badge bg-light text-dark border">${r.status}</span></td>
-                    <td><span class="text-xs">${r.targetResolutionDate || 'None'}</span></td>
+                    <td><span class="badge ${sevBadge}">${escapeHtml(r.severity)}</span></td>
+                    <td><span class="badge bg-light text-dark border">${escapeHtml(r.status)}</span></td>
+                    <td><span class="text-xs">${escapeHtml(r.targetResolutionDate || 'None')}</span></td>
                     <td class="text-end">
                       <div class="btn-group btn-group-sm">
                         <button class="btn-enterprise btn-enterprise-secondary" onclick="window.GovernanceModule.openRiskDetails('${r.id}')" title="Details & Links">
@@ -694,7 +695,7 @@ export const GovernanceModule = {
       <form id="gov-risk-form" class="row g-3">
         <div class="col-md-8">
           <label class="form-label font-bold text-xs text-secondary mb-1">Risk Title *</label>
-          <input type="text" id="m-risk-title" class="form-control" value="${existing?.title || ''}" required placeholder="e.g. Third-party payment gateway SLA degradation" />
+          <input type="text" id="m-risk-title" class="form-control" value="${escapeHtml(existing?.title || '')}" required placeholder="e.g. Third-party payment gateway SLA degradation" />
         </div>
         <div class="col-md-4">
           <label class="form-label font-bold text-xs text-secondary mb-1">Category *</label>
@@ -708,7 +709,7 @@ export const GovernanceModule = {
           <label class="form-label font-bold text-xs text-secondary mb-1">Associated Project</label>
           <select id="m-risk-project" class="form-select">
             <option value="">-- Unassigned / Portfolio-level --</option>
-            ${this.projects.map((p) => `<option value="${p.id}" ${existing?.projectId === p.id ? 'selected' : ''}>[${p.code || p.id}] ${p.name}</option>`).join('')}
+            ${this.projects.map((p) => `<option value="${p.id}" ${existing?.projectId === p.id ? 'selected' : ''}>[${p.code || p.id}] ${escapeHtml(p.name)}</option>`).join('')}
           </select>
         </div>
         <div class="col-md-6">
@@ -734,32 +735,32 @@ export const GovernanceModule = {
         <div class="col-md-4">
           <label class="form-label font-bold text-xs text-secondary mb-1">Calculated Severity</label>
           <div id="m-risk-calc-preview" class="form-control bg-light font-bold text-danger d-flex align-items-center justify-content-between">
-            <span>Score: ${existing ? existing.score : '1'}</span>
-            <span class="badge ${existing?.severity === 'Critical' ? 'bg-danger' : 'bg-secondary'}">${existing?.severity || 'Low'}</span>
+            <span>Score: ${escapeHtml(existing ? existing.score : '1')}</span>
+            <span class="badge ${existing?.severity === 'Critical' ? 'bg-danger' : 'bg-secondary'}">${escapeHtml(existing?.severity || 'Low')}</span>
           </div>
         </div>
         <div class="col-12">
           <label class="form-label font-bold text-xs text-secondary mb-1">Detailed Description</label>
-          <textarea id="m-risk-desc" class="form-control" rows="2" placeholder="Root context and vulnerability exposure">${existing?.description || ''}</textarea>
+          <textarea id="m-risk-desc" class="form-control" rows="2" placeholder="Root context and vulnerability exposure">${escapeHtml(existing?.description || '')}</textarea>
         </div>
         <div class="col-md-6">
           <label class="form-label font-bold text-xs text-secondary mb-1">Mitigation Strategy</label>
-          <textarea id="m-risk-mitigation" class="form-control" rows="2" placeholder="Actions taken to reduce probability or impact">${existing?.mitigationStrategy || ''}</textarea>
+          <textarea id="m-risk-mitigation" class="form-control" rows="2" placeholder="Actions taken to reduce probability or impact">${escapeHtml(existing?.mitigationStrategy || '')}</textarea>
         </div>
         <div class="col-md-6">
           <label class="form-label font-bold text-xs text-secondary mb-1">Contingency Plan</label>
-          <textarea id="m-risk-contingency" class="form-control" rows="2" placeholder="Fallback execution if risk materializes">${existing?.contingencyPlan || ''}</textarea>
+          <textarea id="m-risk-contingency" class="form-control" rows="2" placeholder="Fallback execution if risk materializes">${escapeHtml(existing?.contingencyPlan || '')}</textarea>
         </div>
         <div class="col-md-6">
           <label class="form-label font-bold text-xs text-secondary mb-1">Risk Owner</label>
           <select id="m-risk-owner" class="form-select">
             <option value="">-- Select Owner --</option>
-            ${this.users.map((u) => `<option value="${u.id}" ${existing?.ownerId === u.id ? 'selected' : ''}>${u.firstName} ${u.lastName} (${u.role})</option>`).join('')}
+            ${this.users.map((u) => `<option value="${escapeHtml(u.id)}" ${existing?.ownerId === u.id ? 'selected' : ''}>${escapeHtml(u.firstName)} ${escapeHtml(u.lastName)} (${escapeHtml(u.role)})</option>`).join('')}
           </select>
         </div>
         <div class="col-md-6">
           <label class="form-label font-bold text-xs text-secondary mb-1">Target Resolution Date</label>
-          <input type="date" id="m-risk-date" class="form-control" value="${existing?.targetResolutionDate || ''}" />
+          <input type="date" id="m-risk-date" class="form-control" value="${escapeHtml(existing?.targetResolutionDate || '')}" />
         </div>
       </form>
     `;
@@ -834,28 +835,28 @@ export const GovernanceModule = {
         <div class="p-3 bg-light rounded border">
           <div class="d-flex justify-content-between align-items-start">
             <div>
-              <span class="badge bg-secondary font-monospace">${risk.code}</span>
-              <h5 class="font-bold my-1">${risk.title}</h5>
-              <div class="text-xs text-secondary">Owner: ${risk.ownerName || 'Unassigned'} | Category: ${risk.category} | Status: <strong>${risk.status}</strong></div>
+              <span class="badge bg-secondary font-monospace">${escapeHtml(risk.code)}</span>
+              <h5 class="font-bold my-1">${escapeHtml(risk.title)}</h5>
+              <div class="text-xs text-secondary">Owner: ${escapeHtml(risk.ownerName || 'Unassigned')} | Category: ${escapeHtml(risk.category)} | Status: <strong>${escapeHtml(risk.status)}</strong></div>
             </div>
             <div class="text-end">
-              <span class="badge ${risk.severity === 'Critical' ? 'bg-danger' : risk.severity === 'High' ? 'bg-warning text-dark' : 'bg-primary'}">${risk.severity} (${risk.score}/25)</span>
+              <span class="badge ${risk.severity === 'Critical' ? 'bg-danger' : risk.severity === 'High' ? 'bg-warning text-dark' : 'bg-primary'}">${escapeHtml(risk.severity)} (${risk.score}/25)</span>
             </div>
           </div>
-          <p class="text-xs mt-2 mb-0">${risk.description || 'No detailed description.'}</p>
+          <p class="text-xs mt-2 mb-0">${escapeHtml(risk.description || 'No detailed description.')}</p>
         </div>
 
         <div class="row g-2 text-xs">
           <div class="col-6">
             <div class="p-2 border rounded bg-white">
               <span class="font-bold text-success"><i class="fa-solid fa-shield-check me-1"></i>Mitigation Strategy</span>
-              <p class="mb-0 mt-1 text-secondary">${risk.mitigationStrategy || 'None declared.'}</p>
+              <p class="mb-0 mt-1 text-secondary">${escapeHtml(risk.mitigationStrategy || 'None declared.')}</p>
             </div>
           </div>
           <div class="col-6">
             <div class="p-2 border rounded bg-white">
               <span class="font-bold text-danger"><i class="fa-solid fa-triangle-exclamation me-1"></i>Contingency Plan</span>
-              <p class="mb-0 mt-1 text-secondary">${risk.contingencyPlan || 'None declared.'}</p>
+              <p class="mb-0 mt-1 text-secondary">${escapeHtml(risk.contingencyPlan || 'None declared.')}</p>
             </div>
           </div>
         </div>
@@ -875,9 +876,9 @@ export const GovernanceModule = {
                 (l) => `
               <div class="d-flex justify-content-between align-items-center p-2 rounded bg-light border text-xs">
                 <div>
-                  <span class="badge bg-secondary-subtle text-secondary me-1 text-uppercase">${l.targetType}</span>
-                  <span class="font-bold text-primary font-monospace">${l.targetCode || l.targetId}</span>
-                  <span class="ms-1">${l.targetName || ''}</span>
+                  <span class="badge bg-secondary-subtle text-secondary me-1 text-uppercase">${escapeHtml(l.targetType)}</span>
+                  <span class="font-bold text-primary font-monospace">${escapeHtml(l.targetCode || l.targetId)}</span>
+                  <span class="ms-1">${escapeHtml(l.targetName || '')}</span>
                 </div>
                 <button class="btn btn-link text-danger p-0" onclick="window.GovernanceModule.unlinkItem('risk', '${risk.id}', '${l.id}')" title="Unlink">
                   <i class="fa-solid fa-xmark"></i>
@@ -994,17 +995,17 @@ export const GovernanceModule = {
 
                   return `
                   <tr>
-                    <td><span class="badge bg-light text-secondary border font-monospace font-bold">${iss.code}</span></td>
+                    <td><span class="badge bg-light text-secondary border font-monospace font-bold">${escapeHtml(iss.code)}</span></td>
                     <td>
-                      <div class="font-bold text-primary" style="cursor: pointer;" onclick="window.GovernanceModule.openIssueDetails('${iss.id}')">${iss.title}</div>
-                      <div class="text-xs text-secondary text-truncate" style="max-width: 320px;">${iss.description || 'No description entered'}</div>
+                      <div class="font-bold text-primary" style="cursor: pointer;" onclick="window.GovernanceModule.openIssueDetails('${iss.id}')">${escapeHtml(iss.title)}</div>
+                      <div class="text-xs text-secondary text-truncate" style="max-width: 320px;">${escapeHtml(iss.description || 'No description entered')}</div>
                     </td>
-                    <td><span class="badge ${sevBadge}">${iss.severity}</span></td>
-                    <td><span class="text-xs font-semibold">${iss.priority}</span></td>
-                    <td><span class="badge ${statusBadge}">${iss.status}</span></td>
-                    <td><span class="text-xs">${assigneeDisplay}</span></td>
-                    <td><span class="badge bg-info-subtle text-info text-truncate" style="max-width: 120px;" title="${iss.rootCauseNotes || rootCauseDisplay}">${rootCauseDisplay}</span></td>
-                    <td><span class="text-xs text-secondary">${targetDate}</span></td>
+                    <td><span class="badge ${sevBadge}">${escapeHtml(iss.severity)}</span></td>
+                    <td><span class="text-xs font-semibold">${escapeHtml(iss.priority)}</span></td>
+                    <td><span class="badge ${statusBadge}">${escapeHtml(iss.status)}</span></td>
+                    <td><span class="text-xs">${escapeHtml(assigneeDisplay)}</span></td>
+                    <td><span class="badge bg-info-subtle text-info text-truncate" style="max-width: 120px;" title="${escapeHtml(iss.rootCauseNotes || rootCauseDisplay)}">${escapeHtml(rootCauseDisplay)}</span></td>
+                    <td><span class="text-xs text-secondary">${escapeHtml(targetDate)}</span></td>
                     <td class="text-end">
                       <div class="btn-group btn-group-sm">
                         <button class="btn-enterprise btn-enterprise-secondary" onclick="window.GovernanceModule.openIssueDetails('${iss.id}')" title="Details & Links">
@@ -1058,7 +1059,7 @@ export const GovernanceModule = {
       <form id="gov-issue-form" class="row g-3">
         <div class="col-md-8">
           <label class="form-label font-bold text-xs text-secondary mb-1">Issue Title *</label>
-          <input type="text" id="m-issue-title" class="form-control" value="${existing?.title || ''}" required placeholder="e.g. Build pipeline failed on production container staging" />
+          <input type="text" id="m-issue-title" class="form-control" value="${escapeHtml(existing?.title || '')}" required placeholder="e.g. Build pipeline failed on production container staging" />
         </div>
         <div class="col-md-4">
           <label class="form-label font-bold text-xs text-secondary mb-1">Severity *</label>
@@ -1092,26 +1093,26 @@ export const GovernanceModule = {
           <label class="form-label font-bold text-xs text-secondary mb-1">Associated Project</label>
           <select id="m-issue-project" class="form-select">
             <option value="">-- Unassigned / Multi-Project --</option>
-            ${this.projects.map((p) => `<option value="${p.id}" ${existing?.projectId === p.id ? 'selected' : ''}>[${p.code || p.id}] ${p.name}</option>`).join('')}
+            ${this.projects.map((p) => `<option value="${p.id}" ${existing?.projectId === p.id ? 'selected' : ''}>[${p.code || p.id}] ${escapeHtml(p.name)}</option>`).join('')}
           </select>
         </div>
         <div class="col-md-6">
           <label class="form-label font-bold text-xs text-secondary mb-1">Assignee</label>
           <select id="m-issue-assignee" class="form-select">
             <option value="">-- Unassigned --</option>
-            ${this.users.map((u) => `<option value="${u.id}" ${existing?.assigneeId === u.id ? 'selected' : ''}>${u.firstName} ${u.lastName} (${u.role})</option>`).join('')}
+            ${this.users.map((u) => `<option value="${escapeHtml(u.id)}" ${existing?.assigneeId === u.id ? 'selected' : ''}>${escapeHtml(u.firstName)} ${escapeHtml(u.lastName)} (${escapeHtml(u.role)})</option>`).join('')}
           </select>
         </div>
         <div class="col-md-6">
           <label class="form-label font-bold text-xs text-secondary mb-1">Reported By</label>
           <select id="m-issue-reported-by" class="form-select">
             <option value="">-- Select Reporter --</option>
-            ${this.users.map((u) => `<option value="${u.id}" ${existing?.reportedBy === u.id ? 'selected' : ''}>${u.firstName} ${u.lastName} (${u.role})</option>`).join('')}
+            ${this.users.map((u) => `<option value="${escapeHtml(u.id)}" ${existing?.reportedBy === u.id ? 'selected' : ''}>${escapeHtml(u.firstName)} ${escapeHtml(u.lastName)} (${escapeHtml(u.role)})</option>`).join('')}
           </select>
         </div>
         <div class="col-md-6">
           <label class="form-label font-bold text-xs text-secondary mb-1">Target Resolution Date</label>
-          <input type="date" id="m-issue-target-date" class="form-control" value="${currentTargetDate}" />
+          <input type="date" id="m-issue-target-date" class="form-control" value="${escapeHtml(currentTargetDate)}" />
         </div>
         <div class="col-md-6">
           <label class="form-label font-bold text-xs text-secondary mb-1">Root Cause Category</label>
@@ -1122,15 +1123,15 @@ export const GovernanceModule = {
         </div>
         <div class="col-md-6">
           <label class="form-label font-bold text-xs text-secondary mb-1">Root Cause Notes</label>
-          <input type="text" id="m-issue-root-notes" class="form-control" value="${existing?.rootCauseNotes || ''}" placeholder="Specific failure point or technical cause" />
+          <input type="text" id="m-issue-root-notes" class="form-control" value="${escapeHtml(existing?.rootCauseNotes || '')}" placeholder="Specific failure point or technical cause" />
         </div>
         <div class="col-12">
           <label class="form-label font-bold text-xs text-secondary mb-1">Detailed Description</label>
-          <textarea id="m-issue-desc" class="form-control" rows="2" placeholder="Full incident context and reproduction steps">${existing?.description || ''}</textarea>
+          <textarea id="m-issue-desc" class="form-control" rows="2" placeholder="Full incident context and reproduction steps">${escapeHtml(existing?.description || '')}</textarea>
         </div>
         <div class="col-12">
           <label class="form-label font-bold text-xs text-secondary mb-1">Resolution Summary</label>
-          <textarea id="m-issue-res" class="form-control" rows="2" placeholder="Final remediation and verification notes">${currentResolution}</textarea>
+          <textarea id="m-issue-res" class="form-control" rows="2" placeholder="Final remediation and verification notes">${escapeHtml(currentResolution)}</textarea>
         </div>
       </form>
     `;
@@ -1195,21 +1196,21 @@ export const GovernanceModule = {
         <div class="p-3 bg-light rounded border">
           <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
             <div>
-              <span class="badge bg-secondary font-monospace">${issue.code}</span>
-              <h5 class="font-bold my-1">${issue.title}</h5>
+              <span class="badge bg-secondary font-monospace">${escapeHtml(issue.code)}</span>
+              <h5 class="font-bold my-1">${escapeHtml(issue.title)}</h5>
               <div class="text-xs text-secondary">
-                Assignee: <strong>${assigneeDisplay}</strong> | 
-                Reporter: <strong>${reporterDisplay}</strong> | 
-                Severity: <strong class="text-danger">${issue.severity}</strong> | 
-                Status: <strong>${issue.status}</strong>
+                Assignee: <strong>${escapeHtml(assigneeDisplay)}</strong> |
+                Reporter: <strong>${escapeHtml(reporterDisplay)}</strong> |
+                Severity: <strong class="text-danger">${escapeHtml(issue.severity)}</strong> |
+                Status: <strong>${escapeHtml(issue.status)}</strong>
               </div>
             </div>
             <div class="d-flex gap-1">
-              <span class="badge bg-warning text-dark font-bold">${issue.priority} Priority</span>
-              ${issue.escalationLevel && issue.escalationLevel !== 'None' ? `<span class="badge bg-danger text-white">${issue.escalationLevel}</span>` : ''}
+              <span class="badge bg-warning text-dark font-bold">${escapeHtml(issue.priority)} Priority</span>
+              ${issue.escalationLevel && issue.escalationLevel !== 'None' ? `<span class="badge bg-danger text-white">${escapeHtml(issue.escalationLevel)}</span>` : ''}
             </div>
           </div>
-          <p class="text-xs mt-2 mb-0">${issue.description || 'No description provided.'}</p>
+          <p class="text-xs mt-2 mb-0">${escapeHtml(issue.description || 'No description provided.')}</p>
         </div>
 
         <div class="row g-2">
@@ -1218,11 +1219,11 @@ export const GovernanceModule = {
               <span class="font-bold text-secondary text-uppercase d-block mb-1"><i class="fa-solid fa-calendar-check text-primary me-1"></i> Timeline Commitments</span>
               <div class="d-flex justify-content-between py-1 border-bottom">
                 <span class="text-muted">Target Resolution:</span>
-                <strong>${targetDate}</strong>
+                <strong>${escapeHtml(targetDate)}</strong>
               </div>
               <div class="d-flex justify-content-between py-1">
                 <span class="text-muted">Resolved Date:</span>
-                <strong>${resolvedTimestamp}</strong>
+                <strong>${escapeHtml(resolvedTimestamp)}</strong>
               </div>
             </div>
           </div>
@@ -1231,11 +1232,11 @@ export const GovernanceModule = {
               <span class="font-bold text-secondary text-uppercase d-block mb-1"><i class="fa-solid fa-magnifying-glass text-info me-1"></i> Root Cause Analysis</span>
               <div class="d-flex justify-content-between py-1 border-bottom">
                 <span class="text-muted">Category:</span>
-                <span class="badge bg-info-subtle text-info">${rootCategory}</span>
+                <span class="badge bg-info-subtle text-info">${escapeHtml(rootCategory)}</span>
               </div>
               <div class="py-1">
                 <span class="text-muted">Notes: </span>
-                <span>${issue.rootCauseNotes || 'None'}</span>
+                <span>${escapeHtml(issue.rootCauseNotes || 'None')}</span>
               </div>
             </div>
           </div>
@@ -1243,7 +1244,7 @@ export const GovernanceModule = {
 
         <div class="p-2.5 border rounded bg-white text-xs">
           <span class="font-bold text-success text-uppercase d-block mb-1"><i class="fa-solid fa-check-double me-1"></i> Remediation & Resolution</span>
-          <p class="mb-0 text-secondary">${resolutionText}</p>
+          <p class="mb-0 text-secondary">${escapeHtml(resolutionText)}</p>
         </div>
 
         <!-- Connected Work Items -->
@@ -1261,9 +1262,9 @@ export const GovernanceModule = {
                 (l) => `
               <div class="d-flex justify-content-between align-items-center p-2 rounded bg-light border text-xs">
                 <div>
-                  <span class="badge bg-secondary-subtle text-secondary me-1 text-uppercase">${l.targetType}</span>
-                  <span class="font-bold text-primary font-monospace">${l.targetCode || l.targetId}</span>
-                  <span class="ms-1">${l.targetName || ''}</span>
+                  <span class="badge bg-secondary-subtle text-secondary me-1 text-uppercase">${escapeHtml(l.targetType)}</span>
+                  <span class="font-bold text-primary font-monospace">${escapeHtml(l.targetCode || l.targetId)}</span>
+                  <span class="ms-1">${escapeHtml(l.targetName || '')}</span>
                 </div>
                 <button class="btn btn-link text-danger p-0" onclick="window.GovernanceModule.unlinkItem('issue', '${issue.id}', '${l.id}')" title="Unlink">
                   <i class="fa-solid fa-xmark"></i>
@@ -1426,32 +1427,32 @@ export const GovernanceModule = {
                 .map(
                   (d) => `
                 <tr>
-                  <td><span class="badge bg-light text-secondary border font-monospace">${d.code}</span></td>
+                  <td><span class="badge bg-light text-secondary border font-monospace">${escapeHtml(d.code)}</span></td>
                   <td>
-                    <span class="badge bg-secondary-subtle text-secondary me-1 text-uppercase">${d.sourceEntityType}</span>
-                    <strong class="text-primary font-monospace">${d.sourceEntityCode}</strong>
-                    <div class="text-xs text-secondary text-truncate" style="max-width: 200px;">${d.sourceEntityName}</div>
+                    <span class="badge bg-secondary-subtle text-secondary me-1 text-uppercase">${escapeHtml(d.sourceEntityType)}</span>
+                    <strong class="text-primary font-monospace">${escapeHtml(d.sourceEntityCode)}</strong>
+                    <div class="text-xs text-secondary text-truncate" style="max-width: 200px;">${escapeHtml(d.sourceEntityName)}</div>
                   </td>
                   <td class="text-center">
-                    <span class="badge ${d.dependencyType === 'Blocks' ? 'bg-danger' : d.dependencyType === 'Requires' || d.dependencyType === 'Depends On' ? 'bg-primary' : 'bg-secondary'}">${d.dependencyType}</span>
+                    <span class="badge ${d.dependencyType === 'Blocks' ? 'bg-danger' : d.dependencyType === 'Requires' || d.dependencyType === 'Depends On' ? 'bg-primary' : 'bg-secondary'}">${escapeHtml(d.dependencyType)}</span>
                     <div style="font-size: 0.68rem;" class="text-secondary mt-1">&rarr;</div>
                   </td>
                   <td>
-                    <span class="badge bg-secondary-subtle text-secondary me-1 text-uppercase">${d.targetEntityType}</span>
-                    <strong class="text-primary font-monospace">${d.targetEntityCode}</strong>
-                    <div class="text-xs text-secondary text-truncate" style="max-width: 200px;">${d.targetEntityName}</div>
+                    <span class="badge bg-secondary-subtle text-secondary me-1 text-uppercase">${escapeHtml(d.targetEntityType)}</span>
+                    <strong class="text-primary font-monospace">${escapeHtml(d.targetEntityCode)}</strong>
+                    <div class="text-xs text-secondary text-truncate" style="max-width: 200px;">${escapeHtml(d.targetEntityName)}</div>
                   </td>
                   <td class="text-center">
-                    <span class="badge ${criticalityBadges[d.criticality] || 'bg-secondary text-white'}">${d.criticality || 'Medium'}</span>
+                    <span class="badge ${criticalityBadges[d.criticality] || 'bg-secondary text-white'}">${escapeHtml(d.criticality || 'Medium')}</span>
                   </td>
                   <td class="text-center">
-                    <span class="badge ${d.status === 'Resolved' || d.status === 'Closed' ? 'bg-success' : d.status === 'At Risk' ? 'bg-warning text-dark' : d.status === 'Blocked' ? 'bg-danger' : 'bg-light text-dark border'}">${d.status}</span>
+                    <span class="badge ${d.status === 'Resolved' || d.status === 'Closed' ? 'bg-success' : d.status === 'At Risk' ? 'bg-warning text-dark' : d.status === 'Blocked' ? 'bg-danger' : 'bg-light text-dark border'}">${escapeHtml(d.status)}</span>
                   </td>
                   <td class="text-center">
                     ${d.isCriticalPath || d.isCritical ? '<span class="badge bg-danger-subtle text-danger font-bold">YES</span>' : '<span class="text-secondary">No</span>'}
                   </td>
                   <td>
-                    <span class="text-xs ${d.isOverdue ? 'text-danger font-bold' : ''}">${d.targetDate || d.dueDate || '—'} ${d.isOverdue ? '(Overdue)' : ''}</span>
+                    <span class="text-xs ${d.isOverdue ? 'text-danger font-bold' : ''}">${escapeHtml(d.targetDate || d.dueDate || '—')} ${d.isOverdue ? '(Overdue)' : ''}</span>
                   </td>
                   <td class="text-end">
                     <div class="btn-group btn-group-sm">
@@ -1541,10 +1542,10 @@ export const GovernanceModule = {
       const pos = nodePositions.get(n.id);
       if (pos) {
         nodesSvg += `
-          <g transform="translate(${pos.x}, ${pos.y})" style="cursor: pointer;" onclick="window.GovernanceModule.inspectEntity('${n.type}', '${n.id}')">
+          <g transform="translate(${pos.x}, ${pos.y})" style="cursor: pointer;" onclick="window.GovernanceModule.inspectEntity('${escapeHtml(n.type)}', '${n.id}')">
             <rect width="130" height="42" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" />
-            <text x="8" y="18" font-size="10" font-weight="bold" fill="#1e293b">${n.code}</text>
-            <text x="8" y="32" font-size="9" fill="#64748b">${(n.name || '').substring(0, 18)}</text>
+            <text x="8" y="18" font-size="10" font-weight="bold" fill="#1e293b">${escapeHtml(n.code)}</text>
+            <text x="8" y="32" font-size="9" fill="#64748b">${escapeHtml((n.name || '').substring(0, 18))}</text>
           </g>
         `;
       }
@@ -1594,13 +1595,13 @@ export const GovernanceModule = {
         <div class="col-md-6">
           <label class="form-label font-bold text-xs text-secondary mb-1">Source Item (Predecessor) *</label>
           <select id="m-dep-source" class="form-select" required>
-            ${options.map((o) => `<option value="${o.type}|${o.id}|${o.code}|${o.name}" ${selectedSourceId === o.id ? 'selected' : ''}>[${o.type.toUpperCase()}] ${o.code} - ${o.name}</option>`).join('')}
+            ${options.map((o) => `<option value="${escapeHtml(o.type)}|${o.id}|${escapeHtml(o.code)}|${escapeHtml(o.name)}" ${selectedSourceId === o.id ? 'selected' : ''}>[${o.type.toUpperCase()}] ${escapeHtml(o.code)} - ${escapeHtml(o.name)}</option>`).join('')}
           </select>
         </div>
         <div class="col-md-6">
           <label class="form-label font-bold text-xs text-secondary mb-1">Target Item (Successor) *</label>
           <select id="m-dep-target" class="form-select" required>
-            ${options.map((o) => `<option value="${o.type}|${o.id}|${o.code}|${o.name}" ${selectedTargetId === o.id ? 'selected' : ''}>[${o.type.toUpperCase()}] ${o.code} - ${o.name}</option>`).join('')}
+            ${options.map((o) => `<option value="${escapeHtml(o.type)}|${o.id}|${escapeHtml(o.code)}|${escapeHtml(o.name)}" ${selectedTargetId === o.id ? 'selected' : ''}>[${o.type.toUpperCase()}] ${escapeHtml(o.code)} - ${escapeHtml(o.name)}</option>`).join('')}
           </select>
         </div>
         <div class="col-md-4">
@@ -1630,15 +1631,15 @@ export const GovernanceModule = {
         </div>
         <div class="col-md-4">
           <label class="form-label font-bold text-xs text-secondary mb-1">Lag Days</label>
-          <input type="number" id="m-dep-lag" class="form-control" value="${existing?.lagDays || 0}" />
+          <input type="number" id="m-dep-lag" class="form-control" value="${escapeHtml(existing?.lagDays || 0)}" />
         </div>
         <div class="col-md-4">
           <label class="form-label font-bold text-xs text-secondary mb-1">Target Date / Due Date</label>
-          <input type="date" id="m-dep-due" class="form-control" value="${currentDueDate}" />
+          <input type="date" id="m-dep-due" class="form-control" value="${escapeHtml(currentDueDate)}" />
         </div>
         <div class="col-12">
           <label class="form-label font-bold text-xs text-secondary mb-1">Description / Constraint Notes</label>
-          <textarea id="m-dep-desc" class="form-control" rows="2" placeholder="Detail the dependency constraint, technical interface, or deliverable prerequisite">${existing?.description || ''}</textarea>
+          <textarea id="m-dep-desc" class="form-control" rows="2" placeholder="Detail the dependency constraint, technical interface, or deliverable prerequisite">${escapeHtml(existing?.description || '')}</textarea>
         </div>
       </form>
     `;
@@ -1730,25 +1731,25 @@ export const GovernanceModule = {
           <div class="p-3 bg-light rounded border">
             <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
               <div>
-                <span class="badge bg-secondary font-monospace">${dep.code}</span>
+                <span class="badge bg-secondary font-monospace">${escapeHtml(dep.code)}</span>
                 <h5 class="font-bold my-1">
-                  <span class="text-primary">${dep.sourceEntityCode || dep.sourceEntityName}</span>
+                  <span class="text-primary">${escapeHtml(dep.sourceEntityCode || dep.sourceEntityName)}</span>
                   <i class="fa-solid fa-arrow-right text-secondary mx-2"></i>
-                  <span class="text-primary">${dep.targetEntityCode || dep.targetEntityName}</span>
+                  <span class="text-primary">${escapeHtml(dep.targetEntityCode || dep.targetEntityName)}</span>
                 </h5>
                 <div class="text-xs text-secondary">
-                  Relationship: <strong>${dep.dependencyType}</strong> | 
-                  Criticality: <strong class="text-danger">${dep.criticality || 'Medium'}</strong> | 
-                  Status: <strong>${dep.status}</strong>
+                  Relationship: <strong>${escapeHtml(dep.dependencyType)}</strong> |
+                  Criticality: <strong class="text-danger">${escapeHtml(dep.criticality || 'Medium')}</strong> |
+                  Status: <strong>${escapeHtml(dep.status)}</strong>
                 </div>
               </div>
               <div class="d-flex gap-1">
-                <span class="badge ${criticalityBadge}">${dep.criticality || 'Medium'}</span>
-                <span class="badge ${statusBadge}">${dep.status}</span>
+                <span class="badge ${criticalityBadge}">${escapeHtml(dep.criticality || 'Medium')}</span>
+                <span class="badge ${statusBadge}">${escapeHtml(dep.status)}</span>
                 ${dep.isCriticalPath || dep.isCritical ? '<span class="badge bg-danger text-white"><i class="fa-solid fa-bolt me-1"></i>Critical Path</span>' : ''}
               </div>
             </div>
-            <p class="text-xs mt-2 mb-0">${dep.description || 'No detailed constraint notes provided.'}</p>
+            <p class="text-xs mt-2 mb-0">${escapeHtml(dep.description || 'No detailed constraint notes provided.')}</p>
           </div>
 
           <div class="row g-2">
@@ -1759,15 +1760,15 @@ export const GovernanceModule = {
                 </span>
                 <div class="d-flex justify-content-between py-1 border-bottom">
                   <span class="text-muted">Type:</span>
-                  <span class="badge bg-secondary-subtle text-secondary text-uppercase">${dep.sourceEntityType}</span>
+                  <span class="badge bg-secondary-subtle text-secondary text-uppercase">${escapeHtml(dep.sourceEntityType)}</span>
                 </div>
                 <div class="d-flex justify-content-between py-1 border-bottom">
                   <span class="text-muted">Code:</span>
-                  <strong>${dep.sourceEntityCode || dep.sourceEntityId}</strong>
+                  <strong>${escapeHtml(dep.sourceEntityCode || dep.sourceEntityId)}</strong>
                 </div>
                 <div class="py-1">
                   <span class="text-muted">Name:</span>
-                  <div class="fw-semibold mt-0.5">${dep.sourceEntityName}</div>
+                  <div class="fw-semibold mt-0.5">${escapeHtml(dep.sourceEntityName)}</div>
                 </div>
               </div>
             </div>
@@ -1778,15 +1779,15 @@ export const GovernanceModule = {
                 </span>
                 <div class="d-flex justify-content-between py-1 border-bottom">
                   <span class="text-muted">Type:</span>
-                  <span class="badge bg-secondary-subtle text-secondary text-uppercase">${dep.targetEntityType}</span>
+                  <span class="badge bg-secondary-subtle text-secondary text-uppercase">${escapeHtml(dep.targetEntityType)}</span>
                 </div>
                 <div class="d-flex justify-content-between py-1 border-bottom">
                   <span class="text-muted">Code:</span>
-                  <strong>${dep.targetEntityCode || dep.targetEntityId}</strong>
+                  <strong>${escapeHtml(dep.targetEntityCode || dep.targetEntityId)}</strong>
                 </div>
                 <div class="py-1">
                   <span class="text-muted">Name:</span>
-                  <div class="fw-semibold mt-0.5">${dep.targetEntityName}</div>
+                  <div class="fw-semibold mt-0.5">${escapeHtml(dep.targetEntityName)}</div>
                 </div>
               </div>
             </div>
@@ -1800,11 +1801,11 @@ export const GovernanceModule = {
                 </span>
                 <div class="d-flex justify-content-between py-1 border-bottom">
                   <span class="text-muted">Target Date:</span>
-                  <strong>${dep.targetDate || dep.dueDate || 'Open'}</strong>
+                  <strong>${escapeHtml(dep.targetDate || dep.dueDate || 'Open')}</strong>
                 </div>
                 <div class="d-flex justify-content-between py-1 border-bottom">
                   <span class="text-muted">Lag Days:</span>
-                  <strong>${dep.lagDays || 0} days</strong>
+                  <strong>${escapeHtml(dep.lagDays || 0)} days</strong>
                 </div>
                 <div class="d-flex justify-content-between py-1">
                   <span class="text-muted">Overdue Status:</span>
@@ -1832,7 +1833,7 @@ export const GovernanceModule = {
           ${dep.resolutionNotes ? `
             <div class="p-2.5 border rounded bg-success-subtle text-xs">
               <span class="font-bold text-success text-uppercase d-block mb-1"><i class="fa-solid fa-check-circle me-1"></i> Resolution Notes</span>
-              <p class="mb-0 text-dark">${dep.resolutionNotes}</p>
+              <p class="mb-0 text-dark">${escapeHtml(dep.resolutionNotes)}</p>
             </div>
           ` : ''}
         </div>
@@ -1918,23 +1919,23 @@ export const GovernanceModule = {
 
                   return `
                   <tr>
-                    <td><span class="badge bg-light text-secondary border font-monospace font-bold">${m.code}</span></td>
+                    <td><span class="badge bg-light text-secondary border font-monospace font-bold">${escapeHtml(m.code)}</span></td>
                     <td>
-                      <div class="font-bold text-primary" style="cursor: pointer;" onclick="window.GovernanceModule.openMilestoneDetails('${m.id}')">${m.name}</div>
-                      <div class="text-xs text-secondary text-truncate" style="max-width: 320px;">${m.description || 'No criteria provided'}</div>
+                      <div class="font-bold text-primary" style="cursor: pointer;" onclick="window.GovernanceModule.openMilestoneDetails('${m.id}')">${escapeHtml(m.name)}</div>
+                      <div class="text-xs text-secondary text-truncate" style="max-width: 320px;">${escapeHtml(m.description || 'No criteria provided')}</div>
                     </td>
-                    <td><span class="badge bg-secondary-subtle text-secondary">${m.type}</span></td>
-                    <td><span class="text-xs font-semibold">${m.targetDate}</span></td>
+                    <td><span class="badge bg-secondary-subtle text-secondary">${escapeHtml(m.type)}</span></td>
+                    <td><span class="text-xs font-semibold">${escapeHtml(m.targetDate)}</span></td>
                     <td>
                       <div class="d-flex align-items-center gap-2">
                         <div class="progress flex-grow-1" style="height: 6px;">
-                          <div class="progress-bar bg-success" style="width: ${m.progress || 0}%;"></div>
+                          <div class="progress-bar bg-success" style="width: ${escapeHtml(m.progress || 0)}%;"></div>
                         </div>
-                        <span class="text-xs font-bold">${m.progress || 0}%</span>
+                        <span class="text-xs font-bold">${escapeHtml(m.progress || 0)}%</span>
                       </div>
                     </td>
-                    <td><span class="badge ${healthBadge}">${m.health}</span></td>
-                    <td><span class="badge bg-light text-dark border">${m.status}</span></td>
+                    <td><span class="badge ${healthBadge}">${escapeHtml(m.health)}</span></td>
+                    <td><span class="badge bg-light text-dark border">${escapeHtml(m.status)}</span></td>
                     <td class="text-end">
                       <div class="btn-group btn-group-sm">
                         <button class="btn-enterprise btn-enterprise-secondary" onclick="window.GovernanceModule.openMilestoneDetails('${m.id}')" title="Details & Scope">
@@ -1967,7 +1968,7 @@ export const GovernanceModule = {
       <form id="gov-mls-form" class="row g-3">
         <div class="col-md-8">
           <label class="form-label font-bold text-xs text-secondary mb-1">Milestone Name *</label>
-          <input type="text" id="m-mls-name" class="form-control" value="${existing?.name || ''}" required placeholder="e.g. Beta Customer Pilot Kickoff" />
+          <input type="text" id="m-mls-name" class="form-control" value="${escapeHtml(existing?.name || '')}" required placeholder="e.g. Beta Customer Pilot Kickoff" />
         </div>
         <div class="col-md-4">
           <label class="form-label font-bold text-xs text-secondary mb-1">Milestone Type</label>
@@ -1981,12 +1982,12 @@ export const GovernanceModule = {
           <label class="form-label font-bold text-xs text-secondary mb-1">Associated Project</label>
           <select id="m-mls-project" class="form-select">
             <option value="">-- Unassigned --</option>
-            ${this.projects.map((p) => `<option value="${p.id}" ${existing?.projectId === p.id ? 'selected' : ''}>[${p.code || p.id}] ${p.name}</option>`).join('')}
+            ${this.projects.map((p) => `<option value="${p.id}" ${existing?.projectId === p.id ? 'selected' : ''}>[${p.code || p.id}] ${escapeHtml(p.name)}</option>`).join('')}
           </select>
         </div>
         <div class="col-md-6">
           <label class="form-label font-bold text-xs text-secondary mb-1">Target Date *</label>
-          <input type="date" id="m-mls-date" class="form-control" value="${existing?.targetDate || ''}" required />
+          <input type="date" id="m-mls-date" class="form-control" value="${escapeHtml(existing?.targetDate || '')}" required />
         </div>
         <div class="col-md-4">
           <label class="form-label font-bold text-xs text-secondary mb-1">Status</label>
@@ -2006,11 +2007,11 @@ export const GovernanceModule = {
         </div>
         <div class="col-md-4">
           <label class="form-label font-bold text-xs text-secondary mb-1">Progress (%)</label>
-          <input type="number" id="m-mls-progress" class="form-control" min="0" max="100" value="${existing?.progress || 0}" />
+          <input type="number" id="m-mls-progress" class="form-control" min="0" max="100" value="${escapeHtml(existing?.progress || 0)}" />
         </div>
         <div class="col-12">
           <label class="form-label font-bold text-xs text-secondary mb-1">Completion Criteria & Notes</label>
-          <textarea id="m-mls-desc" class="form-control" rows="2" placeholder="Define acceptance criteria for sign-off">${existing?.description || ''}</textarea>
+          <textarea id="m-mls-desc" class="form-control" rows="2" placeholder="Define acceptance criteria for sign-off">${escapeHtml(existing?.description || '')}</textarea>
         </div>
       </form>
     `;
@@ -2060,13 +2061,13 @@ export const GovernanceModule = {
         <div class="p-3 bg-light rounded border">
           <div class="d-flex justify-content-between align-items-start">
             <div>
-              <span class="badge bg-secondary font-monospace">${mls.code}</span>
-              <h5 class="font-bold my-1">${mls.name}</h5>
-              <div class="text-xs text-secondary">Target: <strong>${mls.targetDate}</strong> | Type: ${mls.type} | Progress: <strong>${mls.progress}%</strong></div>
+              <span class="badge bg-secondary font-monospace">${escapeHtml(mls.code)}</span>
+              <h5 class="font-bold my-1">${escapeHtml(mls.name)}</h5>
+              <div class="text-xs text-secondary">Target: <strong>${escapeHtml(mls.targetDate)}</strong> | Type: ${escapeHtml(mls.type)} | Progress: <strong>${escapeHtml(mls.progress)}%</strong></div>
             </div>
-            <span class="badge ${mls.health === 'Critical' ? 'bg-danger' : mls.health === 'At Risk' ? 'bg-warning text-dark' : 'bg-success'}">${mls.health}</span>
+            <span class="badge ${mls.health === 'Critical' ? 'bg-danger' : mls.health === 'At Risk' ? 'bg-warning text-dark' : 'bg-success'}">${escapeHtml(mls.health)}</span>
           </div>
-          <p class="text-xs mt-2 mb-0">${mls.description || 'No criteria provided.'}</p>
+          <p class="text-xs mt-2 mb-0">${escapeHtml(mls.description || 'No criteria provided.')}</p>
         </div>
 
         <!-- Linked Work Items Deliverables -->
@@ -2084,9 +2085,9 @@ export const GovernanceModule = {
                 (l) => `
               <div class="d-flex justify-content-between align-items-center p-2 rounded bg-light border text-xs">
                 <div>
-                  <span class="badge bg-secondary-subtle text-secondary me-1 text-uppercase">${l.targetType}</span>
-                  <span class="font-bold text-primary font-monospace">${l.targetCode || l.targetId}</span>
-                  <span class="ms-1">${l.targetName || ''}</span>
+                  <span class="badge bg-secondary-subtle text-secondary me-1 text-uppercase">${escapeHtml(l.targetType)}</span>
+                  <span class="font-bold text-primary font-monospace">${escapeHtml(l.targetCode || l.targetId)}</span>
+                  <span class="ms-1">${escapeHtml(l.targetName || '')}</span>
                 </div>
                 <button class="btn btn-link text-danger p-0" onclick="window.GovernanceModule.unlinkItem('milestone', '${mls.id}', '${l.id}')" title="Unlink">
                   <i class="fa-solid fa-xmark"></i>
@@ -2179,16 +2180,16 @@ export const GovernanceModule = {
 
                   return `
                   <tr>
-                    <td><span class="badge bg-light text-secondary border font-monospace font-bold">${rel.code}</span></td>
+                    <td><span class="badge bg-light text-secondary border font-monospace font-bold">${escapeHtml(rel.code)}</span></td>
                     <td>
                       <div class="font-bold text-primary" style="cursor: pointer;" onclick="window.GovernanceModule.openReleaseDetails('${rel.id}')">
-                        ${rel.name} <span class="badge bg-secondary font-monospace">${rel.version}</span>
+                        ${escapeHtml(rel.name)} <span class="badge bg-secondary font-monospace">${escapeHtml(rel.version)}</span>
                       </div>
-                      <div class="text-xs text-secondary text-truncate" style="max-width: 320px;">${rel.description || 'No release notes'}</div>
+                      <div class="text-xs text-secondary text-truncate" style="max-width: 320px;">${escapeHtml(rel.description || 'No release notes')}</div>
                     </td>
-                    <td><span class="text-xs font-semibold">${rel.releaseDate}</span></td>
-                    <td><span class="badge ${healthBadge}">${rel.health}</span></td>
-                    <td><span class="badge bg-light text-dark border">${rel.status}</span></td>
+                    <td><span class="text-xs font-semibold">${escapeHtml(rel.releaseDate)}</span></td>
+                    <td><span class="badge ${healthBadge}">${escapeHtml(rel.health)}</span></td>
+                    <td><span class="badge bg-light text-dark border">${escapeHtml(rel.status)}</span></td>
                     <td class="text-center">
                       <span class="badge bg-info-subtle text-info font-bold">${itemCount} Deliverables</span>
                     </td>
@@ -2224,22 +2225,22 @@ export const GovernanceModule = {
       <form id="gov-rel-form" class="row g-3">
         <div class="col-md-8">
           <label class="form-label font-bold text-xs text-secondary mb-1">Release Name *</label>
-          <input type="text" id="m-rel-name" class="form-control" value="${existing?.name || ''}" required placeholder="e.g. Q3 Commercial Hardening Release" />
+          <input type="text" id="m-rel-name" class="form-control" value="${escapeHtml(existing?.name || '')}" required placeholder="e.g. Q3 Commercial Hardening Release" />
         </div>
         <div class="col-md-4">
           <label class="form-label font-bold text-xs text-secondary mb-1">Version String *</label>
-          <input type="text" id="m-rel-ver" class="form-control font-monospace" value="${existing?.version || 'v2.1.0'}" required placeholder="vX.Y.Z" />
+          <input type="text" id="m-rel-ver" class="form-control font-monospace" value="${escapeHtml(existing?.version || 'v2.1.0')}" required placeholder="vX.Y.Z" />
         </div>
         <div class="col-md-6">
           <label class="form-label font-bold text-xs text-secondary mb-1">Associated Project</label>
           <select id="m-rel-project" class="form-select">
             <option value="">-- Multi-Project / Portfolio --</option>
-            ${this.projects.map((p) => `<option value="${p.id}" ${existing?.projectId === p.id ? 'selected' : ''}>[${p.code || p.id}] ${p.name}</option>`).join('')}
+            ${this.projects.map((p) => `<option value="${p.id}" ${existing?.projectId === p.id ? 'selected' : ''}>[${p.code || p.id}] ${escapeHtml(p.name)}</option>`).join('')}
           </select>
         </div>
         <div class="col-md-6">
           <label class="form-label font-bold text-xs text-secondary mb-1">Target Release Date *</label>
-          <input type="date" id="m-rel-date" class="form-control" value="${existing?.releaseDate || ''}" required />
+          <input type="date" id="m-rel-date" class="form-control" value="${escapeHtml(existing?.releaseDate || '')}" required />
         </div>
         <div class="col-md-6">
           <label class="form-label font-bold text-xs text-secondary mb-1">Status</label>
@@ -2259,7 +2260,7 @@ export const GovernanceModule = {
         </div>
         <div class="col-12">
           <label class="form-label font-bold text-xs text-secondary mb-1">Release Scope & Deployment Notes</label>
-          <textarea id="m-rel-desc" class="form-control" rows="2" placeholder="Summary of epics, features, and deployment targets">${existing?.description || ''}</textarea>
+          <textarea id="m-rel-desc" class="form-control" rows="2" placeholder="Summary of epics, features, and deployment targets">${escapeHtml(existing?.description || '')}</textarea>
         </div>
       </form>
     `;
@@ -2312,11 +2313,11 @@ export const GovernanceModule = {
         <div class="p-3 bg-light rounded border">
           <div class="d-flex justify-content-between align-items-start">
             <div>
-              <span class="badge bg-secondary font-monospace">${rel.code}</span>
-              <h5 class="font-bold my-1">${rel.name} <span class="badge bg-primary font-monospace">${rel.version}</span></h5>
-              <div class="text-xs text-secondary">Target Date: <strong>${rel.releaseDate}</strong> | Status: <strong>${rel.status}</strong></div>
+              <span class="badge bg-secondary font-monospace">${escapeHtml(rel.code)}</span>
+              <h5 class="font-bold my-1">${escapeHtml(rel.name)} <span class="badge bg-primary font-monospace">${escapeHtml(rel.version)}</span></h5>
+              <div class="text-xs text-secondary">Target Date: <strong>${escapeHtml(rel.releaseDate)}</strong> | Status: <strong>${escapeHtml(rel.status)}</strong></div>
             </div>
-            <span class="badge ${rel.health === 'Off Track' ? 'bg-danger' : rel.health === 'At Risk' ? 'bg-warning text-dark' : 'bg-success'}">${rel.health}</span>
+            <span class="badge ${rel.health === 'Off Track' ? 'bg-danger' : rel.health === 'At Risk' ? 'bg-warning text-dark' : 'bg-success'}">${escapeHtml(rel.health)}</span>
           </div>
           <div class="d-flex align-items-center gap-2 mt-2">
             <span class="text-xs font-bold text-secondary">Release Completion:</span>
@@ -2342,13 +2343,13 @@ export const GovernanceModule = {
                 (item) => `
               <div class="d-flex justify-content-between align-items-center p-2 rounded bg-light border text-xs">
                 <div>
-                  <span class="badge bg-secondary-subtle text-secondary me-1 text-uppercase">${item.itemType}</span>
-                  <span class="font-bold text-primary font-monospace">${item.itemCode || item.itemId}</span>
-                  <span class="ms-1 font-semibold">${item.itemTitle || ''}</span>
-                  <span class="ms-2 badge bg-light text-dark border">${item.status || 'Active'}</span>
+                  <span class="badge bg-secondary-subtle text-secondary me-1 text-uppercase">${escapeHtml(item.itemType)}</span>
+                  <span class="font-bold text-primary font-monospace">${escapeHtml(item.itemCode || item.itemId)}</span>
+                  <span class="ms-1 font-semibold">${escapeHtml(item.itemTitle || '')}</span>
+                  <span class="ms-2 badge bg-light text-dark border">${escapeHtml(item.status || 'Active')}</span>
                 </div>
                 <div class="d-flex align-items-center gap-2">
-                  <span class="font-bold">${item.progress || 0}%</span>
+                  <span class="font-bold">${escapeHtml(item.progress || 0)}%</span>
                   <button class="btn btn-link text-danger p-0" onclick="window.GovernanceModule.removeReleaseItem('${rel.id}', '${item.id}')" title="Remove from Scope">
                     <i class="fa-solid fa-xmark"></i>
                   </button>
@@ -2375,7 +2376,7 @@ export const GovernanceModule = {
       <div class="p-2">
         <label class="form-label font-bold text-xs text-secondary mb-1">Select Deliverable Item to Include in Release Scope</label>
         <select id="m-add-rel-item" class="form-select">
-          ${options.map((o) => `<option value="${o.type}|${o.id}|${o.code}|${o.title}|${o.status || 'In Progress'}|${o.progress || 0}">[${o.type.toUpperCase()}] ${o.code} - ${o.title}</option>`).join('')}
+          ${options.map((o) => `<option value="${escapeHtml(o.type)}|${o.id}|${escapeHtml(o.code)}|${escapeHtml(o.title)}|${escapeHtml(o.status || 'In Progress')}|${escapeHtml(o.progress || 0)}">[${o.type.toUpperCase()}] ${escapeHtml(o.code)} - ${escapeHtml(o.title)}</option>`).join('')}
         </select>
       </div>
     `;
@@ -2440,22 +2441,22 @@ export const GovernanceModule = {
             <select id="trace-select-item" class="form-select form-select-sm" style="min-width: 260px;" onchange="window.GovernanceModule.handleTraceSelection(this.value)">
               <option value="">-- Choose Item to Trace --</option>
               <optgroup label="Projects">
-                ${this.projects.map((p) => `<option value="project|${p.id}" ${selected?.type === 'project' && selected?.id === p.id ? 'selected' : ''}>[Project] ${p.code || p.id} - ${p.name}</option>`).join('')}
+                ${this.projects.map((p) => `<option value="project|${p.id}" ${selected?.type === 'project' && selected?.id === p.id ? 'selected' : ''}>[Project] ${p.code || p.id} - ${escapeHtml(p.name)}</option>`).join('')}
               </optgroup>
               <optgroup label="Risks">
-                ${this.risks.map((r) => `<option value="risk|${r.id}" ${selected?.type === 'risk' && selected?.id === r.id ? 'selected' : ''}>[Risk] ${r.code} - ${r.title}</option>`).join('')}
+                ${this.risks.map((r) => `<option value="risk|${r.id}" ${selected?.type === 'risk' && selected?.id === r.id ? 'selected' : ''}>[Risk] ${escapeHtml(r.code)} - ${escapeHtml(r.title)}</option>`).join('')}
               </optgroup>
               <optgroup label="Issues">
-                ${this.issues.map((i) => `<option value="issue|${i.id}" ${selected?.type === 'issue' && selected?.id === i.id ? 'selected' : ''}>[Issue] ${i.code} - ${i.title}</option>`).join('')}
+                ${this.issues.map((i) => `<option value="issue|${i.id}" ${selected?.type === 'issue' && selected?.id === i.id ? 'selected' : ''}>[Issue] ${escapeHtml(i.code)} - ${escapeHtml(i.title)}</option>`).join('')}
               </optgroup>
               <optgroup label="Milestones">
-                ${this.milestones.map((m) => `<option value="milestone|${m.id}" ${selected?.type === 'milestone' && selected?.id === m.id ? 'selected' : ''}>[Milestone] ${m.code} - ${m.name}</option>`).join('')}
+                ${this.milestones.map((m) => `<option value="milestone|${m.id}" ${selected?.type === 'milestone' && selected?.id === m.id ? 'selected' : ''}>[Milestone] ${escapeHtml(m.code)} - ${escapeHtml(m.name)}</option>`).join('')}
               </optgroup>
               <optgroup label="Releases">
-                ${this.releases.map((rel) => `<option value="release|${rel.id}" ${selected?.type === 'release' && selected?.id === rel.id ? 'selected' : ''}>[Release] ${rel.code} - ${rel.name} (${rel.version})</option>`).join('')}
+                ${this.releases.map((rel) => `<option value="release|${rel.id}" ${selected?.type === 'release' && selected?.id === rel.id ? 'selected' : ''}>[Release] ${escapeHtml(rel.code)} - ${escapeHtml(rel.name)} (${escapeHtml(rel.version)})</option>`).join('')}
               </optgroup>
               <optgroup label="Delivery Deliverables">
-                ${this.deliveryItems.map((d) => `<option value="${d.type}|${d.id}" ${selected?.type === d.type && selected?.id === d.id ? 'selected' : ''}>[${d.type.toUpperCase()}] ${d.code || d.id} - ${d.title || d.name}</option>`).join('')}
+                ${this.deliveryItems.map((d) => `<option value="${escapeHtml(d.type)}|${d.id}" ${selected?.type === d.type && selected?.id === d.id ? 'selected' : ''}>[${escapeHtml(String(d.type).toUpperCase())}] ${escapeHtml(d.code || d.id)} - ${escapeHtml(d.title || d.name)}</option>`).join('')}
               </optgroup>
             </select>
           </div>
@@ -2500,10 +2501,10 @@ export const GovernanceModule = {
               ${(chain.ancestors || [])
                 .map(
                   (a) => `
-                <div class="d-flex align-items-center gap-1.5 p-2 rounded bg-light border text-xs" style="cursor: pointer;" onclick="window.GovernanceModule.inspectEntity('${a.type}', '${a.id}')">
-                  <span class="badge bg-primary text-white text-uppercase" style="font-size: 0.68rem;">${a.type}</span>
-                  <span class="font-bold text-dark font-monospace">${a.code || ''}</span>
-                  <span class="text-secondary">${a.name}</span>
+                <div class="d-flex align-items-center gap-1.5 p-2 rounded bg-light border text-xs" style="cursor: pointer;" onclick="window.GovernanceModule.inspectEntity('${escapeHtml(a.type)}', '${a.id}')">
+                  <span class="badge bg-primary text-white text-uppercase" style="font-size: 0.68rem;">${escapeHtml(a.type)}</span>
+                  <span class="font-bold text-dark font-monospace">${escapeHtml(a.code || '')}</span>
+                  <span class="text-secondary">${escapeHtml(a.name)}</span>
                 </div>
                 <span class="text-secondary">&rarr;</span>
               `
@@ -2516,12 +2517,12 @@ export const GovernanceModule = {
           <div class="p-3 rounded border" style="background-color: rgba(79, 70, 229, 0.05); border-color: var(--brand-primary) !important;">
             <div class="d-flex justify-content-between align-items-center">
               <div>
-                <span class="badge bg-primary text-white text-uppercase">${chain.entity.type} (Focus Item)</span>
-                <span class="font-bold font-monospace text-primary ms-1">${chain.entity.code || ''}</span>
-                <h5 class="font-bold my-1 text-dark">${chain.entity.name}</h5>
+                <span class="badge bg-primary text-white text-uppercase">${escapeHtml(chain.entity.type)} (Focus Item)</span>
+                <span class="font-bold font-monospace text-primary ms-1">${escapeHtml(chain.entity.code || '')}</span>
+                <h5 class="font-bold my-1 text-dark">${escapeHtml(chain.entity.name)}</h5>
               </div>
               <div>
-                <span class="badge bg-light text-dark border">${chain.entity.status || 'Active'}</span>
+                <span class="badge bg-light text-dark border">${escapeHtml(chain.entity.status || 'Active')}</span>
               </div>
             </div>
           </div>
@@ -2534,10 +2535,10 @@ export const GovernanceModule = {
               ${(chain.children || [])
                 .map(
                   (c) => `
-                <div class="d-flex align-items-center gap-1.5 p-2 rounded bg-light border text-xs" style="cursor: pointer;" onclick="window.GovernanceModule.inspectEntity('${c.type}', '${c.id}')">
-                  <span class="badge bg-success-subtle text-success text-uppercase" style="font-size: 0.68rem;">${c.type}</span>
-                  <span class="font-bold font-monospace">${c.code || ''}</span>
-                  <span>${c.name}</span>
+                <div class="d-flex align-items-center gap-1.5 p-2 rounded bg-light border text-xs" style="cursor: pointer;" onclick="window.GovernanceModule.inspectEntity('${escapeHtml(c.type)}', '${c.id}')">
+                  <span class="badge bg-success-subtle text-success text-uppercase" style="font-size: 0.68rem;">${escapeHtml(c.type)}</span>
+                  <span class="font-bold font-monospace">${escapeHtml(c.code || '')}</span>
+                  <span>${escapeHtml(c.name)}</span>
                 </div>
               `
                 )
@@ -2559,9 +2560,9 @@ export const GovernanceModule = {
                     .map(
                       (r) => `
                     <div class="p-1.5 rounded bg-light border text-xs d-flex justify-content-between">
-                      <span class="font-bold text-danger font-monospace">${r.code}</span>
-                      <span class="text-truncate" style="max-width: 140px;">${r.name}</span>
-                      <span class="badge bg-secondary-subtle text-secondary">${r.severity}</span>
+                      <span class="font-bold text-danger font-monospace">${escapeHtml(r.code)}</span>
+                      <span class="text-truncate" style="max-width: 140px;">${escapeHtml(r.name)}</span>
+                      <span class="badge bg-secondary-subtle text-secondary">${escapeHtml(r.severity)}</span>
                     </div>
                   `
                     )
@@ -2582,9 +2583,9 @@ export const GovernanceModule = {
                     .map(
                       (i) => `
                     <div class="p-1.5 rounded bg-light border text-xs d-flex justify-content-between">
-                      <span class="font-bold text-warning font-monospace">${i.code}</span>
-                      <span class="text-truncate" style="max-width: 140px;">${i.name}</span>
-                      <span class="badge bg-light text-dark border">${i.status}</span>
+                      <span class="font-bold text-warning font-monospace">${escapeHtml(i.code)}</span>
+                      <span class="text-truncate" style="max-width: 140px;">${escapeHtml(i.name)}</span>
+                      <span class="badge bg-light text-dark border">${escapeHtml(i.status)}</span>
                     </div>
                   `
                     )
@@ -2605,8 +2606,8 @@ export const GovernanceModule = {
                     .map(
                       (d) => `
                     <div class="p-1.5 rounded bg-light border text-xs d-flex justify-content-between">
-                      <span class="font-bold text-primary font-monospace">${d.code}</span>
-                      <span class="text-truncate" style="max-width: 140px;">${d.name}</span>
+                      <span class="font-bold text-primary font-monospace">${escapeHtml(d.code)}</span>
+                      <span class="text-truncate" style="max-width: 140px;">${escapeHtml(d.name)}</span>
                     </div>
                   `
                     )
@@ -2633,7 +2634,7 @@ export const GovernanceModule = {
       <div class="p-2">
         <label class="form-label font-bold text-xs text-secondary mb-1">Select Delivery Item to Link With</label>
         <select id="m-link-item" class="form-select">
-          ${options.map((o) => `<option value="${o.type}|${o.id}|${o.code}|${o.name}">[${o.type.toUpperCase()}] ${o.code} - ${o.name}</option>`).join('')}
+          ${options.map((o) => `<option value="${escapeHtml(o.type)}|${o.id}|${escapeHtml(o.code)}|${escapeHtml(o.name)}">[${o.type.toUpperCase()}] ${escapeHtml(o.code)} - ${escapeHtml(o.name)}</option>`).join('')}
         </select>
       </div>
     `;

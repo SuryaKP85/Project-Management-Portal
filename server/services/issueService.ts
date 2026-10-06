@@ -319,13 +319,14 @@ export const IssueService = {
     return deleted;
   },
 
-  async getRootCauseSummary(filter?: { projectId?: string; productId?: string }): Promise<{
+  /** Sprint 22A: scope = the caller's accessible project ids (null = every project). */
+  async getRootCauseSummary(filter?: { projectId?: string; productId?: string }, scope: Set<string> | null = null): Promise<{
     breakdown: Array<{ category: RootCauseCategory; count: number; percentage: number }>;
     totalIssues: number;
     resolvedCount: number;
     resolutionRate: number;
   }> {
-    const issues = await IssueRepository.findAll(filter);
+    const issues = (await IssueRepository.findAll(filter)).filter((i) => !scope || scope.has(i.projectId));
     const categoryCounts: Record<string, number> = {};
 
     let resolvedCount = 0;

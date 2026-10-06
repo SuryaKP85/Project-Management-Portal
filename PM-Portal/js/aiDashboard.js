@@ -3,6 +3,7 @@
 import { Storage } from './storage.js';
 import { AIEngine } from './aiEngine.js';
 import { AIRecommendationsModule } from './aiRecommendations.js';
+import { escapeHtml } from './safeHtml.js';
 
 export const AIDashboardModule = {
   /**
@@ -35,7 +36,7 @@ export const AIDashboardModule = {
           icon: '🟢',
           colorClass: 'text-danger',
           badgeBg: 'bg-danger-subtle text-danger border-danger-subtle',
-          text: `Project '${p.name}' will likely miss delivery by ${days === 0 ? '5' : days} days due to remaining workload lag.`
+          text: `Project '${escapeHtml(p.name)}' will likely miss delivery by ${days === 0 ? '5' : days} days due to remaining workload lag.`
         });
       }
     });
@@ -68,7 +69,7 @@ export const AIDashboardModule = {
           icon: '🔴',
           colorClass: 'text-danger',
           badgeBg: 'bg-danger-subtle text-danger border-danger-subtle',
-          text: `Developer ${r.name} is allocated at ${r.allocationPercentage}%. Rebalance recommended.`
+          text: `Developer ${escapeHtml(r.name)} is allocated at ${r.allocationPercentage}%. Rebalance recommended.`
         });
       }
     });
@@ -81,7 +82,7 @@ export const AIDashboardModule = {
           icon: '🟠',
           colorClass: 'text-warning',
           badgeBg: 'bg-warning-subtle text-warning border-warning-subtle',
-          text: `Customer ${c.name} has ${c.escalationsCount} open escalation(s) and pending stories.`
+          text: `Customer ${escapeHtml(c.name)} has ${c.escalationsCount} open escalation(s) and pending stories.`
         });
       }
     });
@@ -171,7 +172,7 @@ export const AIDashboardModule = {
           <div class="d-flex align-items-center gap-2.5">
             <input class="form-check-input" type="checkbox" id="${p.id}" style="cursor: pointer;" />
             <div>
-              <label for="${p.id}" class="font-bold text-xs mb-0" style="cursor: pointer; color: var(--text-primary);">${p.title}</label>
+              <label for="${p.id}" class="font-bold text-xs mb-0" style="cursor: pointer; color: var(--text-primary);">${escapeHtml(p.title)}</label>
               <div class="text-xxs text-secondary">Due: ${p.due}</div>
             </div>
           </div>

@@ -4,6 +4,7 @@ import { Storage } from './storage.js';
 import { Calculations } from './calculations.js';
 import { Filters } from './filters.js';
 import { Excel } from './excel.js';
+import { escapeHtml } from './safeHtml.js';
 
 export const LeaveTrackerModule = {
   app: null,
@@ -377,7 +378,7 @@ export const LeaveTrackerModule = {
         
         // If leave overlaps with project duration, project milestone is affected!
         if (start <= pEnd && end >= pStart) {
-          mAffected.push(`${proj.name} - Mid-phase Milestones`);
+          mAffected.push(`${escapeHtml(proj.name)} - Mid-phase Milestones`);
         }
       }
     });
@@ -427,18 +428,18 @@ export const LeaveTrackerModule = {
 
     if (deptCapacityPercent < 50) {
       risk = 'High';
-      riskReasons.push(`Critical department capacity reduction in ${dept} (${deptCapacityPercent}%)`);
+      riskReasons.push(`Critical department capacity reduction in ${escapeHtml(dept)} (${deptCapacityPercent}%)`);
     }
 
     if (deptCapacityPercent < 25) {
       risk = 'Critical';
-      riskReasons.push(`Severe department under-staffing in ${dept}`);
+      riskReasons.push(`Severe department under-staffing in ${escapeHtml(dept)}`);
     }
 
     if (employee && (employee.role.toLowerCase().includes('lead') || employee.role.toLowerCase().includes('manager')) && duration >= 3) {
       if (risk === 'Low') risk = 'Medium';
       else if (risk === 'Medium') risk = 'High';
-      riskReasons.push(`Key supervisory role (${employee.role}) absent for ${duration} days`);
+      riskReasons.push(`Key supervisory role (${escapeHtml(employee.role)}) absent for ${duration} days`);
     }
 
     // 6. Approval decision rule
@@ -499,14 +500,14 @@ export const LeaveTrackerModule = {
     // Update Projects list
     if (uiPrjList) {
       uiPrjList.innerHTML = impact.projectsAffected
-        .map(p => `<span class="badge bg-light text-dark border px-2 py-1" style="font-size: 0.75rem;">${p}</span>`)
+        .map(p => `<span class="badge bg-light text-dark border px-2 py-1" style="font-size: 0.75rem;">${escapeHtml(p)}</span>`)
         .join(' ');
     }
 
     // Update Jiras list
     if (uiJiraList) {
       uiJiraList.innerHTML = impact.jirasAffected
-        .map(j => `<div style="font-size: 0.8rem; margin-bottom: 2px;"><i class="fa-solid fa-square-check text-info me-1"></i> ${j}</div>`)
+        .map(j => `<div style="font-size: 0.8rem; margin-bottom: 2px;"><i class="fa-solid fa-square-check text-info me-1"></i> ${escapeHtml(j)}</div>`)
         .join('');
     }
 
@@ -813,7 +814,7 @@ export const LeaveTrackerModule = {
       nameTd.style.backgroundColor = 'var(--bg-card)';
       nameTd.style.zIndex = '2';
       nameTd.style.borderRight = '1px solid var(--border-color)';
-      nameTd.innerHTML = `<div class="font-bold">${res.name}</div><div class="text-secondary" style="font-size: 0.7rem;">${res.role} • ${res.dept}</div>`;
+      nameTd.innerHTML = `<div class="font-bold">${escapeHtml(res.name)}</div><div class="text-secondary" style="font-size: 0.7rem;">${escapeHtml(res.role)} • ${escapeHtml(res.dept)}</div>`;
       tr.appendChild(nameTd);
 
       // Render cells for each day
@@ -949,10 +950,10 @@ export const LeaveTrackerModule = {
 
                   list.push({
                     type: 'Overlapping Department Absences',
-                    title: `${r1.dept} Capacity Risk`,
-                    desc: `<strong>${l1.name}</strong> (${l1.type}) and <strong>${l2.name}</strong> (${l2.type}) are away at the same time during ${formatOverDate}.`,
+                    title: `${escapeHtml(r1.dept)} Capacity Risk`,
+                    desc: `<strong>${escapeHtml(l1.name)}</strong> (${escapeHtml(l1.type)}) and <strong>${escapeHtml(l2.name)}</strong> (${escapeHtml(l2.type)}) are away at the same time during ${formatOverDate}.`,
                     severity: 'High',
-                    badge: `${r1.dept} Alert`
+                    badge: `${escapeHtml(r1.dept)} Alert`
                   });
                 }
               }
@@ -970,8 +971,8 @@ export const LeaveTrackerModule = {
         activeSupervisorLeaves.forEach(l => {
           list.push({
             type: 'Supervisor Absence Block',
-            title: `Critical Role Void: ${res.role}`,
-            desc: `<strong>${res.name}</strong> is away for ${l.days} days starting ${l.start}. Critical project milestones and approvals may stall.`,
+            title: `Critical Role Void: ${escapeHtml(res.role)}`,
+            desc: `<strong>${escapeHtml(res.name)}</strong> is away for ${l.days} days starting ${escapeHtml(l.start)}. Critical project milestones and approvals may stall.`,
             severity: 'Medium',
             badge: 'Supervisor Void'
           });
@@ -1003,7 +1004,7 @@ export const LeaveTrackerModule = {
         </div>
         <div class="flex-grow-1">
           <div class="d-flex justify-content-between align-items-center">
-            <h6 class="font-bold m-0" style="font-size: 0.85rem; color: var(--text-primary);">${item.title}</h6>
+            <h6 class="font-bold m-0" style="font-size: 0.85rem; color: var(--text-primary);">${escapeHtml(item.title)}</h6>
             <span class="badge ${badgeColor} px-2 py-0.5" style="font-size: 0.7rem;">${item.badge}</span>
           </div>
           <p class="m-0 text-secondary mt-1" style="font-size: 0.8rem; line-height: 1.4;">${item.desc}</p>
@@ -1089,15 +1090,15 @@ export const LeaveTrackerModule = {
           <div style="font-weight: 700; color: var(--brand-primary);">${l.id}</div>
         </td>
         <td>
-          <div class="font-bold text-primary">${l.name}</div>
-          <div class="text-secondary" style="font-size: 0.75rem; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${l.reason || '-'}">${l.reason || '-'}</div>
+          <div class="font-bold text-primary">${escapeHtml(l.name)}</div>
+          <div class="text-secondary" style="font-size: 0.75rem; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(l.reason || '-')}">${escapeHtml(l.reason || '-')}</div>
         </td>
         <td>
-          <div style="font-size: 0.85rem; font-weight: 600;">${l.type}</div>
+          <div style="font-size: 0.85rem; font-weight: 600;">${escapeHtml(l.type)}</div>
           <div style="font-size: 0.7rem; color: var(--text-muted); ${riskClass}">Risk: ${l.riskIncrease || 'Low'}</div>
         </td>
         <td style="font-size: 0.85rem;">
-          <div>${l.start} to ${l.end}</div>
+          <div>${escapeHtml(l.start)} to ${escapeHtml(l.end)}</div>
           <div class="text-muted" style="font-size: 0.7rem; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="Jiras: ${jirasStr}">Jiras: ${jirasStr}</div>
         </td>
         <td>
@@ -1106,7 +1107,7 @@ export const LeaveTrackerModule = {
         </td>
         <td>
           <div class="d-flex align-items-center justify-content-between gap-2">
-            <span class="badge ${statusClass} rounded-pill px-2.5 py-1" style="font-size: 0.75rem;">${l.status}</span>
+            <span class="badge ${statusClass} rounded-pill px-2.5 py-1" style="font-size: 0.75rem;">${escapeHtml(l.status)}</span>
             <div class="d-flex align-items-center">${actionsHtml}</div>
           </div>
         </td>

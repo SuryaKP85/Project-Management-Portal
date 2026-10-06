@@ -1,6 +1,7 @@
 /* gantt.js - Advanced Interactive Gantt Chart Engine with Real-Time Sidebar Controls, Dependency Mapping, Critical Path Highlighting, Custom Milestones, and Zoom/Export Engines */
 
 import { Storage } from './storage.js';
+import { escapeHtml } from './safeHtml.js';
 
 export const GanttModule = {
   app: null,
@@ -146,7 +147,7 @@ export const GanttModule = {
 
     // Projects
     this.projects.forEach(p => {
-      prjSelect.innerHTML += `<option value="${p.id}">${p.id} - ${p.name}</option>`;
+      prjSelect.innerHTML += `<option value="${p.id}">${p.id} - ${escapeHtml(p.name)}</option>`;
     });
 
     // Set value back to 'all' or selected
@@ -454,20 +455,20 @@ export const GanttModule = {
         <div class="d-flex justify-content-between align-items-start mb-1.5">
           <div>
             <span class="badge ${isCritical ? 'bg-danger-subtle text-danger' : 'bg-primary-subtle text-primary'} font-bold me-1 text-xs">${p.id}</span>
-            <span class="font-bold text-xs" style="color: var(--text-primary);">${p.name}</span>
+            <span class="font-bold text-xs" style="color: var(--text-primary);">${escapeHtml(p.name)}</span>
           </div>
-          <span class="text-muted text-xxs font-bold" style="font-size: 0.65rem;">${p.client}</span>
+          <span class="text-muted text-xxs font-bold" style="font-size: 0.65rem;">${escapeHtml(p.client)}</span>
         </div>
         
         <div class="row g-1.5 align-items-center mt-1">
           <!-- Dates Row -->
           <div class="col-6">
             <span class="d-block text-xxs text-secondary uppercase font-semibold">Est. Start</span>
-            <input type="date" class="form-control gantt-sidebar-input w-100" data-field="estimatedStart" data-id="${p.id}" value="${p.estimatedStart || ''}">
+            <input type="date" class="form-control gantt-sidebar-input w-100" data-field="estimatedStart" data-id="${p.id}" value="${escapeHtml(p.estimatedStart || '')}">
           </div>
           <div class="col-6">
             <span class="d-block text-xxs text-secondary uppercase font-semibold">Est. End</span>
-            <input type="date" class="form-control gantt-sidebar-input w-100" data-field="estimatedEnd" data-id="${p.id}" value="${p.estimatedEnd || ''}">
+            <input type="date" class="form-control gantt-sidebar-input w-100" data-field="estimatedEnd" data-id="${p.id}" value="${escapeHtml(p.estimatedEnd || '')}">
           </div>
 
           <!-- Dependency and progress slider -->
@@ -809,7 +810,7 @@ export const GanttModule = {
             barEst.appendChild(fill);
           }
 
-          barEst.innerHTML += `<span>${p.id}: ${p.name} (${p.progress}%)</span>`;
+          barEst.innerHTML += `<span>${p.id}: ${escapeHtml(p.name)} (${p.progress}%)</span>`;
           
           // Tooltip mapping
           this.attachTooltip(barEst, p, 'Estimated Timeline');
@@ -975,11 +976,11 @@ export const GanttModule = {
 
       tooltip.innerHTML = `
         <div class="border-bottom pb-1.5 mb-1.5">
-          <strong style="font-size: 0.8rem; color: #38bdf8;">${proj.id}: ${proj.name}</strong>
+          <strong style="font-size: 0.8rem; color: #38bdf8;">${proj.id}: ${escapeHtml(proj.name)}</strong>
         </div>
-        <div class="mb-1"><strong>Client:</strong> ${proj.client}</div>
-        <div class="mb-1"><strong>PM:</strong> ${proj.manager} | <strong>Dev:</strong> ${proj.developer}</div>
-        <div class="mb-1"><strong>Est. Range:</strong> ${proj.estimatedStart} to ${proj.estimatedEnd}</div>
+        <div class="mb-1"><strong>Client:</strong> ${escapeHtml(proj.client)}</div>
+        <div class="mb-1"><strong>PM:</strong> ${escapeHtml(proj.manager)} | <strong>Dev:</strong> ${escapeHtml(proj.developer)}</div>
+        <div class="mb-1"><strong>Est. Range:</strong> ${escapeHtml(proj.estimatedStart)} to ${escapeHtml(proj.estimatedEnd)}</div>
         <div class="mb-1"><strong>Progress:</strong> ${proj.progress}% ${riskBadge}</div>
         <div class="mb-1"><strong>Dependency:</strong> ${proj.dependency || 'None'}</div>
         <div class="text-xxs text-info font-bold mt-1.5 border-top pt-1 text-uppercase">${layerName} Layer</div>
@@ -1017,8 +1018,8 @@ export const GanttModule = {
         <div class="border-bottom pb-1 mb-1 font-bold text-warning">
           <i class="fa-solid fa-diamond text-warning me-1"></i> Client Delivery Milestone
         </div>
-        <div><strong>Project:</strong> ${proj.id} - ${proj.name}</div>
-        <div><strong>Milestone Target:</strong> ${proj.estimatedEnd}</div>
+        <div><strong>Project:</strong> ${proj.id} - ${escapeHtml(proj.name)}</div>
+        <div><strong>Milestone Target:</strong> ${escapeHtml(proj.estimatedEnd)}</div>
         <div class="text-xxs text-secondary font-semibold mt-1">Acceptance criteria audit, deployment checklist, and final PM client wrapup approval.</div>
       `;
       document.body.appendChild(tooltip);

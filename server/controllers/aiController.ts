@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { AIService } from '../services/aiService';
 import { AiContextService } from '../services/aiContextService';
 import { AiAssistantService } from '../services/aiAssistantService';
+import { ActivityService } from '../services/activityService';
+import crypto from 'crypto';
 import { AiCopilotService, REPORT_PERIODS, ReportPeriod, EMAIL_TEMPLATE_PURPOSES } from '../services/aiCopilotService';
 
 /** The acting user as the AI services expect it, from the verified JWT payload. */
@@ -131,6 +133,23 @@ export const AIController = {
       });
 
       const response = await AIService.query(prompt, context as unknown as Record<string, any>);
+      // Sprint 22A: audited like the assistant: who asked, from which scope, and how much; never the prompt or the answer.
+      await ActivityService.logActivity({
+        entityType: 'ai',
+        entityId: `aiq_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
+        action: 'ai_query',
+        actorId: req.user.userId,
+        actorName: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || req.user.email,
+        details: {
+          endpoint: '/ai/query',
+          provider: response.provider,
+          scope: context.scope,
+          role: req.user.role,
+          promptLength: prompt.length,
+          projectsInScope: context.meta.projectsInScope,
+        },
+        ipAddress: req.ip,
+      });
       res.json({ success: true, data: response });
     } catch (err: any) {
       respondAiError(res, err, 'AI request failed.');

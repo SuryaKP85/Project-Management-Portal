@@ -3,6 +3,7 @@
 import { Storage } from './storage.js';
 import { Calculations } from './calculations.js';
 import { Filters } from './filters.js';
+import { escapeHtml } from './safeHtml.js';
 
 export const RiskEngineModule = {
   app: null,
@@ -466,7 +467,7 @@ export const RiskEngineModule = {
 
             badgesHTML += `
               <span class="badge ${sevClass} text-white font-bold text-center px-1 py-0.5" 
-                    title="${ep.name} (Risk: ${ep.riskEval.score})" 
+                    title="${escapeHtml(ep.name)} (Risk: ${escapeHtml(ep.riskEval.score)})"
                     style="font-size: 0.65rem; cursor: pointer; margin: 1px; display: inline-block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;"
                     onclick="window.scrollToRiskProject('${ep.id}')">
                 ${ep.id}
@@ -668,11 +669,11 @@ export const RiskEngineModule = {
       tr.innerHTML = `
         <td style="padding: 12px 16px;">
           <div><strong class="text-primary">${ep.id}</strong></div>
-          <div class="text-secondary font-semibold" style="font-size: 0.8rem; text-overflow: ellipsis; overflow: hidden; max-width: 170px;" title="${ep.name}">${ep.name}</div>
+          <div class="text-secondary font-semibold" style="font-size: 0.8rem; text-overflow: ellipsis; overflow: hidden; max-width: 170px;" title="${escapeHtml(ep.name)}">${escapeHtml(ep.name)}</div>
         </td>
         <td>
           <div class="font-semibold text-primary">${ep.manager || 'Alex Mercer'}</div>
-          <div class="text-muted text-xs">${ep.client}</div>
+          <div class="text-muted text-xs">${escapeHtml(ep.client)}</div>
         </td>
         <td style="text-align: center;">
           <span class="font-bold" style="font-size: 0.95rem; color: ${ep.riskEval.score >= 80 ? 'var(--brand-danger)' : ep.riskEval.score >= 60 ? '#f97316' : ep.riskEval.score >= 30 ? 'var(--brand-warning)' : 'var(--brand-success)'};">

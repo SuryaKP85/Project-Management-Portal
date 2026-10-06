@@ -33,6 +33,7 @@ import { GovernanceModule } from './governance.js';
 import { NotificationService } from './services/notificationService.js';
 import { renderNotifications } from './notifications.js';
 import { HomeModule } from './home.js';
+import { escapeHtml, percent } from './safeHtml.js';
 import { Authentication } from './authentication.js';
 
 class EnterprisePortalApp {
@@ -348,7 +349,7 @@ class EnterprisePortalApp {
       // Capitalize page name cleanly
       const nameMap = {
         'home': 'Home',
-        'dashboard': 'Legacy Dashboard (V1.1)',
+        'dashboard': 'PM Dashboard',
         'executive': 'Executive Overview',
         'projects': 'Projects Portfolio',
         'portfolios': 'Strategic Portfolios & OKRs',
@@ -767,15 +768,15 @@ class EnterprisePortalApp {
       items.forEach(r => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-          <td><div class="table-project-title">${r.id}</div></td>
-          <td><span class="font-semibold">${r.name}</span></td>
-          <td><span class="text-secondary-custom">${r.role}</span></td>
-          <td><span class="text-secondary-custom">${r.dept}</span></td>
+          <td><div class="table-project-title">${escapeHtml(r.id)}</div></td>
+          <td><span class="font-semibold">${escapeHtml(r.name)}</span></td>
+          <td><span class="text-secondary-custom">${escapeHtml(r.role)}</span></td>
+          <td><span class="text-secondary-custom">${escapeHtml(r.dept)}</span></td>
           <td>
             <span class="table-progress-bar">
-              <span class="table-progress-fill" style="width: ${r.allocation}%; background-color: var(--brand-info)"></span>
+              <span class="table-progress-fill" style="width: ${percent(r.allocation)}%; background-color: var(--brand-info)"></span>
             </span>
-            <span class="table-progress-text">${r.allocation}%</span>
+            <span class="table-progress-text">${escapeHtml(r.allocation)}%</span>
           </td>
         `;
         listBody.appendChild(tr);

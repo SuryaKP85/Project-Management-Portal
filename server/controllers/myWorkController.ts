@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { HomeService } from '../services/homeService';
+import { ProjectScope } from '../services/projectScope';
 import { StoryRepository } from '../repositories/storyRepository';
 import { TaskRepository } from '../repositories/taskRepository';
 import { SprintRepository } from '../repositories/sprintRepository';
@@ -40,11 +41,13 @@ export const MyWorkController = {
       const { id: userId, name: userName } = getActor(req);
       const { timeframe = 'all' } = req.query;
 
-      const [allStories, allTasks, sprints] = await Promise.all([
+      const [allStories, allTasks, activeSprintsAll] = await Promise.all([
         StoryRepository.findAll(),
         TaskRepository.findAll(),
         SprintRepository.findAll({ status: 'active' }),
       ]);
+      // Sprint 22A: only the active sprints of the caller's accessible projects.
+      const sprints = await ProjectScope.filter({ userId, role: req.user.role }, activeSprintsAll, (sp) => sp.projectId);
 
       const activeSprintIds = new Set(sprints.map((s) => s.id));
       const activeSprintNames = new Set(sprints.map((s) => s.name));

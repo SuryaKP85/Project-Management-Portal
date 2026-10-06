@@ -3,7 +3,7 @@ import { ActivityRepository } from '../repositories/activityRepository';
 import { NotificationRepository } from '../repositories/notificationRepository';
 import { Project, SafeUser } from '../models/types';
 import crypto from 'crypto';
-import { ProjectGuards } from './projectGuards';
+import { PROJECT_CODE_PATTERN, ProjectGuards } from './projectGuards';
 
 export const ProjectService = {
   async getAllProjects(): Promise<Project[]> {
@@ -151,11 +151,42 @@ export const ProjectService = {
     return success;
   },
 
+  /**
+   * Sprint 22A: the V1.1 import goes through the same guards as POST /projects
+   * (allowlisted fields, the importer manages the project unless a valid active
+   * manager is named, members must be existing active users). A legacy id is kept
+   * only when well-formed and unused, so V1.1 references still resolve; nothing is
+   * ever overwritten. Only the imported projects are returned.
+   */
   async migrateLocalProjects(
     projects: Partial<Project>[],
     actorUser: SafeUser
   ): Promise<{ total: number; imported: number; skipped: number; projects: Project[] }> {
-    const result = await ProjectRepository.migrateFromLocal(projects);
+    const created: Project[] = [];
+    let skipped = 0;
+    for (const proj of projects) {
+      const legacyId = proj && typeof (proj.id || proj.code) === 'string' ? String(proj.id || proj.code) : '';
+      if (!proj || typeof proj !== 'object' || (!legacyId && !proj.name) || (legacyId && (await ProjectRepository.findById(legacyId)))) {
+        skipped++;
+        continue;
+      }
+      try {
+        const clean = await ProjectGuards.prepareCreate({ ...proj, code: undefined } as Record<string, any>, actorUser);
+        if (legacyId && PROJECT_CODE_PATTERN.test(legacyId)) {
+          clean.id = legacyId;
+          clean.code = typeof proj.code === 'string' && PROJECT_CODE_PATTERN.test(proj.code) ? proj.code : legacyId;
+        }
+        created.push(await ProjectRepository.create(clean));
+      } catch (err: any) {
+        // Invalid, not permitted, or an id / code already in use: skipped, never overwritten.
+        if (err && [400, 403, 409].includes(err.status)) {
+          skipped++;
+          continue;
+        }
+        throw err;
+      }
+    }
+    const result = { total: projects.length, imported: created.length, skipped, projects: created };
 
     await ActivityRepository.create({
       id: `act_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,

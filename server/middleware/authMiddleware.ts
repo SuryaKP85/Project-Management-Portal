@@ -18,7 +18,8 @@ export type AuthRequest = Request;
 /**
  * Verifies the session JWT, then re-reads the account so that a user who was
  * deactivated (or removed) after signing in is refused immediately rather than
- * when the token expires (Sprint 10A security correction to Sprint 12).
+ * when the token expires (Sprint 10A security correction to Sprint 12). Sprint 22A:
+ * the request carries the account's current role, never the role in the token.
  * The checks before the first await stay synchronous.
  */
 export async function authenticateToken(req: Request, res: Response, next: NextFunction) {
@@ -81,7 +82,9 @@ export async function authenticateToken(req: Request, res: Response, next: NextF
     });
   }
 
-  req.user = payload;
+  // Sprint 22A: authorization uses the account as it is now, not the role (or name)
+  // captured in the token at sign-in; a demoted user loses the old rights on their next request.
+  req.user = { ...payload, role: account.role, email: account.email, firstName: account.firstName, lastName: account.lastName };
   next();
 }
 

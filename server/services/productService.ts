@@ -38,12 +38,13 @@ export const ProductService = {
    * ProjectHealthService results (Product -> Project is the stored productId).
    * Read-only; the declared health is reported alongside, never overwritten.
    */
-  async getProductHealth(id: string, options: { now?: Date } = {}): Promise<ProductHealthResponse | null> {
+  /** Sprint 22A: options.scope = the caller's accessible project ids (null / absent = every project). */
+  async getProductHealth(id: string, options: { now?: Date; scope?: Set<string> | null } = {}): Promise<ProductHealthResponse | null> {
     const product = await ProductRepository.findById(id);
     if (!product) return null;
 
     const projects = await ProjectRepository.findAll();
-    const built = await buildContainerHealth(projectsInProduct(projects, product.id), options.now);
+    const built = await buildContainerHealth(projectsInProduct(projects, product.id).filter((p) => !options.scope || options.scope.has(p.id)), options.now);
 
     return {
       productId: product.id,

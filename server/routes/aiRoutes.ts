@@ -36,6 +36,8 @@ aiRoutes.post(
   '/ai/query',
   authenticateToken,
   requireRoles([...AI_READ_ROLES]),
+  // Sprint 22A: the same per-user rate limit as the assistant (it was unmetered).
+  aiAssistantRateLimit,
   validateBody([{ field: 'prompt', required: true, type: 'string', minLength: 2 }]),
   AIController.query
 );

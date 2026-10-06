@@ -3,6 +3,7 @@
 import { Storage } from './storage.js';
 import { Calculations } from './calculations.js';
 import { Excel } from './excel.js';
+import { escapeHtml } from './safeHtml.js';
 
 export const TimeLoggingModule = {
   app: null,
@@ -631,7 +632,7 @@ export const TimeLoggingModule = {
 
       pRow.innerHTML = `
         <td style="padding: 12px 16px;">
-          <span style="color: var(--brand-primary); font-weight: 700;">${p.id}</span> - ${p.name}
+          <span style="color: var(--brand-primary); font-weight: 700;">${p.id}</span> - ${escapeHtml(p.name)}
         </td>
         <td class="text-center">${pEst}h</td>
         <td class="text-center" style="${pLoggedStyle}">${pLogged}h</td>
@@ -743,8 +744,8 @@ export const TimeLoggingModule = {
               <td style="padding: 6px 16px 6px 60px;">
                 <div class="d-flex align-items-center gap-1.5">
                   <i class="fa-solid fa-user text-secondary" style="font-size: 0.7rem;"></i>
-                  <span class="font-semibold" style="color: var(--text-primary);">${m.name}</span>
-                  <span class="text-muted text-xs">(${m.role})</span>
+                  <span class="font-semibold" style="color: var(--text-primary);">${escapeHtml(m.name)}</span>
+                  <span class="text-muted text-xs">(${escapeHtml(m.role)})</span>
                 </div>
               </td>
               <td class="text-center">
@@ -755,9 +756,9 @@ export const TimeLoggingModule = {
                 <div class="d-flex justify-content-center align-items-center gap-1">
                   <input type="number" class="form-control form-control-sm text-center tl-member-log-input" 
                     placeholder="Hrs" style="width: 65px; height: 26px; font-size: 0.75rem;" 
-                    min="0.5" max="12" step="0.5" data-project="${p.id}" data-dept="${dept}" data-employee="${m.name}" />
+                    min="0.5" max="12" step="0.5" data-project="${p.id}" data-dept="${dept}" data-employee="${escapeHtml(m.name)}" />
                   <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2 tl-member-log-btn" 
-                    style="height: 26px; font-size: 0.725rem;" data-project="${p.id}" data-dept="${dept}" data-employee="${m.name}">
+                    style="height: 26px; font-size: 0.725rem;" data-project="${p.id}" data-dept="${dept}" data-employee="${escapeHtml(m.name)}">
                     + Log
                   </button>
                 </div>
@@ -820,13 +821,13 @@ export const TimeLoggingModule = {
       const hoursCellClass = isOverrun ? 'text-danger fw-bold' : '';
 
       tr.innerHTML = `
-        <td style="padding: 10px 16px; font-size: 0.85rem; font-weight: 600;">${l.date}</td>
-        <td style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">${l.employee}</td>
-        <td style="font-size: 0.85rem;"><span class="text-primary font-semibold">${l.projectId}</span> <span class="text-secondary-custom text-xs">(${l.projectName})</span></td>
-        <td style="font-size: 0.85rem;"><span class="badge bg-light text-dark border px-2 py-0.5">${l.department}</span></td>
-        <td style="font-size: 0.85rem; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${l.task}">${l.task}</td>
+        <td style="padding: 10px 16px; font-size: 0.85rem; font-weight: 600;">${escapeHtml(l.date)}</td>
+        <td style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">${escapeHtml(l.employee)}</td>
+        <td style="font-size: 0.85rem;"><span class="text-primary font-semibold">${escapeHtml(l.projectId)}</span> <span class="text-secondary-custom text-xs">(${escapeHtml(l.projectName)})</span></td>
+        <td style="font-size: 0.85rem;"><span class="badge bg-light text-dark border px-2 py-0.5">${escapeHtml(l.department)}</span></td>
+        <td style="font-size: 0.85rem; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(l.task)}">${escapeHtml(l.task)}</td>
         <td class="text-center font-semibold ${hoursCellClass}" style="font-size: 0.85rem;">${l.hours}h</td>
-        <td style="font-size: 0.85rem; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" class="text-muted" title="${l.remarks}">${l.remarks}</td>
+        <td style="font-size: 0.85rem; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" class="text-muted" title="${escapeHtml(l.remarks)}">${escapeHtml(l.remarks)}</td>
         <td class="text-center">
           <button class="btn btn-sm text-danger p-0 tl-delete-btn" data-id="${l.id}" title="Delete Entry" style="background: none; border: none; cursor: pointer;">
             <i class="fa-solid fa-trash-can"></i>

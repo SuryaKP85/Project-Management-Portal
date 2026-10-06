@@ -4,6 +4,7 @@ import { Storage } from './storage.js';
 import { Filters } from './filters.js';
 import { TeamService } from './services/teamService.js';
 import { Authentication } from './authentication.js';
+import { escapeHtml } from './safeHtml.js';
 
 export const ResourcePlannerModule = {
   app: null,
@@ -480,13 +481,13 @@ export const ResourcePlannerModule = {
         if (utilization > 100) {
           warnings.push({
             type: 'critical',
-            message: `<strong>${res.name}</strong> (${res.role}) is over-allocated at <strong>${utilization.toFixed(0)}%</strong> (${assignedHours.toFixed(0)}h / ${netCapacity.toFixed(0)}h net capacity) in ${this.getMonthName(month)}.`,
+            message: `<strong>${escapeHtml(res.name)}</strong> (${escapeHtml(res.role)}) is over-allocated at <strong>${utilization.toFixed(0)}%</strong> (${assignedHours.toFixed(0)}h / ${netCapacity.toFixed(0)}h net capacity) in ${this.getMonthName(month)}.`,
             solution: `Reduce weekly hours on active allocations or extend deadlines.`
           });
         } else if (utilization < 25 && res.status !== 'pending') {
           warnings.push({
             type: 'warning',
-            message: `<strong>${res.name}</strong> is under-utilized at <strong>${utilization.toFixed(0)}%</strong>. High bench-risk profile.`,
+            message: `<strong>${escapeHtml(res.name)}</strong> is under-utilized at <strong>${utilization.toFixed(0)}%</strong>. High bench-risk profile.`,
             solution: `Assign outstanding backlogs or initiate cross-training programs.`
           });
         }
@@ -504,7 +505,7 @@ export const ResourcePlannerModule = {
           if (allocStart <= leaveEnd && allocEnd >= leaveStart) {
             warnings.push({
               type: 'info',
-              message: `Allocation overlap: <strong>${res.name}</strong> is scheduled on <strong>${a.projectName}</strong> while on <strong>${l.type}</strong> (${l.start} to ${l.end}).`,
+              message: `Allocation overlap: <strong>${escapeHtml(res.name)}</strong> is scheduled on <strong>${escapeHtml(a.projectName)}</strong> while on <strong>${escapeHtml(l.type)}</strong> (${escapeHtml(l.start)} to ${escapeHtml(l.end)}).`,
               solution: `Delegate task coverage during this period.`
             });
           }
@@ -515,7 +516,7 @@ export const ResourcePlannerModule = {
       if (res.weekendHours > 8) {
         warnings.push({
           type: 'warning',
-          message: `<strong>${res.name}</strong> logged <strong>${res.weekendHours} hours</strong> of weekend work. Burnout risk detected.`,
+          message: `<strong>${escapeHtml(res.name)}</strong> logged <strong>${escapeHtml(res.weekendHours)} hours</strong> of weekend work. Burnout risk detected.`,
           solution: `Schedule compensatory time-off and audit release dependencies.`
         });
       }
@@ -597,8 +598,8 @@ export const ResourcePlannerModule = {
       filteredResources.forEach(res => {
         let cellsHtml = `
           <td class="sticky-col text-start font-semibold align-middle" style="left: 0; min-width: 180px; z-index: 9; background: var(--bg-card); border-right: 2px solid var(--border-color);">
-            <div class="text-primary-custom" style="font-size: 0.9rem;">${res.name}</div>
-            <div class="text-muted font-normal text-xs">${res.role}</div>
+            <div class="text-primary-custom" style="font-size: 0.9rem;">${escapeHtml(res.name)}</div>
+            <div class="text-muted font-normal text-xs">${escapeHtml(res.role)}</div>
           </td>
         `;
 
@@ -633,13 +634,13 @@ export const ResourcePlannerModule = {
               if (!isWeekend) {
                 const standardDailyHours = (a.hoursPerWeek || 40) / 5;
                 dailyAssigned += standardDailyHours;
-                notes.push(`${a.projectName}: ${standardDailyHours}h`);
+                notes.push(`${escapeHtml(a.projectName)}: ${standardDailyHours}h`);
               } else if (a.weekendHours > 0) {
                 // If weekend and weekend hours exists, distribute or show standard logging
                 // For simplified display, show allocations of weekend logs
                 const weAlloc = a.weekendHours / 2; // split on sat & sun
                 dailyAssigned += weAlloc;
-                notes.push(`${a.projectName} (WE): ${weAlloc}h`);
+                notes.push(`${escapeHtml(a.projectName)} (WE): ${weAlloc}h`);
               }
             }
           });
@@ -648,7 +649,7 @@ export const ResourcePlannerModule = {
           let cellBg = 'background-color: var(--bg-card);';
           let textColor = 'color: var(--text-primary);';
           let content = dailyAssigned > 0 ? `${dailyAssigned.toFixed(0)}h` : '';
-          let cellTooltip = `Employee: ${res.name}&#10;Date: ${dateStr}&#10;`;
+          let cellTooltip = `Employee: ${escapeHtml(res.name)}&#10;Date: ${dateStr}&#10;`;
 
           if (isOnLeave) {
             cellBg = 'background-color: rgba(147, 51, 234, 0.15);'; // Light Purple
@@ -709,8 +710,8 @@ export const ResourcePlannerModule = {
       filteredResources.forEach(res => {
         let cellsHtml = `
           <td class="sticky-col text-start font-semibold align-middle" style="left: 0; min-width: 180px; z-index: 9; background: var(--bg-card); border-right: 2px solid var(--border-color);">
-            <div class="text-primary-custom" style="font-size: 0.9rem;">${res.name}</div>
-            <div class="text-muted font-normal text-xs">${res.role}</div>
+            <div class="text-primary-custom" style="font-size: 0.9rem;">${escapeHtml(res.name)}</div>
+            <div class="text-muted font-normal text-xs">${escapeHtml(res.role)}</div>
           </td>
         `;
 
@@ -809,8 +810,8 @@ export const ResourcePlannerModule = {
       filteredResources.forEach(res => {
         let cellsHtml = `
           <td class="sticky-col text-start font-semibold align-middle" style="left: 0; min-width: 180px; z-index: 9; background: var(--bg-card); border-right: 2px solid var(--border-color);">
-            <div class="text-primary-custom" style="font-size: 0.9rem;">${res.name}</div>
-            <div class="text-muted font-normal text-xs">${res.role}</div>
+            <div class="text-primary-custom" style="font-size: 0.9rem;">${escapeHtml(res.name)}</div>
+            <div class="text-muted font-normal text-xs">${escapeHtml(res.role)}</div>
           </td>
         `;
 
@@ -964,15 +965,15 @@ export const ResourcePlannerModule = {
               <div class="position-relative mb-2" style="height: 44px;">
                 <div class="allocation-bar position-absolute rounded px-3 py-1 border d-flex align-items-center justify-content-between cursor-pointer" 
                      style="left: ${leftPercent}%; width: ${widthPercent}%; min-width: 80px; height: 100%; font-size: 0.75rem; z-index: 5; transition: all 0.2s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
-                     title="${a.projectName}&#10;Role: ${a.role}&#10;Timeline: ${a.startDate} to ${a.endDate}&#10;Allocated Load: ${a.hoursPerWeek}h/week&#10;Click to edit allocation"
+                     title="${escapeHtml(a.projectName)}&#10;Role: ${escapeHtml(a.role)}&#10;Timeline: ${escapeHtml(a.startDate)} to ${escapeHtml(a.endDate)}&#10;Allocated Load: ${escapeHtml(a.hoursPerWeek)}h/week&#10;Click to edit allocation"
                      onclick="window.portalPlannerInstance.openAllocateModal('${res.id}', '${a.id}')">
                   <div style="overflow: hidden; text-overflow: ellipsis; max-width: 70%;">
-                    <strong class="text-primary-custom" style="display: block; font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis;">${a.projectName}</strong>
-                    <span class="text-muted text-xs" style="font-size: 0.7rem;">${a.role}</span>
+                    <strong class="text-primary-custom" style="display: block; font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(a.projectName)}</strong>
+                    <span class="text-muted text-xs" style="font-size: 0.7rem;">${escapeHtml(a.role)}</span>
                   </div>
                   <div class="text-end">
-                    <span class="badge bg-light text-dark font-mono font-bold">${a.hoursPerWeek}h/w</span>
-                    ${a.weekendHours > 0 ? `<span class="badge bg-warning text-dark font-mono font-bold font-xs">+${a.weekendHours}h WE</span>` : ''}
+                    <span class="badge bg-light text-dark font-mono font-bold">${escapeHtml(a.hoursPerWeek)}h/w</span>
+                    ${a.weekendHours > 0 ? `<span class="badge bg-warning text-dark font-mono font-bold font-xs">+${escapeHtml(a.weekendHours)}h WE</span>` : ''}
                   </div>
                 </div>
               </div>
@@ -987,11 +988,11 @@ export const ResourcePlannerModule = {
             <div class="d-flex align-items-center justify-content-between">
               <div class="d-flex align-items-center gap-2">
                 <div class="avatar-circle font-bold d-flex align-items-center justify-content-center" style="width: 34px; height: 34px; border-radius: 50%; background-color: var(--brand-primary); color: white; font-size: 0.8rem; flex-shrink: 0;">
-                  ${res.name.split(' ').map(n => n[0]).join('')}
+                  ${escapeHtml(res.name.split(' ').map(n => n[0]).join(''))}
                 </div>
                 <div>
-                  <h6 class="mb-0 font-bold text-primary" style="font-size: 0.9rem;">${res.name}</h6>
-                  <span class="text-xs text-secondary-custom">${res.role} • <strong>${res.dept}</strong></span>
+                  <h6 class="mb-0 font-bold text-primary" style="font-size: 0.9rem;">${escapeHtml(res.name)}</h6>
+                  <span class="text-xs text-secondary-custom">${escapeHtml(res.role)} • <strong>${escapeHtml(res.dept)}</strong></span>
                 </div>
               </div>
               <div class="d-flex align-items-center gap-1">
@@ -1110,20 +1111,20 @@ export const ResourcePlannerModule = {
       else if (utilization > 85) utilBadgeClass = 'bg-warning text-dark';
       else if (utilization < 25) utilBadgeClass = 'bg-info';
 
-      let allocationsText = resAllocations.map(a => `${a.projectName} (${a.hoursPerWeek}h/w)`).join('<br>') || '<span class="text-muted italic text-xs">No active pipelines</span>';
+      let allocationsText = resAllocations.map(a => `${escapeHtml(a.projectName)} (${escapeHtml(a.hoursPerWeek)}h/w)`).join('<br>') || '<span class="text-muted italic text-xs">No active pipelines</span>';
 
       rowsHtml += `
         <tr>
           <td>
-            <div class="font-semibold text-primary" style="font-size: 0.9rem;">${res.name}</div>
-            <div class="text-xs text-muted">${res.role}</div>
+            <div class="font-semibold text-primary" style="font-size: 0.9rem;">${escapeHtml(res.name)}</div>
+            <div class="text-xs text-muted">${escapeHtml(res.role)}</div>
           </td>
-          <td><span class="badge bg-light text-dark font-semibold">${res.dept}</span></td>
+          <td><span class="badge bg-light text-dark font-semibold">${escapeHtml(res.dept)}</span></td>
           <td class="font-mono text-center font-bold text-xs" style="color: var(--text-primary);">${netCapacity.toFixed(0)}h</td>
           <td class="font-mono text-center font-semibold text-xs text-success" style="color: var(--brand-success);">${assignedHours.toFixed(0)}h</td>
           <td class="font-mono text-center text-xs text-muted" style="color: var(--text-muted);">${res.loggedHours || 0}h</td>
           <td class="font-mono text-center text-xs text-secondary-custom">${leaveHours > 0 ? `${leaveHours}h` : '-'}</td>
-          <td class="font-mono text-center text-xs text-warning" style="color: var(--brand-warning);">${res.weekendHours > 0 ? `${res.weekendHours}h` : '-'}</td>
+          <td class="font-mono text-center text-xs text-warning" style="color: var(--brand-warning);">${res.weekendHours > 0 ? `${escapeHtml(res.weekendHours)}h` : '-'}</td>
           <td class="font-mono text-center font-bold text-xs" style="color: var(--text-primary);">${remainingCap.toFixed(0)}h</td>
           <td class="text-center align-middle">
             <span class="badge ${utilBadgeClass} font-mono px-3 py-1 font-semibold" style="font-size: 0.8rem;">${utilization.toFixed(0)}%</span>
@@ -1205,7 +1206,7 @@ export const ResourcePlannerModule = {
         title: 'Delete Team Member',
         bodyHtml: `
           <div class="p-2">
-            <p class="mb-2 font-semibold text-danger" style="font-size: 0.95rem;">Are you sure you want to delete team member <strong>${res.name}</strong>?</p>
+            <p class="mb-2 font-semibold text-danger" style="font-size: 0.95rem;">Are you sure you want to delete team member <strong>${escapeHtml(res.name)}</strong>?</p>
             <p class="text-secondary text-xs mb-0">All project allocations, capacity logs, and scheduling entries for this resource will also be released.</p>
           </div>
         `,
@@ -1345,13 +1346,13 @@ export const ResourcePlannerModule = {
     let resourceOptions = '';
     this.resources.forEach(res => {
       const selected = (resourceId === res.id || (targetAlloc && targetAlloc.resourceId === res.id)) ? 'selected' : '';
-      resourceOptions += `<option value="${res.id}" ${selected}>${res.name} (${res.role})</option>`;
+      resourceOptions += `<option value="${res.id}" ${selected}>${escapeHtml(res.name)} (${escapeHtml(res.role)})</option>`;
     });
 
     let projectOptions = '';
     this.projects.forEach(p => {
       const selected = (targetAlloc && targetAlloc.projectId === p.id) ? 'selected' : '';
-      projectOptions += `<option value="${p.id}" ${selected}>[${p.id}] ${p.name}</option>`;
+      projectOptions += `<option value="${escapeHtml(p.id)}" ${selected}>[${escapeHtml(p.id)}] ${escapeHtml(p.name)}</option>`;
     });
 
     const isEdit = !!targetAlloc;

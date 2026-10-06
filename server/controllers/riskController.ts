@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { RiskService } from '../services/riskService';
 import { GovernanceLinkRepository } from '../repositories/governanceLinkRepository';
+import { ProjectScope, scopeActor } from '../services/projectScope';
 
 function getActor(req: Request) {
   if (!req.user) {
@@ -12,18 +13,34 @@ function getActor(req: Request) {
   };
 }
 
+/** Sprint 22A: access errors keep their status (404 / 403); anything else stays a 400 as before. */
+function fail(res: Response, err: any, code = 'VALIDATION_ERROR') {
+  const status = Number(err?.status) >= 400 && Number(err?.status) < 500 ? Number(err.status) : 400;
+  return res.status(status).json({ success: false, error: { code: status === 400 ? code : err.code, message: err.message } });
+}
+
+/** The risk when the caller can see its project; otherwise null (a 404 that reveals nothing). */
+async function visibleRisk(req: Request, id: string) {
+  const risk = await RiskService.getRiskById(id);
+  return risk && (await ProjectScope.canRead(scopeActor(req), risk.projectId)) ? risk : null;
+}
+
 export const RiskController = {
   async listRisks(req: Request, res: Response, next: NextFunction) {
     try {
+      const actor = scopeActor(req);
       const page = req.query.page ? Number(req.query.page) : undefined;
       const limit = req.query.limit ? Number(req.query.limit) : undefined;
+      // Sprint 22A: only risks of the caller's accessible projects (administrators: every project).
+      const { page: _p, limit: _l, ...filter } = req.query as any;
+      const risks = await ProjectScope.filter(actor, await RiskService.getAllRisks(filter), (r) => r.projectId);
 
       if (page !== undefined || limit !== undefined) {
-        const result = await RiskService.getPaginatedRisks(req.query as any);
+        const result = ProjectScope.page(risks, page, limit);
         return res.json({
           success: true,
           data: {
-            risks: result.risks,
+            risks: result.items,
             total: result.total,
             page: result.page,
             limit: result.limit,
@@ -31,7 +48,6 @@ export const RiskController = {
         });
       }
 
-      const risks = await RiskService.getAllRisks(req.query as any);
       res.json({ success: true, data: { risks, total: risks.length } });
     } catch (err) {
       next(err);
@@ -40,7 +56,7 @@ export const RiskController = {
 
   async getRisk(req: Request, res: Response, next: NextFunction) {
     try {
-      const risk = await RiskService.getRiskById(req.params.id);
+      const risk = await visibleRisk(req, req.params.id);
       if (!risk) {
         return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Risk not found' } });
       }
@@ -52,19 +68,22 @@ export const RiskController = {
 
   async createRisk(req: Request, res: Response, next: NextFunction) {
     try {
+      await ProjectScope.assertWrite(scopeActor(req), req.body?.projectId, 'Project');
       const actor = getActor(req);
       const risk = await RiskService.createRisk(req.body, actor);
       res.status(201).json({ success: true, data: { risk } });
     } catch (err: any) {
-      res.status(400).json({
-        success: false,
-        error: { code: 'VALIDATION_ERROR', message: err.message },
-      });
+      fail(res, err);
     }
   },
 
   async updateRisk(req: Request, res: Response, next: NextFunction) {
     try {
+      const existing = await visibleRisk(req, req.params.id);
+      if (!existing) {
+        return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Risk not found' } });
+      }
+      await ProjectScope.assertMove(scopeActor(req), existing.projectId, req.body?.projectId, 'Risk');
       const actor = getActor(req);
       const risk = await RiskService.updateRisk(req.params.id, req.body, actor);
       if (!risk) {
@@ -72,15 +91,17 @@ export const RiskController = {
       }
       res.json({ success: true, data: { risk } });
     } catch (err: any) {
-      res.status(400).json({
-        success: false,
-        error: { code: 'VALIDATION_ERROR', message: err.message },
-      });
+      fail(res, err);
     }
   },
 
   async deleteRisk(req: Request, res: Response, next: NextFunction) {
     try {
+      const existing = await visibleRisk(req, req.params.id);
+      if (!existing) {
+        return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Risk not found' } });
+      }
+      await ProjectScope.assertWrite(scopeActor(req), existing.projectId, 'Risk');
       const actor = getActor(req);
       const deleted = await RiskService.deleteRisk(req.params.id, actor);
       if (!deleted) {
@@ -94,7 +115,7 @@ export const RiskController = {
 
   async getHeatmap(req: Request, res: Response, next: NextFunction) {
     try {
-      const heatmap = await RiskService.getHeatmap(req.query as any);
+      const heatmap = await RiskService.getHeatmap(req.query as any, await ProjectScope.ids(scopeActor(req)));
       res.json({ success: true, data: { heatmap } });
     } catch (err) {
       next(err);
@@ -103,6 +124,8 @@ export const RiskController = {
 
   async runProjectAudit(req: Request, res: Response, next: NextFunction) {
     try {
+      // Read-only scan of one project's records: the caller must be able to see that project.
+      await ProjectScope.assertRead(scopeActor(req), req.params.projectId, 'Project');
       const actor = getActor(req);
       const audit = await RiskService.runProjectAuditScan(req.params.projectId, actor);
       res.json({ success: true, data: { audit } });
@@ -113,8 +136,15 @@ export const RiskController = {
 
   async linkItem(req: Request, res: Response, next: NextFunction) {
     try {
+      const actor = scopeActor(req);
+      const risk = await visibleRisk(req, req.params.id);
+      if (!risk) {
+        return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Risk not found' } });
+      }
+      await ProjectScope.assertWrite(actor, risk.projectId, 'Risk');
       const { targetType, targetId, targetCode, targetName } = req.body;
-      const link = await GovernanceLinkRepository.addLink('risk', req.params.id, targetType, targetId, targetCode, targetName);
+      await ProjectScope.assertLinkTarget(actor, targetType, targetId);
+      const link = await GovernanceLinkRepository.addLink('risk', risk.id, targetType, targetId, targetCode, targetName);
       res.status(201).json({ success: true, data: { link } });
     } catch (err) {
       next(err);
@@ -123,7 +153,12 @@ export const RiskController = {
 
   async unlinkItem(req: Request, res: Response, next: NextFunction) {
     try {
-      const removed = await GovernanceLinkRepository.removeLink(req.params.linkId);
+      const risk = await visibleRisk(req, req.params.id);
+      if (!risk) {
+        return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Risk not found' } });
+      }
+      await ProjectScope.assertWrite(scopeActor(req), risk.projectId, 'Risk');
+      const removed = await ProjectScope.removeOwnLink('risk', risk.id, req.params.linkId);
       res.json({ success: true, data: { removed } });
     } catch (err) {
       next(err);

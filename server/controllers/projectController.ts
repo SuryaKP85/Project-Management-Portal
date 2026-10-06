@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { ProjectService } from '../services/projectService';
 import { ProjectHealthService } from '../services/projectHealthService';
+import { ProjectScope, scopeActor } from '../services/projectScope';
 
 /**
  * Sprint 8.2 — project health API.
@@ -19,7 +20,9 @@ const HEALTH_BATCH_MAX_LIMIT = 50;
 export const ProjectController = {
   async list(req: Request, res: Response, next: NextFunction) {
     try {
-      const projects = await ProjectService.getAllProjects();
+      // Sprint 22A: only accessible projects; budget and client only for roles with commercial visibility.
+      const actor = scopeActor(req);
+      const projects = (await ProjectScope.filter(actor, await ProjectService.getAllProjects(), (p) => p.id)).map((p) => ProjectScope.stripCommercial(actor, p));
       res.json({ success: true, data: { projects } });
     } catch (err) {
       next(err);
@@ -45,7 +48,8 @@ export const ProjectController = {
       }
 
       const health = await ProjectHealthService.getProjectHealth(id);
-      if (!health) {
+      // Sprint 22A: a project the caller cannot see is reported exactly like a missing one.
+      if (!health || !(await ProjectScope.canRead(scopeActor(req), health.projectId))) {
         return res.status(404).json({
           success: false,
           error: { code: 'NOT_FOUND', message: 'Project not found' },
@@ -84,7 +88,7 @@ export const ProjectController = {
         limit = Math.min(parsed, HEALTH_BATCH_MAX_LIMIT);
       }
 
-      const projects = await ProjectService.getAllProjects();
+      const projects = await ProjectScope.filter(scopeActor(req), await ProjectService.getAllProjects(), (p) => p.id);
       const selected = projects.slice(0, limit);
 
       const results = [];
@@ -110,11 +114,12 @@ export const ProjectController = {
 
   async getById(req: Request, res: Response, next: NextFunction) {
     try {
+      const actor = scopeActor(req);
       const project = await ProjectService.getProjectById(req.params.id);
-      if (!project) {
+      if (!project || !(await ProjectScope.canRead(actor, project.id))) {
         return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Project not found' } });
       }
-      res.json({ success: true, data: { project } });
+      res.json({ success: true, data: { project: ProjectScope.stripCommercial(actor, project) } });
     } catch (err) {
       next(err);
     }

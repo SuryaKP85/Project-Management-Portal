@@ -2,6 +2,7 @@
 
 import { Storage } from './storage.js';
 import { AIEngine } from './aiEngine.js';
+import { escapeHtml } from './safeHtml.js';
 
 export const AIForecastModule = {
   /**
@@ -132,7 +133,7 @@ export const AIForecastModule = {
     summary.projectForecasts.forEach(f => {
       html += `
         <tr>
-          <td class="font-bold text-primary">${f.projectName}</td>
+          <td class="font-bold text-primary">${escapeHtml(f.projectName)}</td>
           <td>${f.hoursRemaining} hrs</td>
           <td><span class="badge bg-body-secondary text-secondary font-mono">${f.burnRateHoursPerDay}h/day</span></td>
           <td>${f.projectedEndDate}</td>

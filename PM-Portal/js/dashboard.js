@@ -2,6 +2,7 @@
 
 import { Charts } from './charts.js';
 import { Storage } from './storage.js';
+import { escapeHtml } from './safeHtml.js';
 
 export const DashboardModule = {
   // Default datasets for fresh state
@@ -486,9 +487,9 @@ export const DashboardModule = {
       taskRow.innerHTML = `
         <input type="checkbox" id="chk-${task.id}" class="task-checkbox" ${task.completed ? 'checked' : ''} />
         <div class="task-info">
-          <p class="task-title-text" style="color: var(--text-primary);">${task.title}</p>
+          <p class="task-title-text" style="color: var(--text-primary);">${escapeHtml(task.title)}</p>
           <div class="task-meta">
-            <span class="task-badge badge-${task.priority}">${task.priority}</span>
+            <span class="task-badge badge-${escapeHtml(task.priority)}">${escapeHtml(task.priority)}</span>
             <span class="task-due"><i class="fa-regular fa-calendar-days"></i> ${task.due}</span>
           </div>
         </div>
@@ -537,7 +538,7 @@ export const DashboardModule = {
       const node = document.createElement('div');
       node.className = 'activity-node';
       node.innerHTML = `
-        <div class="activity-dot ${act.type}"></div>
+        <div class="activity-dot ${escapeHtml(act.type)}"></div>
         <div class="activity-content">
           <p class="activity-desc" style="color: var(--text-primary);">${act.desc}</p>
           <div class="activity-time-stamp">${act.time}</div>
@@ -638,10 +639,10 @@ export const DashboardModule = {
       const rowsHtml = customers.map(c => `
         <tr>
           <td class="font-semibold text-primary">${c.id || 'CST'}</td>
-          <td class="font-bold">${c.name}</td>
-          <td><span class="badge bg-light text-dark border">${c.industry || 'General'}</span></td>
-          <td>${c.contact || 'N/A'}</td>
-          <td><span class="badge bg-success-subtle text-success">${c.status || 'Active'}</span></td>
+          <td class="font-bold">${escapeHtml(c.name)}</td>
+          <td><span class="badge bg-light text-dark border">${escapeHtml(c.industry || 'General')}</span></td>
+          <td>${escapeHtml(c.contact || 'N/A')}</td>
+          <td><span class="badge bg-success-subtle text-success">${escapeHtml(c.status || 'Active')}</span></td>
         </tr>
       `).join('');
       bodyHtml = `
@@ -662,10 +663,10 @@ export const DashboardModule = {
       const rowsHtml = projects.map(p => `
         <tr>
           <td class="font-semibold text-primary">${p.id}</td>
-          <td class="font-bold">${p.name}</td>
-          <td>${p.client}</td>
-          <td>${p.manager}</td>
-          <td><span class="badge bg-info-subtle text-info">${p.status}</span></td>
+          <td class="font-bold">${escapeHtml(p.name)}</td>
+          <td>${escapeHtml(p.client)}</td>
+          <td>${escapeHtml(p.manager)}</td>
+          <td><span class="badge bg-info-subtle text-info">${escapeHtml(p.status)}</span></td>
           <td class="font-semibold">$${Number(p.budget || 0).toLocaleString()}</td>
         </tr>
       `).join('');
@@ -689,9 +690,9 @@ export const DashboardModule = {
       const rowsHtml = filtered.map(p => `
         <tr>
           <td class="font-semibold text-primary">${p.id}</td>
-          <td class="font-bold">${p.name}</td>
-          <td>${p.client}</td>
-          <td>${p.manager}</td>
+          <td class="font-bold">${escapeHtml(p.name)}</td>
+          <td>${escapeHtml(p.client)}</td>
+          <td>${escapeHtml(p.manager)}</td>
           <td>
             <div class="d-flex align-items-center gap-2">
               <div class="progress w-100" style="height: 6px;">
@@ -723,9 +724,9 @@ export const DashboardModule = {
       const rowsHtml = filtered.map(p => `
         <tr>
           <td class="font-semibold text-primary">${p.id}</td>
-          <td class="font-bold">${p.name}</td>
-          <td>${p.client}</td>
-          <td>${p.manager}</td>
+          <td class="font-bold">${escapeHtml(p.name)}</td>
+          <td>${escapeHtml(p.client)}</td>
+          <td>${escapeHtml(p.manager)}</td>
           <td><span class="badge bg-success-subtle text-success">Completed (100%)</span></td>
           <td class="font-semibold">$${Number(p.budget || 0).toLocaleString()}</td>
         </tr>
@@ -751,11 +752,11 @@ export const DashboardModule = {
       const rowsHtml = filtered.map(p => `
         <tr>
           <td class="font-semibold text-primary">${p.id}</td>
-          <td class="font-bold">${p.name}</td>
-          <td>${p.client}</td>
-          <td>${p.manager}</td>
+          <td class="font-bold">${escapeHtml(p.name)}</td>
+          <td>${escapeHtml(p.client)}</td>
+          <td>${escapeHtml(p.manager)}</td>
           <td><span class="badge bg-warning-subtle text-warning">${p.risk || 'Medium'} Risk</span></td>
-          <td><span class="badge bg-danger-subtle text-danger">${p.status}</span></td>
+          <td><span class="badge bg-danger-subtle text-danger">${escapeHtml(p.status)}</span></td>
         </tr>
       `).join('');
       bodyHtml = `
@@ -779,11 +780,11 @@ export const DashboardModule = {
       const rowsHtml = filtered.map(p => `
         <tr>
           <td class="font-semibold text-primary">${p.id}</td>
-          <td class="font-bold">${p.name}</td>
-          <td>${p.client}</td>
-          <td>${p.manager}</td>
+          <td class="font-bold">${escapeHtml(p.name)}</td>
+          <td>${escapeHtml(p.client)}</td>
+          <td>${escapeHtml(p.manager)}</td>
           <td><span class="badge bg-danger text-white">${p.risk || 'Critical'}</span></td>
-          <td><span class="badge bg-secondary-subtle text-dark">${p.status}</span></td>
+          <td><span class="badge bg-secondary-subtle text-dark">${escapeHtml(p.status)}</span></td>
         </tr>
       `).join('');
       bodyHtml = `
@@ -807,9 +808,9 @@ export const DashboardModule = {
       const rowsHtml = pendingProjects.map(p => `
         <tr>
           <td class="font-semibold text-primary">${p.sow || p.id}</td>
-          <td class="font-bold">${p.name}</td>
-          <td>${p.client}</td>
-          <td>${p.manager || 'Surya Prashanth'}</td>
+          <td class="font-bold">${escapeHtml(p.name)}</td>
+          <td>${escapeHtml(p.client)}</td>
+          <td>${escapeHtml(p.manager || 'Surya Prashanth')}</td>
           <td class="font-semibold">$${Number(p.budget || 0).toLocaleString()}</td>
           <td><span class="badge bg-warning-subtle text-warning border border-warning-subtle">${p.status === 'awaiting-sow-sign-off' ? 'Awaiting SOW Sign Off' : (p.sowStatus || 'Awaiting Sign-off')}</span></td>
         </tr>
@@ -829,11 +830,11 @@ export const DashboardModule = {
       title = 'Employees on Leave Log Drilldown';
       const rowsHtml = (leaves || []).map(l => `
         <tr>
-          <td class="font-bold">${l.name || l.employee || 'Employee'}</td>
-          <td><span class="badge bg-light text-dark border">${l.type || 'Annual Leave'}</span></td>
-          <td>${l.start || 'N/A'} to ${l.end || 'N/A'}</td>
+          <td class="font-bold">${escapeHtml(l.name || l.employee || 'Employee')}</td>
+          <td><span class="badge bg-light text-dark border">${escapeHtml(l.type || 'Annual Leave')}</span></td>
+          <td>${escapeHtml(l.start || 'N/A')} to ${escapeHtml(l.end || 'N/A')}</td>
           <td class="font-semibold">${l.days || 1} day(s)</td>
-          <td><span class="badge bg-success-subtle text-success">${l.status || 'Approved'}</span></td>
+          <td><span class="badge bg-success-subtle text-success">${escapeHtml(l.status || 'Approved')}</span></td>
         </tr>
       `).join('');
       bodyHtml = `
@@ -853,9 +854,9 @@ export const DashboardModule = {
         <tr>
           <td class="font-bold">${w.employee || w.name || 'Team Member'}</td>
           <td>${w.project || w.projectName || 'General Support'}</td>
-          <td>${w.date || 'Upcoming Weekend'}</td>
-          <td>${w.task || 'On-call Standby'}</td>
-          <td><span class="badge bg-success-subtle text-success">${w.status || 'Approved'}</span></td>
+          <td>${escapeHtml(w.date || 'Upcoming Weekend')}</td>
+          <td>${escapeHtml(w.task || 'On-call Standby')}</td>
+          <td><span class="badge bg-success-subtle text-success">${escapeHtml(w.status || 'Approved')}</span></td>
         </tr>
       `).join('');
       bodyHtml = `
@@ -879,9 +880,9 @@ export const DashboardModule = {
         return `
           <tr>
             <td class="font-semibold text-primary">${p.id}</td>
-            <td class="font-bold">${p.name}</td>
-            <td>${p.client}</td>
-            <td>${p.manager}</td>
+            <td class="font-bold">${escapeHtml(p.name)}</td>
+            <td>${escapeHtml(p.client)}</td>
+            <td>${escapeHtml(p.manager)}</td>
             <td class="font-semibold">${prog}%</td>
             <td>${healthBadge}</td>
           </tr>
@@ -907,8 +908,8 @@ export const DashboardModule = {
         return `
           <tr>
             <td class="font-semibold text-primary">${p.id}</td>
-            <td class="font-bold">${p.name}</td>
-            <td>${p.client}</td>
+            <td class="font-bold">${escapeHtml(p.name)}</td>
+            <td>${escapeHtml(p.client)}</td>
             <td>${Math.round(est)} hrs</td>
             <td class="font-semibold text-warning">${rem} hrs remaining</td>
           </tr>
@@ -929,11 +930,11 @@ export const DashboardModule = {
       title = 'Timesheet Logged Hours Ledger Drilldown';
       const rowsHtml = (timeLogs || []).map(t => `
         <tr>
-          <td class="font-mono text-muted">${t.date || '2026-07-29'}</td>
-          <td class="font-bold">${t.employee || 'Team Member'}</td>
-          <td>${t.projectName || t.projectId || 'PRJ'}</td>
-          <td><span class="badge bg-light text-dark border">${t.department || 'Dev'}</span></td>
-          <td>${t.task || 'Development'}</td>
+          <td class="font-mono text-muted">${escapeHtml(t.date || '2026-07-29')}</td>
+          <td class="font-bold">${escapeHtml(t.employee || 'Team Member')}</td>
+          <td>${escapeHtml(t.projectName || t.projectId || 'PRJ')}</td>
+          <td><span class="badge bg-light text-dark border">${escapeHtml(t.department || 'Dev')}</span></td>
+          <td>${escapeHtml(t.task || 'Development')}</td>
           <td class="font-bold text-primary">${t.hours} hrs</td>
         </tr>
       `).join('');

@@ -27,12 +27,37 @@ export class ConfigurationError extends Error {}
  */
 export function assertProductionSecrets(env: NodeJS.ProcessEnv = process.env): void {
   if (env.NODE_ENV !== 'production') return;
-  const secret = env.JWT_SECRET || '';
-  if (!secret || KNOWN_SAMPLE_JWT_SECRETS.has(secret) || secret.length < 32) {
+  if (isUnsafeJwtSecret(env.JWT_SECRET)) {
     throw new ConfigurationError(
       `NODE_ENV=production requires JWT_SECRET to be a random value of at least 32 characters (not the development default or the .env.example sample). Generate one, for example: node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"`
     );
   }
+}
+
+/** Sprint 22A: a session secret anyone could know: missing, the development default, a published sample, or short. */
+export function isUnsafeJwtSecret(secret: string | undefined): boolean {
+  const value = secret || '';
+  return !value || KNOWN_SAMPLE_JWT_SECRETS.has(value) || value.length < 32;
+}
+
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
+
+/**
+ * Sprint 22A — the address the server listens on. A token signed with a known
+ * secret could be forged by anyone who can reach the server, so:
+ * - with a strong JWT_SECRET: PM_PORTAL_HOST, or 0.0.0.0 (every interface) as before;
+ * - without one: this computer only (127.0.0.1, or a loopback PM_PORTAL_HOST). One that
+ *   would expose the server to the network is refused, with instructions.
+ * The secret itself is never printed.
+ */
+export function resolveListenHost(env: NodeJS.ProcessEnv = process.env): { host: string; loopbackOnly: boolean } {
+  const requested = String(env.PM_PORTAL_HOST || '').trim();
+  if (!isUnsafeJwtSecret(env.JWT_SECRET)) return { host: requested || '0.0.0.0', loopbackOnly: false };
+  if (!requested) return { host: '127.0.0.1', loopbackOnly: true };
+  if (LOOPBACK_HOSTS.has(requested.toLowerCase())) return { host: requested, loopbackOnly: true };
+  throw new ConfigurationError(
+    `PM_PORTAL_HOST=${requested} would make the portal reachable from other computers, but JWT_SECRET is not set to a private value (it is missing, the development default, the .env.example sample, or shorter than 32 characters), so anyone on the network could forge a sign-in. Set JWT_SECRET to a random value of at least 32 characters, for example: node -e "console.log(require('crypto').randomBytes(48).toString('base64'))", or remove PM_PORTAL_HOST to keep the portal on this computer only.`
+  );
 }
 
 export const config = {

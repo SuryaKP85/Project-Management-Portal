@@ -39,12 +39,13 @@ export const PortfolioService = {
    * canonical ProjectHealthService results. Read-only: the stored declared
    * health is reported alongside and is never overwritten by the rollup.
    */
-  async getPortfolioHealth(id: string, options: { now?: Date } = {}): Promise<PortfolioHealthResponse | null> {
+  /** Sprint 22A: options.scope = the caller's accessible project ids (null / absent = every project). */
+  async getPortfolioHealth(id: string, options: { now?: Date; scope?: Set<string> | null } = {}): Promise<PortfolioHealthResponse | null> {
     const portfolio = await PortfolioRepository.findById(id);
     if (!portfolio) return null;
 
     const [projects, products] = await Promise.all([ProjectRepository.findAll(), ProductRepository.findAll()]);
-    const members = projectsInPortfolio(projects, products, portfolio.id);
+    const members = projectsInPortfolio(projects, products, portfolio.id).filter((p) => !options.scope || options.scope.has(p.id));
     const built = await buildContainerHealth(members, options.now);
 
     return {

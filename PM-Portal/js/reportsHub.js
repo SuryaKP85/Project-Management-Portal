@@ -2,6 +2,7 @@
 
 import { Storage } from './storage.js';
 import { Excel } from './excel.js';
+import { escapeHtml } from './safeHtml.js';
 
 export const ReportsHubModule = {
   app: null,
@@ -895,7 +896,7 @@ export const ReportsHubModule = {
       kpisHtml += `
         <div class="col-6 col-md-3">
           <div class="report-kpi-card">
-            <div class="kpi-label">${kpi.label}</div>
+            <div class="kpi-label">${escapeHtml(kpi.label)}</div>
             <div class="kpi-val">${kpi.val}</div>
           </div>
         </div>
@@ -959,7 +960,7 @@ export const ReportsHubModule = {
 
       <!-- TITLE & SUMMARY -->
       <div class="mb-4">
-        <h2 class="font-bold text-primary mb-1" style="font-size: 1.5rem; color: #0f172a !important; font-weight: 800;">${data.title}</h2>
+        <h2 class="font-bold text-primary mb-1" style="font-size: 1.5rem; color: #0f172a !important; font-weight: 800;">${escapeHtml(data.title)}</h2>
         <p class="text-secondary mb-0" style="font-size: 0.825rem; line-height: 1.5;">${data.summaryText}</p>
       </div>
 
