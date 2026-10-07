@@ -8291,6 +8291,233 @@ if (step === 'fresh') {
     for (const u of [pmA53, pmB53, memberA53, viewerA53, memberB53, outsider53]) await UserRepo40.update(u.id, { isActive: false });
     resetLimits53();
   }
+
+  // 54. V2 Project Status Report (Sprint 22B)
+  // GET /projects/:id/status-report: live, read-only, deterministic; project
+  // read access (404 otherwise); every source re-filtered by project; commercial
+  // fields by role; health reused; dates normalised; nothing invented; safe UI.
+  console.log('\n--- 54. V2 Project Status Report (Sprint 22B) ---');
+  const { ProjectController: ProjCtl54 } = await import('../server/controllers/projectController');
+  const { DeliveryController: DelCtl54 } = await import('../server/controllers/deliveryController');
+  const { ProjectStatusReportService: Report54, STATUS_REPORT_DEFINITIONS: DEFS54 } = await import('../server/services/projectStatusReportService');
+  const { ProjectHealthService: Health54 } = await import('../server/services/projectHealthService');
+  const { MilestoneService: MlsSvc54 } = await import('../server/services/milestoneService');
+  const { StoryRepository: StoryRepo54 } = await import('../server/repositories/storyRepository');
+  const { TaskRepository: TaskRepo54 } = await import('../server/repositories/taskRepository');
+  const { SubtaskRepository: SubRepo54 } = await import('../server/repositories/subtaskRepository');
+  const { EpicRepository: EpicRepo54 } = await import('../server/repositories/epicRepository');
+  const { SprintRepository: SprintRepo54 } = await import('../server/repositories/sprintRepository');
+  const { RequirementRepository: ReqRepo54 } = await import('../server/repositories/requirementRepository');
+  const { RequirementDecompositionRepository: DecRepo54 } = await import('../server/repositories/requirementLinkRepository');
+  const { ActionItemRepository: ActRepo54 } = await import('../server/repositories/actionItemRepository');
+  const { WaitingForRepository: WfrRepo54 } = await import('../server/repositories/waitingForRepository');
+  const { FollowUpRepository: FupRepo54 } = await import('../server/repositories/followUpRepository');
+  const { MeetingRepository: MtgRepo54 } = await import('../server/repositories/meetingRepository');
+  const { renderStatusReport: render54 } = await import('../PM-Portal/js/statusReport.js');
+
+  const stamp54 = Date.now();
+  const NOW54 = new Date('2026-10-10T12:00:00.000Z');
+  const XSS54 = '<img src=x onerror="window.__xss54=1">';
+  const SECRET54 = `S22B Secret B ${stamp54}`;
+  const SOW54 = `Awaiting countersign ${stamp54}`;
+  const mk54 = (key: string, role: any) => Auth40.register({ email: `s22b.${key}.${stamp54}@company.com`, password: 'Sprint22b@12345', firstName: `S22B${key}`, lastName: 'Report', role }, login40.user);
+  const pmA54 = await mk54('pma', 'project-manager');
+  const prodA54 = await mk54('proda', 'product-manager');
+  const memberA54 = await mk54('membera', 'team-member');
+  const viewerA54 = await mk54('viewera', 'viewer');
+  const pmB54 = await mk54('pmb', 'project-manager');
+  const outsider54 = await mk54('outsider', 'team-member');
+  const report54 = (u: any, id: string) => run41(ProjCtl54.getStatusReport, reqAs40(u, { params: { id } }));
+  const cleanup54: Array<() => Promise<unknown>> = [];
+  const meta54 = (by: any) => ({ createdBy: by.id, updatedBy: by.id });
+
+  try {
+    const projA54 = (await call46(ProjCtl54.create, pmA54, { name: `${XSS54} S22B Project A`, client: 'Client A', budget: 4321, sowStatus: SOW54, startDate: '2026-09-01', endDate: '2026-12-31', progress: 40 })).body.data.project;
+    const projB54 = (await call46(ProjCtl54.create, pmB54, { name: `${SECRET54} project`, client: `${SECRET54} client`, budget: 999 })).body.data.project;
+    const projC54 = (await call46(ProjCtl54.create, pmA54, { name: 'S22B Empty project' })).body.data.project;
+    cleanup54.push(() => ProjRepo24.delete(projA54.id), () => ProjRepo24.delete(projB54.id), () => ProjRepo24.delete(projC54.id));
+    await call46(ProjCtl54.update, pmA54, { members: [{ userId: prodA54.id, name: 'Prod', role: 'Product' }, { userId: memberA54.id, name: 'Member', role: 'Dev' }, { userId: viewerA54.id, name: 'Viewer', role: 'Observer' }] }, { id: projA54.id });
+
+    // --- Fixtures in A (hostile titles, string and Date dates) --------------
+    const epic54 = (await call46(DelCtl54.createEpic, pmA54, { name: `${XSS54} epic`, projectId: projA54.id })).body.data.epic;
+    await EpicRepo54.update(epic54.id, { status: 'blocked' } as any);
+    cleanup54.push(() => EpicRepo54.delete(epic54.id));
+    const story54 = async (key: string, data: any) => { const id = `s54_${key}_${stamp54}`; await StoryRepo54.create({ id, code: `STR-S54${key}`, title: `${XSS54} story ${key}`, projectId: projA54.id, priority: 'medium', storyPoints: 3, ...data } as any); cleanup54.push(() => StoryRepo54.delete(id)); return id; };
+    const sOverdue = await story54('over', { status: 'in-progress', dueDate: '2026-10-01', storyPoints: 3 });
+    const sDone = await story54('done', { status: 'done', dueDate: '2026-10-01', storyPoints: 5 });
+    const sBlocked = await story54('blk', { status: 'blocked' });
+    const sDateObj = await story54('date', { status: 'ready', dueDate: new Date(2026, 8, 20) });
+    const sFuture = await story54('future', { status: 'ready', dueDate: '2026-11-30' });
+    const tOverdue = `t54_${stamp54}`;
+    await TaskRepo54.create({ id: tOverdue, code: `TSK-S54-${stamp54}`, title: `${XSS54} task`, projectId: projA54.id, storyId: sOverdue, status: 'in-progress', priority: 'medium', dueDate: '2026-10-05' } as any);
+    cleanup54.push(() => TaskRepo54.delete(tOverdue));
+    const stOverdue = `st54_${stamp54}`;
+    await SubRepo54.create({ id: stOverdue, taskId: tOverdue, title: `${XSS54} subtask`, status: 'ready', priority: 'low', dueDate: new Date(2026, 9, 2) } as any);
+    cleanup54.push(() => SubRepo54.delete(stOverdue));
+    const sprint54 = await SprintRepo54.create({ name: `${XSS54} sprint`, code: `SPR-S54-${stamp54}`, projectId: projA54.id, startDate: '2026-10-01', endDate: '2026-10-14', status: 'active', capacityHours: 80, capacityPoints: 20 } as any);
+    cleanup54.push(() => SprintRepo54.delete(sprint54.id));
+    for (const sid of [sOverdue, sDone]) await StoryRepo54.update(sid, { sprintId: sprint54.id, sprint: sprint54.name } as any);
+    const mPast = await MlsRepo35.create({ projectId: projA54.id, name: `${XSS54} milestone past`, status: 'Planned', targetDate: '2026-09-15', health: 'On Track', type: 'delivery' } as any);
+    const mSoon = await MlsRepo35.create({ projectId: projA54.id, name: `${XSS54} milestone soon`, status: 'Planned', targetDate: '2026-10-20', health: 'On Track', type: 'delivery' } as any);
+    const mCancelled = await MlsRepo35.create({ projectId: projA54.id, name: 'S22B cancelled milestone', status: 'Cancelled', targetDate: '2026-09-01', health: 'On Track', type: 'delivery' } as any);
+    cleanup54.push(() => MlsRepo35.delete(mPast.id), () => MlsRepo35.delete(mSoon.id), () => MlsRepo35.delete(mCancelled.id));
+    const rCrit = await RiskRepo35.create({ projectId: projA54.id, title: `${XSS54} critical risk`, probability: 5, impact: 4, status: 'Identified', targetResolutionDate: '2026-10-01' } as any);
+    const rHigh = await RiskRepo35.create({ projectId: projA54.id, title: 'S22B high risk', probability: 4, impact: 3, status: 'Mitigating' } as any);
+    const rClosed = await RiskRepo35.create({ projectId: projA54.id, title: 'S22B closed risk', probability: 5, impact: 5, status: 'Closed', targetResolutionDate: '2026-09-01' } as any);
+    const rAccepted = await RiskRepo35.create({ projectId: projA54.id, title: 'S22B accepted risk', probability: 5, impact: 5, status: 'Accepted' } as any);
+    const iCrit = await IssueRepo35.create({ projectId: projA54.id, title: `${XSS54} critical issue`, severity: 'Critical', priority: 'Urgent', status: 'Open', targetResolutionDate: new Date(2026, 9, 3) } as any);
+    const iResolved = await IssueRepo35.create({ projectId: projA54.id, title: 'S22B resolved issue', severity: 'Critical', priority: 'High', status: 'Resolved' } as any);
+    cleanup54.push(() => RiskRepo35.delete(rCrit.id), () => RiskRepo35.delete(rHigh.id), () => RiskRepo35.delete(rClosed.id), () => RiskRepo35.delete(rAccepted.id), () => IssueRepo35.delete(iCrit.id), () => IssueRepo35.delete(iResolved.id));
+
+    // --- Fixtures in B (must never appear) ----------------------------------
+    const sB = `s54_b_${stamp54}`;
+    await StoryRepo54.create({ id: sB, code: `STR-S54B-${stamp54}`, title: `${SECRET54} story`, projectId: projB54.id, status: 'in-progress', priority: 'high', storyPoints: 5, dueDate: '2026-10-01' } as any);
+    cleanup54.push(() => StoryRepo54.delete(sB));
+    const rB = await RiskRepo35.create({ projectId: projB54.id, title: `${SECRET54} risk`, probability: 5, impact: 5, status: 'Identified' } as any);
+    const iB = await IssueRepo35.create({ projectId: projB54.id, title: `${SECRET54} issue`, severity: 'Critical', priority: 'Urgent', status: 'Open' } as any);
+    cleanup54.push(() => RiskRepo35.delete(rB.id), () => IssueRepo35.delete(iB.id));
+
+    // Dependencies: owned by A (one with an endpoint in B), and one owned by B naming project A itself.
+    const dBlocked = (await DepRepo35.create({ projectId: projA54.id, sourceEntityType: 'story', sourceEntityId: sOverdue, sourceEntityName: `${XSS54} story over`, targetEntityType: 'story', targetEntityId: sB, targetEntityName: `${SECRET54} story`, targetEntityCode: 'STR-SECRET', dependencyType: 'Blocks', status: 'Blocked', criticality: 'High', targetDate: '2026-10-05' } as any)).dependency!;
+    const dAtRisk = (await DepRepo35.create({ projectId: projA54.id, sourceEntityType: 'story', sourceEntityId: sFuture, sourceEntityName: 'S22B future', targetEntityType: 'story', targetEntityId: sBlocked, targetEntityName: 'S22B blocked', dependencyType: 'Relates To', status: 'At Risk', criticality: 'Medium' } as any)).dependency!;
+    const dOwnedByB = (await DepRepo35.create({ projectId: projB54.id, sourceEntityType: 'story', sourceEntityId: sB, sourceEntityName: `${SECRET54} story`, targetEntityType: 'project', targetEntityId: projA54.id, targetEntityName: 'Project A', dependencyType: 'Blocks', status: 'Blocked', criticality: 'Critical' } as any)).dependency!;
+    cleanup54.push(() => DepRepo35.delete(dBlocked.id), () => DepRepo35.delete(dAtRisk.id), () => DepRepo35.delete(dOwnedByB.id));
+
+    // Requirements: draft overdue, in review, approved without and with a decomposition for the current revision.
+    const req = (title: string, status: any, extra: any = {}) => ReqRepo54.create({ projectId: projA54.id, title, type: 'functional', status, priority: 'high', ...meta54(pmA54), ...extra });
+    const qDraft = await req(`${XSS54} draft requirement`, 'draft', { targetDate: '2026-10-01' });
+    const qReview = await req('S22B in review', 'in-review', { targetDate: '2026-11-01' });
+    const qApproved = await req('S22B approved, not decomposed', 'approved');
+    const qDone = await req('S22B approved and decomposed', 'approved');
+    const dec54 = await DecRepo54.create({ requirementId: qDone.id, projectId: projA54.id, requirementRevision: qDone.revision, createdBy: pmA54.id });
+    cleanup54.push(() => ReqRepo54.delete(qDraft.id), () => ReqRepo54.delete(qReview.id), () => ReqRepo54.delete(qApproved.id), () => ReqRepo54.delete(qDone.id));
+
+    // Follow-through.
+    const aOver = await ActRepo54.create({ projectId: projA54.id, title: `${XSS54} overdue action`, ownerId: memberA54.id, dueDate: '2026-10-01', status: 'Open', priority: 'High', ...meta54(pmA54) });
+    const aBlocked = await ActRepo54.create({ projectId: projA54.id, title: 'S22B blocked action', ownerId: memberA54.id, dueDate: '2026-11-01', status: 'Blocked', priority: 'Medium', ...meta54(pmA54) });
+    const aDone = await ActRepo54.create({ projectId: projA54.id, title: 'S22B finished action', ownerId: memberA54.id, dueDate: '2026-09-01', status: 'Completed', priority: 'Low', ...meta54(pmA54) });
+    const wFollow = await WfrRepo54.create({ projectId: projA54.id, title: `${XSS54} needs follow-up`, ownerId: pmA54.id, waitingOnName: 'Vendor', expectedDate: '2026-11-15', status: 'Follow-up Needed', ...meta54(pmA54) });
+    const wPast = await WfrRepo54.create({ projectId: projA54.id, title: 'S22B past expected', ownerId: pmA54.id, waitingOnName: 'Legal', expectedDate: '2026-10-02', status: 'Waiting', ...meta54(pmA54) });
+    const fOver = await FupRepo54.create({ projectId: projA54.id, title: `${XSS54} overdue follow-up`, ownerId: pmA54.id, dueDate: '2026-10-08', status: 'Open', ...meta54(pmA54) });
+    const mtgSoon = await MtgRepo54.create({ projectId: projA54.id, title: `${XSS54} review meeting`, scheduledAt: '2026-10-13T09:00:00.000Z', durationMinutes: 30, organizerId: pmA54.id, participantIds: [], status: 'Scheduled', ...meta54(pmA54) });
+    const mtgPast = await MtgRepo54.create({ projectId: projA54.id, title: 'S22B stale meeting', scheduledAt: '2026-10-08T09:00:00.000Z', durationMinutes: 30, organizerId: pmA54.id, participantIds: [], status: 'Scheduled', ...meta54(pmA54) });
+    const mtgFar = await MtgRepo54.create({ projectId: projA54.id, title: 'S22B far meeting', scheduledAt: '2026-11-30T09:00:00.000Z', durationMinutes: 30, organizerId: pmA54.id, participantIds: [], status: 'Scheduled', ...meta54(pmA54) });
+    cleanup54.push(() => ActRepo54.delete(aOver.id), () => ActRepo54.delete(aBlocked.id), () => ActRepo54.delete(aDone.id), () => WfrRepo54.delete(wFollow.id), () => WfrRepo54.delete(wPast.id), () => FupRepo54.delete(fOver.id), () => MtgRepo54.delete(mtgSoon.id), () => MtgRepo54.delete(mtgPast.id), () => MtgRepo54.delete(mtgFar.id));
+
+    const actor54 = (u: any) => ({ userId: u.id, role: u.role });
+    const build54 = (u: any, id = projA54.id) => Report54.build(actor54(u), id, { now: NOW54 });
+    const leaks54 = (x: any) => { const t = JSON.stringify(x); return t.includes(SECRET54) || t.includes(projB54.id) || t.includes('STR-SECRET'); };
+    const ids54 = (rows: any[]) => rows.map((r: any) => r.id).sort().join();
+
+    // --- Access -------------------------------------------------------------
+    const anon54 = await report54(null, projA54.id);
+    const hidden54 = await report54(outsider54, projA54.id);
+    const missing54 = await report54(outsider54, `PRJ-NOPE-${stamp54}`);
+    assert(anon54.statusCode === 401, 'Access: no sign-in → 401');
+    const body54 = (r: any) => JSON.stringify({ success: r.body.success, code: r.body.error?.code, message: r.body.error?.message });
+    assert(hidden54.statusCode === 404 && missing54.statusCode === 404 && body54(hidden54) === body54(missing54) && hidden54.body.error.code === 'NOT_FOUND', 'Access: an inaccessible project and a missing one return the same 404 (same success flag, code and message)');
+    const roles54 = await Promise.all([adminUser40, pmA54, prodA54, memberA54, viewerA54].map((u) => report54(u, projA54.id)));
+    assert(roles54.every((r) => r.statusCode === 200 && r.body.data.report.project.id === projA54.id), 'Access: admin, project manager, product manager, member and viewer of the project can read its report');
+    const pmBonA54 = await report54(pmB54, projA54.id);
+    assert(pmBonA54.statusCode === 404 && !JSON.stringify(pmBonA54.body).includes('S22B Project A'), 'Access: a manager of another project gets 404 for this one');
+
+    // --- Isolation ----------------------------------------------------------
+    const adminRep54 = await build54(adminUser40);
+    const memberRep54 = await build54(memberA54);
+    assert(!leaks54(memberRep54), 'Isolation: nothing from project B appears in project A\'s report (member view)');
+    assert(!adminRep54.dependencies.blocked.some((d: any) => d.id === dOwnedByB.id) && ids54(adminRep54.dependencies.blocked) === dBlocked.id && !leaks54({ ...adminRep54, dependencies: null }), 'Isolation: only dependencies owned by the project are reported (project B\'s dependency on project A is not)');
+    const origRisk54 = RiskRepo35.findAll;
+    const origIssue54 = IssueRepo35.findAll;
+    try {
+      // Simulate the repository fallback path that ignores the project filter.
+      (RiskRepo35 as any).findAll = async (f: any) => [...(await origRisk54.call(RiskRepo35, f)), rB];
+      (IssueRepo35 as any).findAll = async (f: any) => [...(await origIssue54.call(IssueRepo35, f)), iB];
+      const fallback54 = await build54(adminUser40);
+      assert(!leaks54({ risks: fallback54.risks, issues: fallback54.issues }) && fallback54.risks.open === adminRep54.risks.open && fallback54.issues.open === adminRep54.issues.open, 'Isolation: rows from another project returned by a repository fallback are dropped');
+    } finally {
+      (RiskRepo35 as any).findAll = origRisk54;
+      (IssueRepo35 as any).findAll = origIssue54;
+    }
+
+    // --- Commercial fields --------------------------------------------------
+    const commercialFor54 = (rep: any) => ['budget', 'client', 'sowStatus'].every((k) => k in rep.project);
+    const pmRep54 = await build54(pmA54);
+    const prodRep54 = await build54(prodA54);
+    const viewerRep54 = await build54(viewerA54);
+    assert([adminRep54, pmRep54, prodRep54].every((r) => commercialFor54(r) && r.project.budget === 4321 && r.project.client === 'Client A' && r.project.sowStatus === SOW54), 'Commercial: admin, project manager and product manager see budget, client and SOW status');
+    assert([memberRep54, viewerRep54].every((r) => !['budget', 'client', 'sowStatus'].some((k) => k in r.project) && !JSON.stringify(r).includes(SOW54) && !JSON.stringify(r).includes('Client A') && r.meta.notes.some((n: string) => /not shown to your role/.test(n))), 'Commercial: team members and viewers get no budget, client or SOW (not even through the health factors), with a note saying so');
+
+    // --- Health and schedule --------------------------------------------------
+    const health54 = await Health54.computeHealth((await ProjRepo24.findById(projA54.id))!, { now: NOW54 });
+    assert(adminRep54.health.score === health54.score && adminRep54.health.band === health54.band && JSON.stringify(adminRep54.health.coverage) === JSON.stringify(health54.coverage) && adminRep54.meta.healthModel === health54.meta.model, `Health: the report's score, band and coverage equal ProjectHealthService.computeHealth (${health54.band} ${health54.score})`);
+    assert(adminRep54.schedule.reportedProgressPct === 40 && adminRep54.schedule.reportedProgressIsManual === true && adminRep54.schedule.expectedProgressPct === health54.signals.expectedProgressPct && adminRep54.schedule.daysRemaining === health54.signals.daysRemaining && adminRep54.meta.notes.some((n: string) => /entered manually/.test(n)) && !('completionPct' in adminRep54.delivery), 'Schedule: reported progress is the manual figure, labelled manual; expected progress and days remaining come from health; no completion percentage');
+
+    // --- Delivery and dates ---------------------------------------------------
+    const d54 = adminRep54.delivery;
+    // Expected values from the project's own records (project ids can be reused in this shared test store, so records left by earlier sections may sit under the same id).
+    const ofA54 = (rows: any[]) => rows.filter((r: any) => r.projectId === projA54.id);
+    const epicsA54 = ofA54(await EpicRepo54.findAll({ projectId: projA54.id }));
+    const storiesA54 = ofA54(await StoryRepo54.findAll({ projectId: projA54.id }));
+    const tasksA54 = ofA54(await TaskRepo54.findAll({ projectId: projA54.id }));
+    const taskIdsA54 = new Set(tasksA54.map((t: any) => t.id));
+    const subtasksA54 = (await SubRepo54.findAll()).filter((st: any) => taskIdsA54.has(st.taskId));
+    const blockedA54 = [...epicsA54, ...storiesA54, ...tasksA54, ...subtasksA54].filter((r: any) => r.status === 'blocked').length + ofA54(await (await import('../server/repositories/featureRepository')).FeatureRepository.findAll({ projectId: projA54.id })).filter((r: any) => r.status === 'blocked').length;
+    assert(d54.counts.epics === epicsA54.length && d54.counts.stories === storiesA54.length && d54.counts.tasks === tasksA54.length && d54.counts.subtasks === subtasksA54.length && storiesA54.length >= 5 && d54.blocked.total === blockedA54 && d54.blocked.epics >= 1 && d54.blocked.stories >= 1, `Delivery: counts and blocked items match the project's own records (${JSON.stringify(d54.counts)}, blocked ${d54.blocked.total})`);
+    const overdueIds54 = d54.overdue.map((i: any) => i.id);
+    assert([sOverdue, sDateObj, tOverdue, stOverdue].every((x) => overdueIds54.includes(x)) && ![sDone, sBlocked, sFuture].some((x) => overdueIds54.includes(x)) && d54.overdue.every((i: any) => /^\d{4}-\d{2}-\d{2}$/.test(i.dueDate) && i.dueDate < '2026-10-10'), 'Delivery: overdue = open with a due date before the report date (done and undated excluded); string and Date due dates both work');
+    assert(adminRep54.sprint.active && adminRep54.sprint.active.id === sprint54.id && adminRep54.sprint.active.committedPoints === 8 && adminRep54.sprint.active.completedPoints === 5, 'Sprint: the active sprint\'s committed (8) and completed (5) points');
+
+    // --- Milestones (MilestoneService values) ---------------------------------
+    const svcMilestones54 = await MlsSvc54.getAllMilestones({ projectId: projA54.id });
+    const svcPast54 = svcMilestones54.find((m: any) => m.id === mPast.id)!;
+    assert(svcPast54.status === 'Missed' && adminRep54.milestones.atRiskOrMissed.some((m: any) => m.id === mPast.id && m.status === 'Missed') && ids54(adminRep54.milestones.upcoming) === mSoon.id && !JSON.stringify(adminRep54.milestones).includes(mCancelled.id), 'Milestones: values come from MilestoneService (a stored "Planned" past-due milestone is reported Missed); upcoming within 30 days; cancelled excluded');
+
+    // --- Risks and issues -----------------------------------------------------
+    assert(adminRep54.risks.open === 2 && adminRep54.risks.bySeverity.Critical === 1 && adminRep54.risks.bySeverity.High === 1 && ids54(adminRep54.risks.critical) === rCrit.id && ids54(adminRep54.risks.high) === rHigh.id && ids54(adminRep54.risks.overdue) === rCrit.id, 'Risks: open excludes Closed and Accepted; severity counts; critical, high and overdue lists');
+    assert(adminRep54.issues.open === 1 && ids54(adminRep54.issues.critical) === iCrit.id && ids54(adminRep54.issues.overdue) === iCrit.id, 'Issues: open excludes Resolved; a Date target resolution date counts as overdue');
+
+    // --- Dependencies ---------------------------------------------------------
+    const memberDep54 = memberRep54.dependencies.blocked.find((d: any) => d.id === dBlocked.id);
+    const adminDep54 = adminRep54.dependencies.blocked.find((d: any) => d.id === dBlocked.id);
+    assert(memberDep54 && memberDep54.target.hidden === true && memberDep54.target.label === 'Another project' && memberDep54.source.hidden === false, 'Dependencies: an endpoint in a project the caller cannot read is shown only as "Another project"');
+    assert(adminDep54.target.hidden === false && ids54(adminRep54.dependencies.atRisk) === dAtRisk.id && ids54(adminRep54.dependencies.overdue) === dBlocked.id, 'Dependencies: an administrator sees the endpoint; at-risk and overdue lists use the report definitions');
+
+    // --- Requirements ---------------------------------------------------------
+    const r54 = adminRep54.requirements;
+    assert(r54.total === 4 && r54.byStatus.draft === 1 && r54.byStatus['in-review'] === 1 && r54.byStatus.approved === 2 && r54.byPriority.high === 4 && r54.byType.functional === 4, 'Requirements: counts by status, priority and type');
+    assert(ids54(r54.awaitingApproval) === qReview.id && ids54(r54.notDecomposed) === qApproved.id && ids54(r54.overdue) === qDraft.id && !!dec54, 'Requirements: awaiting approval (in review), approved but not decomposed for the current revision, overdue draft / in-review');
+
+    // --- Follow-through -------------------------------------------------------
+    const f54 = adminRep54.followThrough;
+    assert(f54.actionItems.open === 2 && ids54(f54.actionItems.overdue) === aOver.id && ids54(f54.actionItems.blocked) === aBlocked.id, 'Follow-through: open, overdue and blocked action items (completed excluded)');
+    assert(ids54(f54.waitingFor.followUpNeeded) === wFollow.id && ids54(f54.waitingFor.pastExpected) === wPast.id && f54.followUps.open === 1 && ids54(f54.followUps.overdue) === fOver.id, 'Follow-through: waiting-for needing follow-up or past its expected date; overdue follow-ups');
+    assert(ids54(f54.upcomingMeetings) === mtgSoon.id && ids54(f54.pastScheduledMeetings) === mtgPast.id, 'Follow-through: meetings in the next 14 days, and meetings still Scheduled after their date');
+
+    // --- Attention and definitions ----------------------------------------------
+    const kinds54 = adminRep54.attention.map((a: any) => a.kind);
+    assert(['critical-risks', 'critical-issues', 'high-risks', 'overdue-delivery', 'blocked-delivery', 'milestones-at-risk', 'requirements-awaiting-approval', 'waiting-for-follow-up'].every((k) => kinds54.includes(k)) && adminRep54.attention[0].level === 'critical' && adminRep54.attention.every((a: any) => !a.message.includes('<')), 'Attention: deterministic items from the report figures, critical first, messages built from counts only');
+    assert(JSON.stringify(adminRep54.meta.definitions) === JSON.stringify(DEFS54) && ['open', 'overdue', 'critical', 'high', 'blocked', 'atRisk'].every((k) => k in DEFS54) && DEFS54.terminal.risk.join() === 'Closed,Accepted', 'Definitions: one explicit set returned in meta');
+
+    // --- No invented data -------------------------------------------------------
+    const empty54 = await build54(pmA54, projC54.id);
+    const emptyText54 = JSON.stringify(empty54);
+    assert(empty54.delivery.counts.stories === 0 && empty54.delivery.overdue.length === 0 && empty54.sprint.active === null && typeof empty54.sprint.reason === 'string' && empty54.risks.open === 0 && empty54.requirements.total === 0 && empty54.followThrough.upcomingMeetings.length === 0 && empty54.project.startDate === null && empty54.schedule.expectedProgressPct === null, 'No invented data: an empty project has empty lists, zero counts, no sprint (with a reason) and null dates');
+    assert(!/Alex Mercer|Sprint 42|SOW Approved|Financial Baseline|Contract Governance/.test(emptyText54) && empty54.project.manager?.id === pmA54.id && empty54.requirements.awaitingApproval.length === 0, 'No invented data: no placeholder people, sprint, approvals or dates; the manager is the real manager');
+
+    // --- XSS ----------------------------------------------------------------------
+    const html54 = render54(adminRep54);
+    const memberHtml54 = render54(memberRep54);
+    assert(!/<img/i.test(html54 + memberHtml54) && html54.includes('&lt;img src=x onerror=') && (globalThis as any).__xss54 === undefined && html54.includes('Reported Progress') && html54.includes('Manual'), 'XSS: hostile project, story, risk, issue, requirement, milestone and follow-through names render as text; reported progress is labelled Manual');
+    assert(memberHtml54.includes('Another project') && !memberHtml54.includes(SECRET54) && !memberHtml54.includes('Budget:') && html54.includes('Budget:'), 'UI: hidden endpoints and commercial fields follow the role in the rendered report');
+    const html54page = fs35.readFileSync('PM-Portal/index.html', 'utf8');
+    const css54 = fs35.readFileSync('PM-Portal/css/styles.css', 'utf8');
+    assert(/id="project-status-report-card"/.test(html54page) && /id="project-status-report-print"/.test(html54page) && /body\.print-status-report #project-status-report-card/.test(css54) && /StatusReportModule\.mount\(proj\.id\)/.test(fs35.readFileSync('PM-Portal/js/projects.js', 'utf8')), 'UI: the Status Report card (with Print, scoped print rules) is part of project detail');
+    const routes54 = fs35.readFileSync('server/routes/projectRoutes.ts', 'utf8');
+    assert(/projectRoutes\.get\('\/projects\/:id\/status-report', authenticateToken, ProjectController\.getStatusReport\)/.test(routes54) && !/AIService|generateStructured|governanceService/.test(fs35.readFileSync('server/services/projectStatusReportService.ts', 'utf8')), 'Contract: the route is registered; the report uses no AI and not the governance summary\'s rating');
+  } finally {
+    for (const fn of cleanup54.reverse()) { try { await fn(); } catch { /* already removed */ } }
+    for (const u of [pmA54, prodA54, memberA54, viewerA54, pmB54, outsider54]) await UserRepo40.update(u.id, { isActive: false });
+  }
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('========================================\n');

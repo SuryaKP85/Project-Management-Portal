@@ -17,6 +17,7 @@ import { RiskService } from './services/riskService.js';
 import { IssueService } from './services/issueService.js';
 import { DependencyService } from './services/dependencyService.js';
 import { AIInsightsModule } from './aiInsights.js';
+import { StatusReportModule } from './statusReport.js';
 import { escapeHtml, safeHttpsUrl, cssToken, percent, dataArgs } from './safeHtml.js';
 import { jiraLinkHtml, loadJiraLinkConfig, projectLinkReference, isValidProjectJiraLink, resolveJiraReference } from './jiraLinks.js';
 
@@ -1418,6 +1419,9 @@ export const ProjectsModule = {
 
     // Sprint 13: AI Project Copilot for this project (V2 /ai/insights, on request)
     AIInsightsModule.mountProjectCopilot(proj.id, this.app);
+
+    // Sprint 22B: live V2 status report (server-built, read-only)
+    StatusReportModule.mount(proj.id);
 
     // Render linked project risks (Sprint 5A)
     this.renderProjectRisks(proj.id);

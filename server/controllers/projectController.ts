@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { ProjectService } from '../services/projectService';
 import { ProjectHealthService } from '../services/projectHealthService';
 import { ProjectScope, scopeActor } from '../services/projectScope';
+import { ProjectStatusReportService } from '../services/projectStatusReportService';
 
 /**
  * Sprint 8.2 — project health API.
@@ -107,6 +108,19 @@ export const ProjectController = {
           truncated: projects.length > results.length,
         },
       });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  /**
+   * Sprint 22B — GET /projects/:id/status-report: a live, deterministic report on
+   * one project. A missing project and one the caller cannot see are the same 404.
+   */
+  async getStatusReport(req: Request, res: Response, next: NextFunction) {
+    try {
+      const report = await ProjectStatusReportService.build(scopeActor(req), String(req.params.id ?? '').trim());
+      res.json({ success: true, data: { report } });
     } catch (err) {
       next(err);
     }

@@ -35,6 +35,12 @@ export class ProjectService {
     return data.health;
   }
 
+  /** Sprint 22B: the live project status report, built by the server (read-only). */
+  static async getStatusReport(id) {
+    const data = await apiClient.get(`/projects/${encodeURIComponent(id)}/status-report`);
+    return data.report;
+  }
+
   static async migrateProjects(projects) {
     const data = await apiClient.post('/projects/migrate', { projects });
     return data;

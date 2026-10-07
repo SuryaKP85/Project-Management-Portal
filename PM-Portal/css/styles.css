@@ -1165,4 +1165,28 @@ body.sidebar-collapsed #main-content {
   overflow: hidden;
 }
 
-
+/* Sprint 22B: printing the project Status Report prints only the report card.
+   Applies only while body.print-status-report is set by the report's Print button. */
+@media print {
+  body.print-status-report * {
+    visibility: hidden !important;
+  }
+  body.print-status-report #project-status-report-card,
+  body.print-status-report #project-status-report-card * {
+    visibility: visible !important;
+  }
+  body.print-status-report #project-status-report-card {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    border: none !important;
+  }
+  body.print-status-report #project-status-report-card .status-report-actions {
+    display: none !important;
+  }
+  body.print-status-report .status-report-section {
+    break-inside: avoid;
+  }
+}
