@@ -1,3 +1,4 @@
+import { duplicateRecordError } from './recordConflict';
 import { Risk, RiskCategory, RiskSeverity, RiskStatus } from '../models/types';
 import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
@@ -411,6 +412,8 @@ export const RiskRepository = {
   async create(data: Partial<Risk>): Promise<Risk> {
     seedDefaultRisks();
     const id = data.id || `rsk_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    // Sprint 23: never replace an existing record (findById reads PostgreSQL when connected).
+    if (await this.findById(id)) throw duplicateRecordError('risk', id);
     const count = memoryRisks.size + 101;
     const code = data.code || `RSK-${count}`;
     const { riskScore, severity } = calculateRiskScoreAndSeverity(data.probability || 3, data.impact || 3);

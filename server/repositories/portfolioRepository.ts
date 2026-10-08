@@ -1,3 +1,4 @@
+import { duplicateRecordError } from './recordConflict';
 import { Portfolio, PortfolioHealth, normalizeDeclaredHealth } from '../models/types';
 import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
@@ -98,8 +99,11 @@ export const PortfolioRepository = {
   },
 
   async create(portfolioData: Partial<Portfolio>): Promise<Portfolio> {
-    const id = portfolioData.id || `port_${Date.now()}`;
+    const id = portfolioData.id || `port_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const code = portfolioData.code || `PORT-${Date.now().toString().slice(-4)}`;
+    // Sprint 23: never replace an existing record (findById reads PostgreSQL when connected).
+    if (await this.findById(id)) throw duplicateRecordError('portfolio', id);
+    if ((await this.findAll()).some((existing) => existing.code === code)) throw duplicateRecordError('portfolio', code, 'code');
     const now = new Date().toISOString();
 
     const newPortfolio: Portfolio = {

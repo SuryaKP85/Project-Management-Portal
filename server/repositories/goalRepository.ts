@@ -1,3 +1,4 @@
+import { duplicateRecordError } from './recordConflict';
 import { Goal } from '../models/types';
 import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
@@ -102,7 +103,9 @@ export const GoalRepository = {
   },
 
   async create(goalData: Partial<Goal>): Promise<Goal> {
-    const id = goalData.id || `goal_${Date.now()}`;
+    const id = goalData.id || `goal_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    // Sprint 23: never replace an existing record (findById reads PostgreSQL when connected).
+    if (await this.findById(id)) throw duplicateRecordError('goal', id);
     const now = new Date().toISOString();
     const progress = goalData.progress !== undefined
       ? goalData.progress

@@ -1,3 +1,4 @@
+import { duplicateRecordError } from './recordConflict';
 import { Dependency, DependencyEntityType, DependencyStatus, DependencyType, DependencyCriticality } from '../models/types';
 import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
@@ -677,6 +678,8 @@ export const DependencyRepository = {
     }
 
     const id = data.id || `dep_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    // Sprint 23: never replace an existing record (findById reads PostgreSQL when connected).
+    if (await this.findById(id)) throw duplicateRecordError('dependency', id);
     const count = memoryDependencies.size + 101;
     const code = data.code || `DEP-${count}`;
     const targetDate = data.targetDate || data.dueDate;

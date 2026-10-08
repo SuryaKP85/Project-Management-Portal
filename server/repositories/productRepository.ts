@@ -1,3 +1,4 @@
+import { duplicateRecordError } from './recordConflict';
 import { Product, ProductHealth, normalizeDeclaredHealth } from '../models/types';
 import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
@@ -135,8 +136,11 @@ export const ProductRepository = {
   },
 
   async create(product: Partial<Product>): Promise<Product> {
-    const id = product.id || `prod_${Date.now()}`;
+    const id = product.id || `prod_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const code = product.code || `PROD-${Date.now().toString().slice(-4)}`;
+    // Sprint 23: never replace an existing record (findById reads PostgreSQL when connected).
+    if (await this.findById(id)) throw duplicateRecordError('product', id);
+    if ((await this.findAll()).some((existing) => existing.code === code)) throw duplicateRecordError('product', code, 'code');
     const now = new Date().toISOString();
 
     const newProduct: Product = {

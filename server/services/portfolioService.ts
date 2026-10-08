@@ -1,3 +1,4 @@
+import { withoutClientIdentity } from '../repositories/recordConflict';
 import { PortfolioRepository } from '../repositories/portfolioRepository';
 import { ProjectRepository } from '../repositories/projectRepository';
 import { ProductRepository } from '../repositories/productRepository';
@@ -60,7 +61,7 @@ export const PortfolioService = {
 
   async createPortfolio(data: Partial<Portfolio>, actorUser: SafeUser): Promise<Portfolio> {
     // Declared health is validated and canonicalised before anything is stored.
-    const payload: Partial<Portfolio> = { ...data };
+    const payload: Partial<Portfolio> = { ...withoutClientIdentity(data, ['code']) };
     const health = resolveDeclaredHealth('portfolio', data.health);
     if (health) payload.health = health;
     else delete payload.health;

@@ -1,3 +1,4 @@
+import { withoutClientIdentity } from '../repositories/recordConflict';
 import { Release, ReleaseItem } from '../models/types';
 import { ReleaseRepository } from '../repositories/releaseRepository';
 import { ActivityService } from './activityService';
@@ -21,7 +22,7 @@ export const ReleaseService = {
 
   async createRelease(data: Partial<Release>, actor?: { id: string; name: string }): Promise<Release> {
     const release = await ReleaseRepository.create({
-      ...data,
+      ...withoutClientIdentity(data),
       createdBy: actor?.id || 'usr_admin_1',
       updatedBy: actor?.id || 'usr_admin_1',
     });

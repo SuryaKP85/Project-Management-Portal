@@ -1,3 +1,4 @@
+import { duplicateRecordError } from './recordConflict';
 import { Issue, IssueSeverity, IssuePriority, IssueStatus, RootCauseCategory } from '../models/types';
 import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
@@ -419,6 +420,8 @@ export const IssueRepository = {
   async create(data: Partial<Issue>): Promise<Issue> {
     seedDefaultIssues();
     const id = data.id || `iss_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    // Sprint 23: never replace an existing record (findById reads PostgreSQL when connected).
+    if (await this.findById(id)) throw duplicateRecordError('issue', id);
     const count = memoryIssues.size + 101;
     const code = data.code || `ISS-${count}`;
     const resolvedTimestamp = data.resolvedAt || data.resolvedDate || (data.status === 'Resolved' || data.status === 'Closed' ? new Date().toISOString() : undefined);

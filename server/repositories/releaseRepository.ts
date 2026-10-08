@@ -1,3 +1,4 @@
+import { duplicateRecordError } from './recordConflict';
 import { Release, ReleaseHealth, ReleaseHealthFactor, ReleaseItem, ReleaseStatus } from '../models/types';
 import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
@@ -545,6 +546,8 @@ export const ReleaseRepository = {
   async create(data: Partial<Release>): Promise<Release> {
     seedDefaultReleases();
     const id = data.id || `rel_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    // Sprint 23: never replace an existing record (findById reads PostgreSQL when connected).
+    if (await this.findById(id)) throw duplicateRecordError('release', id);
     const count = memoryReleases.size + 101;
     const code = data.code || `REL-${count}`;
 

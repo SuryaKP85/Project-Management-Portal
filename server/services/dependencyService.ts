@@ -1,3 +1,4 @@
+import { withoutClientIdentity } from '../repositories/recordConflict';
 import {
   Dependency,
   DependencyEntityType,
@@ -515,7 +516,7 @@ export const DependencyService = {
     const projectId = data.projectId || sourceInfo.projectId || targetInfo.projectId;
 
     const payload: Partial<Dependency> = {
-      ...data,
+      ...withoutClientIdentity(data),
       sourceEntityType: normSourceType,
       sourceEntityName: data.sourceEntityName || sourceInfo.name,
       sourceEntityCode: data.sourceEntityCode || sourceInfo.code,

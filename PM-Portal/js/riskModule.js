@@ -690,7 +690,7 @@ export const RiskModule = {
       tbody.innerHTML = `
         <tr>
           <td colspan="10" class="text-center py-4 text-danger">
-            <i class="fa-solid fa-triangle-exclamation me-2"></i> Error loading risks: ${err.message || 'Unknown error'}
+            <i class="fa-solid fa-triangle-exclamation me-2"></i> Error loading risks: ${escapeHtml(err.message || 'Unknown error')}
           </td>
         </tr>
       `;
@@ -740,7 +740,7 @@ export const RiskModule = {
       const statBadge = statusBadges[r.status] || 'badge bg-secondary';
 
       return `
-        <tr data-id="${r.id}">
+        <tr data-id="${escapeHtml(r.id)}">
           <td>
             <span class="badge bg-secondary-subtle text-secondary font-monospace">${escapeHtml(r.code || 'RSK-?')}</span>
           </td>
@@ -749,19 +749,19 @@ export const RiskModule = {
             ${r.description ? `<div class="text-secondary text-xs text-truncate" style="max-width: 260px;">${escapeHtml(r.description)}</div>` : ''}
           </td>
           <td>
-            <span class="text-truncate d-inline-block" style="max-width: 140px;" title="${projName}">
-              <i class="fa-solid fa-folder me-1 text-primary"></i> ${projName}
+            <span class="text-truncate d-inline-block" style="max-width: 140px;" title="${escapeHtml(projName)}">
+              <i class="fa-solid fa-folder me-1 text-primary"></i> ${escapeHtml(projName)}
             </span>
           </td>
           <td>
             <span class="badge bg-light text-dark border">${escapeHtml(r.category)}</span>
           </td>
           <td style="text-align: center;">
-            <span class="font-semibold">${r.probability} × ${r.impact}</span>
+            <span class="font-semibold">${escapeHtml(r.probability)} × ${escapeHtml(r.impact)}</span>
           </td>
           <td style="text-align: center;">
             <span class="badge" style="background-color: ${sev.bg}; color: ${sev.text}; border: 1px solid ${sev.border}; font-size: 0.8rem; padding: 4px 8px;">
-              ${r.riskScore} — ${escapeHtml(r.severity)}
+              ${escapeHtml(r.riskScore)} — ${escapeHtml(r.severity)}
             </span>
           </td>
           <td style="text-align: center;">
@@ -773,17 +773,17 @@ export const RiskModule = {
             </span>
           </td>
           <td>
-            <span class="text-secondary text-xs">${r.targetResolutionDate ? r.targetResolutionDate.split('T')[0] : '—'}</span>
+            <span class="text-secondary text-xs">${r.targetResolutionDate ? escapeHtml(String(r.targetResolutionDate).split('T')[0]) : '—'}</span>
           </td>
           <td style="text-align: center;">
             <div class="btn-group btn-group-sm">
-              <button class="btn btn-outline-secondary btn-action-view" data-id="${r.id}" title="View Details">
+              <button class="btn btn-outline-secondary btn-action-view" data-id="${escapeHtml(r.id)}" title="View Details">
                 <i class="fa-solid fa-eye"></i>
               </button>
-              <button class="btn btn-outline-secondary btn-action-edit" data-id="${r.id}" title="Edit Risk">
+              <button class="btn btn-outline-secondary btn-action-edit" data-id="${escapeHtml(r.id)}" title="Edit Risk">
                 <i class="fa-solid fa-pen-to-square"></i>
               </button>
-              <button class="btn btn-outline-danger btn-action-delete" data-id="${r.id}" title="Delete Risk">
+              <button class="btn btn-outline-danger btn-action-delete" data-id="${escapeHtml(r.id)}" title="Delete Risk">
                 <i class="fa-solid fa-trash"></i>
               </button>
             </div>
@@ -937,7 +937,7 @@ export const RiskModule = {
           <div class="row g-3">
             <div class="col-md-6">
               <div class="text-xs text-secondary font-bold text-uppercase">Project</div>
-              <div class="fw-bold mt-1">${projName}</div>
+              <div class="fw-bold mt-1">${escapeHtml(projName)}</div>
             </div>
             <div class="col-md-6">
               <div class="text-xs text-secondary font-bold text-uppercase">Category</div>
@@ -950,7 +950,7 @@ export const RiskModule = {
                 <div>
                   <div class="text-xs text-secondary font-bold text-uppercase">Risk Score Calculation</div>
                   <div class="fw-bold fs-5 mt-1">
-                    Probability (${risk.probability}) × Impact (${risk.impact}) = <span class="text-primary">${risk.riskScore}</span> / 25
+                    Probability (${escapeHtml(risk.probability)}) × Impact (${escapeHtml(risk.impact)}) = <span class="text-primary">${escapeHtml(risk.riskScore)}</span> / 25
                   </div>
                 </div>
                 <div class="text-end">
@@ -988,20 +988,20 @@ export const RiskModule = {
             ${risk.contingencyPlan ? `
               <div class="col-12">
                 <div class="text-xs text-secondary font-bold text-uppercase">Contingency Plan</div>
-                <div class="p-2 rounded mt-1 text-sm text-warning font-monospace" style="background-color: var(--bg-light);">${risk.contingencyPlan}</div>
+                <div class="p-2 rounded mt-1 text-sm text-warning font-monospace" style="background-color: var(--bg-light);">${escapeHtml(risk.contingencyPlan)}</div>
               </div>
             ` : ''}
 
             ${risk.triggerCondition ? `
               <div class="col-12">
                 <div class="text-xs text-secondary font-bold text-uppercase">Trigger Condition</div>
-                <div class="p-2 rounded mt-1 text-sm text-danger font-monospace" style="background-color: var(--bg-light);">${risk.triggerCondition}</div>
+                <div class="p-2 rounded mt-1 text-sm text-danger font-monospace" style="background-color: var(--bg-light);">${escapeHtml(risk.triggerCondition)}</div>
               </div>
             ` : ''}
 
             <div class="col-md-6">
               <div class="text-xs text-secondary font-bold text-uppercase">Target Resolution Date</div>
-              <div class="mt-1">${risk.targetResolutionDate ? risk.targetResolutionDate.split('T')[0] : '—'}</div>
+              <div class="mt-1">${risk.targetResolutionDate ? escapeHtml(String(risk.targetResolutionDate).split('T')[0]) : '—'}</div>
             </div>
             <div class="col-md-6">
               <div class="text-xs text-secondary font-bold text-uppercase">Last Updated</div>

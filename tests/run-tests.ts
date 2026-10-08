@@ -8518,6 +8518,368 @@ if (step === 'fresh') {
     for (const fn of cleanup54.reverse()) { try { await fn(); } catch { /* already removed */ } }
     for (const u of [pmA54, prodA54, memberA54, viewerA54, pmB54, outsider54]) await UserRepo40.update(u.id, { isActive: false });
   }
+  // 55. Sprint 23 Record Write Integrity
+  // Server-owned identity on create (client id/code ignored), repository
+  // duplicate protection (409, never a silent replace), server-resolved risk
+  // links, the Risk view-modal XSS, and the Projects page on the V2 contract
+  // (one POST per create, one PATCH per edit, visible failures, SOW# never the
+  // id, project cache settled and cleared at sign-out).
+  console.log('\n--- 55. Sprint 23 Record Write Integrity ---');
+  const { ProjectController: ProjCtl55 } = await import('../server/controllers/projectController');
+  const { DeliveryController: DelCtl55 } = await import('../server/controllers/deliveryController');
+  const { RiskController: RiskCtl55 } = await import('../server/controllers/riskController');
+  const { IssueController: IssueCtl55 } = await import('../server/controllers/issueController');
+  const { MilestoneController: MlsCtl55 } = await import('../server/controllers/milestoneController');
+  const { ReleaseController: RelCtl55 } = await import('../server/controllers/releaseController');
+  const { DependencyController: DepCtl55 } = await import('../server/controllers/dependencyController');
+  const { RoadmapController: RoadmapCtl55 } = await import('../server/controllers/roadmapController');
+  const { SprintController: SprintCtl55 } = await import('../server/controllers/sprintController');
+  const { GoalController: GoalCtl55 } = await import('../server/controllers/goalController');
+  const { ProductController: ProdCtl55 } = await import('../server/controllers/productController');
+  const { PortfolioController: PortCtl55 } = await import('../server/controllers/portfolioController');
+  const { RoadmapRepository: RoadmapRepo55 } = await import('../server/repositories/roadmapRepository');
+  const { SprintRepository: SprintRepo55 } = await import('../server/repositories/sprintRepository');
+  const { GoalRepository: GoalRepo55 } = await import('../server/repositories/goalRepository');
+  const { ProductRepository: ProdRepo55 } = await import('../server/repositories/productRepository');
+  const { PortfolioRepository: PortRepo55 } = await import('../server/repositories/portfolioRepository');
+  const { EpicRepository: EpicRepo55 } = await import('../server/repositories/epicRepository');
+  const { GovernanceLinkRepository: LinkRepo55 } = await import('../server/repositories/governanceLinkRepository');
+
+  const stamp55 = Date.now();
+  const XSS55 = '<img src=x onerror="window.__riskXss=true">';
+  const mk55 = (key: string, role: any) => Auth40.register({ email: `s23.${key}.${stamp55}@company.com`, password: 'Sprint23@12345', firstName: `S23${key}`, lastName: 'Integrity', role }, login40.user);
+  const pmA55 = await mk55('pma', 'project-manager');
+  const pmB55 = await mk55('pmb', 'project-manager');
+  const memberA55 = await mk55('membera', 'team-member');
+  const outsider55 = await mk55('outsider', 'team-member');
+  const cleanup55: Array<() => Promise<unknown>> = [];
+  const snap55 = async (repo: any, id: string) => JSON.stringify(await repo.findById(id));
+  const savedGlobals55: Record<string, any> = {};
+  for (const key of ['window', 'document', 'localStorage', 'sessionStorage', 'alert']) savedGlobals55[key] = (globalThis as any)[key];
+
+  try {
+    const projA55 = (await call46(ProjCtl55.create, pmA55, { name: `S23 Project A ${stamp55}`, client: 'Client A', budget: 1000, status: 'planning', risk: 'Low', progress: 0 })).body.data.project;
+    const projB55 = (await call46(ProjCtl55.create, pmB55, { name: `S23 Project B ${stamp55}`, client: 'Client B', budget: 2000, status: 'planning', risk: 'Low', progress: 0 })).body.data.project;
+    cleanup55.push(() => ProjRepo24.delete(projA55.id), () => ProjRepo24.delete(projB55.id));
+    await call46(ProjCtl55.update, pmA55, { members: [{ userId: memberA55.id, name: 'Member', role: 'Dev' }] }, { id: projA55.id });
+    const epic55 = async (pm: any, proj: any, n: number) => {
+      const e = (await call46(DelCtl55.createEpic, pm, { name: `S23 epic ${n} ${proj.id}`, projectId: proj.id })).body.data.epic;
+      cleanup55.push(() => EpicRepo55.delete(e.id));
+      return e;
+    };
+    const [eA1, eA2, eA3] = [await epic55(pmA55, projA55, 1), await epic55(pmA55, projA55, 2), await epic55(pmA55, projA55, 3)];
+    const [eB1, eB2, eB3] = [await epic55(pmB55, projB55, 1), await epic55(pmB55, projB55, 2), await epic55(pmB55, projB55, 3)];
+
+    // --- Targets that an attacker in project A must not be able to replace ------
+    type Kind55 = { kind: string; handler: any; pick: (b: any) => any; repo: any; user: (side: 'A' | 'B') => any; body: (side: 'A' | 'B') => any; dup: (target: any) => any; businessCode?: boolean };
+    const kinds55: Kind55[] = [
+      { kind: 'risk', handler: RiskCtl55.createRisk, pick: (b) => b.data.risk, repo: RiskRepo35, user: (s) => (s === 'A' ? pmA55 : pmB55), body: (s) => ({ projectId: s === 'A' ? projA55.id : projB55.id, title: `S23 risk ${s}`, probability: 2, impact: 2 }), dup: (t) => ({ id: t.id, projectId: projB55.id, title: 'dup' }) },
+      { kind: 'issue', handler: IssueCtl55.createIssue, pick: (b) => b.data.issue, repo: IssueRepo35, user: (s) => (s === 'A' ? pmA55 : pmB55), body: (s) => ({ projectId: s === 'A' ? projA55.id : projB55.id, title: `S23 issue ${s}`, severity: 'Low', priority: 'Low', status: 'Open' }), dup: (t) => ({ id: t.id, projectId: projB55.id, title: 'dup' }) },
+      { kind: 'milestone', handler: MlsCtl55.createMilestone, pick: (b) => b.data.milestone, repo: MlsRepo35, user: (s) => (s === 'A' ? pmA55 : pmB55), body: (s) => ({ projectId: s === 'A' ? projA55.id : projB55.id, name: `S23 milestone ${s}`, targetDate: '2026-12-01', status: 'Planned', type: 'delivery' }), dup: (t) => ({ id: t.id, projectId: projB55.id, name: 'dup', targetDate: '2026-12-01' }) },
+      { kind: 'release', handler: RelCtl55.createRelease, pick: (b) => b.data.release, repo: RelRepo35, user: (s) => (s === 'A' ? pmA55 : pmB55), body: (s) => ({ projectId: s === 'A' ? projA55.id : projB55.id, name: `S23 release ${s}`, version: '1.0.0', status: 'Planned', releaseDate: '2026-12-15' }), dup: (t) => ({ id: t.id, projectId: projB55.id, name: 'dup' }) },
+      { kind: 'dependency', handler: DepCtl55.createDependency, pick: (b) => b.data.dependency, repo: DepRepo35, user: (s) => (s === 'A' ? pmA55 : pmB55), body: (s) => (s === 'A' ? { sourceEntityType: 'epic', sourceEntityId: eA2.id, targetEntityType: 'epic', targetEntityId: eA3.id, dependencyType: 'Blocks', title: 'S23 dependency A' } : { sourceEntityType: 'epic', sourceEntityId: eB1.id, targetEntityType: 'epic', targetEntityId: eB2.id, dependencyType: 'Blocks', title: 'S23 dependency B' }), dup: (t) => ({ id: t.id, sourceEntityType: 'epic', sourceEntityId: eB1.id, targetEntityType: 'epic', targetEntityId: eB3.id, title: 'dup' }) },
+      { kind: 'roadmap', handler: RoadmapCtl55.create, pick: (b) => b.data.item, repo: RoadmapRepo55, user: (s) => (s === 'A' ? pmA55 : pmB55), body: (s) => ({ name: `S23 initiative ${s}`, projectId: s === 'A' ? projA55.id : projB55.id }), dup: (t) => ({ id: t.id, name: 'dup' }) },
+      { kind: 'sprint', handler: SprintCtl55.createSprint, pick: (b) => b.data, repo: SprintRepo55, user: (s) => (s === 'A' ? pmA55 : pmB55), body: (s) => ({ name: `S23 sprint ${s}`, projectId: s === 'A' ? projA55.id : projB55.id, startDate: '2026-11-01', endDate: '2026-11-14' }), dup: (t) => ({ id: t.id, name: 'dup', projectId: projB55.id, startDate: '2026-11-01', endDate: '2026-11-14', status: 'planning' }) },
+      { kind: 'goal', handler: GoalCtl55.create, pick: (b) => b.data.goal, repo: GoalRepo55, user: () => adminUser40, body: (s) => ({ objective: `S23 goal ${s} ${stamp55}` }), dup: (t) => ({ id: t.id, objective: 'dup' }) },
+      { kind: 'product', handler: ProdCtl55.create, pick: (b) => b.data.product, repo: ProdRepo55, user: () => adminUser40, body: (s) => ({ name: `S23 product ${s}`, code: `S23-PROD-${s}-${stamp55}` }), dup: (t) => ({ id: t.id, name: 'dup', code: `S23-PROD-DUP-${stamp55}` }), businessCode: true },
+      { kind: 'portfolio', handler: PortCtl55.create, pick: (b) => b.data.portfolio, repo: PortRepo55, user: () => adminUser40, body: (s) => ({ name: `S23 portfolio ${s}`, code: `S23-PORT-${s}-${stamp55}` }), dup: (t) => ({ id: t.id, name: 'dup', code: `S23-PORT-DUP-${stamp55}` }), businessCode: true },
+    ];
+    const targets55: Record<string, any> = {};
+    for (const k of kinds55) {
+      const res = await call46(k.handler, k.user('B'), k.body('B'));
+      targets55[k.kind] = k.pick(res.body);
+      cleanup55.push(() => k.repo.delete(targets55[k.kind].id));
+    }
+    assert(kinds55.every((k) => targets55[k.kind] && targets55[k.kind].id), `Setup: one target record of each of the ten kinds exists (${kinds55.filter((k) => !targets55[k.kind]?.id).map((k) => k.kind).join(', ') || 'all'})`);
+
+    // --- B + D. Client id/code ignored; cross-project overwrite impossible -------
+    const attacks55: Record<string, { status: number; record: any; same: boolean }> = {};
+    for (const k of kinds55) {
+      const target = targets55[k.kind];
+      const before = await snap55(k.repo, target.id);
+      const body = { ...k.body('A'), id: target.id, ...(k.businessCode ? { code: `S23-NEW-${k.kind}-${stamp55}` } : { code: target.code }) };
+      const res = await call46(k.handler, k.user('A'), body);
+      const record = res.statusCode === 201 ? k.pick(res.body) : null;
+      if (record?.id) cleanup55.push(() => k.repo.delete(record.id));
+      attacks55[k.kind] = { status: res.statusCode, record, same: before === (await snap55(k.repo, target.id)) };
+    }
+    const projectScoped55 = ['risk', 'issue', 'milestone', 'release', 'dependency', 'roadmap', 'sprint'];
+    for (const kind of projectScoped55) {
+      const a = attacks55[kind];
+      assert(a.status === 201 && !!a.record && a.record.id !== targets55[kind].id && (kind === 'sprint' || a.record.code !== targets55[kind].code) && a.same,
+        `D. ${kind}: a writer in project A posting project B's ${kind} id and code gets a new record with server-owned id/code, and B's ${kind} is unchanged (${a.status})`);
+    }
+    assert(['risk', 'issue', 'milestone', 'release', 'dependency', 'sprint'].every((kind) => attacks55[kind].record?.projectId !== projB55.id), 'D. No attack record lands in project B');
+    for (const kind of ['goal', 'product', 'portfolio']) {
+      const a = attacks55[kind];
+      assert(a.status === 201 && !!a.record && a.record.id !== targets55[kind].id && a.same, `D. ${kind}: a create naming an existing ${kind}'s id gets a new server id, and the existing ${kind} is unchanged`);
+    }
+    assert(attacks55.product.record?.code === `S23-NEW-product-${stamp55}` && attacks55.portfolio.record?.code === `S23-NEW-portfolio-${stamp55}`, 'B. Product and portfolio codes stay client-proposed business codes (the id is still the server\'s)');
+    const riskCode55 = (await call46(RiskCtl55.createRisk, pmA55, { projectId: projA55.id, title: 'S23 code probe', probability: 1, impact: 1, id: 'rsk_chosen_by_client', code: 'RSK-CHOSEN', createdBy: outsider55.id, createdAt: '2001-01-01T00:00:00.000Z' })).body.data.risk;
+    cleanup55.push(() => RiskRepo35.delete(riskCode55.id));
+    assert(riskCode55.id !== 'rsk_chosen_by_client' && riskCode55.code !== 'RSK-CHOSEN' && /^RSK-\d+$/.test(riskCode55.code) && riskCode55.createdBy === pmA55.id && riskCode55.createdAt !== '2001-01-01T00:00:00.000Z' && !(await RiskRepo35.findById('rsk_chosen_by_client')),
+      'B. Client-chosen id, code, createdBy and createdAt are ignored on create; the server returns its own identity');
+    for (const kind of ['product', 'portfolio']) {
+      const k = kinds55.find((x) => x.kind === kind)!;
+      const before = await snap55(k.repo, targets55[kind].id);
+      const res = await call46(k.handler, adminUser40, { name: `S23 ${kind} clash`, code: targets55[kind].code });
+      assert(res.statusCode === 409 && res.body.error?.code === 'CONFLICT' && before === (await snap55(k.repo, targets55[kind].id)), `C. A new ${kind} reusing an existing ${kind} code is refused with 409, and the existing one is unchanged`);
+    }
+
+    // --- C. Repositories never replace an existing record --------------------------
+    for (const k of kinds55) {
+      const target = targets55[k.kind];
+      const before = await snap55(k.repo, target.id);
+      const err = await fails41(() => k.repo.create(k.dup(target)));
+      assert(!!err && err.status === 409 && err.code === 'CONFLICT' && before === (await snap55(k.repo, target.id)), `C. ${k.kind} repository: creating with an existing id fails with 409 and the existing record is unchanged`);
+    }
+
+    // --- E. Risk links are validated and described by the server ------------------
+    const forged55 = (await call46(RiskCtl55.createRisk, pmA55, { projectId: projA55.id, title: 'S23 linked risk', probability: 2, impact: 2, linkedItems: [{ targetType: 'epic', targetId: eA1.id, targetName: 'FORGED NAME', targetCode: 'FORGED-1' }] }));
+    const linked55 = forged55.body.data?.risk;
+    if (linked55?.id) cleanup55.push(() => RiskRepo35.delete(linked55.id));
+    const link55 = linked55?.linkedItems?.[0];
+    assert(forged55.statusCode === 201 && link55?.targetId === eA1.id && link55?.targetName === (eA1.title || eA1.name) && link55?.targetCode === eA1.code && !JSON.stringify(linked55.linkedItems).includes('FORGED'),
+      'E. A risk created with a link stores the target\'s real name and code, never the client-supplied ones');
+    const hidden55 = await call46(RiskCtl55.createRisk, pmA55, { projectId: projA55.id, title: `S23 hidden-link risk ${stamp55}`, probability: 2, impact: 2, linkedItems: [{ targetType: 'epic', targetId: eB1.id, targetName: 'B epic' }] });
+    const madeHidden55 = (await RiskRepo35.findAll({ projectId: projA55.id, status: 'all' } as any)).some((r: any) => r.title === `S23 hidden-link risk ${stamp55}`);
+    assert(hidden55.statusCode === 404 && !madeHidden55, 'E. A link to a record in a project the caller cannot see is refused (404) and no risk is created');
+    const badType55 = await call46(RiskCtl55.createRisk, pmA55, { projectId: projA55.id, title: 'S23 bad link type', probability: 2, impact: 2, linkedItems: [{ targetType: 'meeting', targetId: 'x' }] });
+    const missing55 = await call46(RiskCtl55.createRisk, pmA55, { projectId: projA55.id, title: 'S23 missing link', probability: 2, impact: 2, linkedItems: [{ targetType: 'epic', targetId: 'epic_does_not_exist' }] });
+    assert(badType55.statusCode === 400 && [404].includes(missing55.statusCode), 'E. An unsupported link type is a 400 and a missing target is a 404');
+    const routeLink55 = await call46(RiskCtl55.linkItem, pmA55, { targetType: 'epic', targetId: eA2.id, targetCode: 'FAKE', targetName: 'FAKE NAME' }, { id: linked55.id });
+    assert(routeLink55.statusCode === 201 && routeLink55.body.data.link.targetName === (eA2.title || eA2.name) && routeLink55.body.data.link.targetCode === eA2.code, 'E. POST /risks/:id/links also stores the server-resolved name and code');
+    const linksBefore55 = JSON.stringify(await LinkRepo55.getLinksFor('risk', linked55.id));
+    const updHidden55 = await call46(RiskCtl55.updateRisk, pmA55, { linkedItems: [{ targetType: 'epic', targetId: eB2.id }] }, { id: linked55.id });
+    assert(updHidden55.statusCode === 404 && JSON.stringify(await LinkRepo55.getLinksFor('risk', linked55.id)) === linksBefore55, 'E. Replacing a risk\'s links with a target in another project is refused and the links are unchanged');
+
+    // --- Browser harness: real modules, real project controllers --------------------
+    const store55: Record<string, string> = {};
+    const ls55 = { getItem: (k: string) => (k in store55 ? store55[k] : null), setItem: (k: string, v: string) => { store55[k] = String(v); }, removeItem: (k: string) => { delete store55[k]; }, clear: () => { for (const k of Object.keys(store55)) delete store55[k]; } };
+    const confirms55: string[] = [];
+    let confirmAnswer55 = true;
+    const window55: any = { confirm: (m: string) => { confirms55.push(m); return confirmAnswer55; }, alert: () => {}, location: { href: '' } };
+    Object.assign(globalThis as any, { localStorage: ls55, sessionStorage: { ...ls55, getItem: () => null }, window: window55, alert: () => {} });
+    const elements55: Record<string, any> = {};
+    const el55 = (id: string) => (elements55[id] ||= { id, value: '', innerHTML: '', textContent: '', disabled: false, classList: { add() {}, remove() {}, toggle() {} }, querySelectorAll: () => [], style: {} });
+    (globalThis as any).document = { getElementById: (id: string) => el55(id), querySelector: () => null, querySelectorAll: () => [] };
+
+    const browserApi55: any = (await import('../PM-Portal/js/services/apiClient.js')).apiClient;
+    const PM55: any = (await import('../PM-Portal/js/projects.js')).ProjectsModule;
+    const DS55: any = (await import('../PM-Portal/js/services/dataAdapter.js')).dataService;
+    const BrowserAuth55: any = (await import('../PM-Portal/js/authentication.js')).Authentication;
+    const Store55: any = (await import('../PM-Portal/js/storage.js')).Storage;
+    const RiskMod55: any = (await import('../PM-Portal/js/riskModule.js')).RiskModule;
+    const BrowserRisk55: any = (await import('../PM-Portal/js/services/riskService.js')).RiskService;
+
+    let actingAs55: any = pmA55;
+    const requests55: Array<{ method: string; path: string; body: any }> = [];
+    const savedRequest55 = browserApi55.request;
+    browserApi55.request = async (endpoint: string, options: any = {}) => {
+      const method = options.method || 'GET';
+      const body = options.body ? JSON.parse(options.body) : undefined;
+      requests55.push({ method, path: endpoint, body });
+      if (endpoint === '/auth/logout') return {};
+      const one = /^\/projects\/([^/]+)$/.exec(endpoint);
+      const route: [any, any] | null = endpoint === '/projects' && method === 'GET' ? [ProjCtl55.list, {}]
+        : endpoint === '/projects' && method === 'POST' ? [ProjCtl55.create, {}]
+          : endpoint === '/projects/migrate' && method === 'POST' ? [ProjCtl55.migrate, {}]
+            : one && method === 'PATCH' ? [ProjCtl55.update, { id: decodeURIComponent(one[1]) }]
+              : one && method === 'DELETE' ? [ProjCtl55.delete, { id: decodeURIComponent(one[1]) }] : null;
+      if (!route) throw Object.assign(new Error(`No test route for ${method} ${endpoint}`), { status: 599 });
+      const res = await run41(route[0], reqAs40(actingAs55, { body: body || {}, params: route[1] }));
+      if (res.statusCode >= 400) throw Object.assign(new Error(res.body?.error?.message || 'Request failed'), { status: res.statusCode });
+      return res.body?.data !== undefined ? res.body.data : res.body;
+    };
+    const toasts55: Array<[string, string]> = [];
+    let modalSave55: any = null;
+    const savedPM55 = { app: PM55.app, projects: PM55.projects, selectedIds: PM55.selectedIds, render: PM55.render, populate: PM55.populateFilterDropdowns };
+    PM55.app = { showToast: (m: string, t: string) => toasts55.push([t, m]), projectsList: [], openModal: (_t: string, _h: string, onSave: any) => { modalSave55 = onSave; } } as any;
+    PM55.render = () => {};
+    PM55.populateFilterDropdowns = () => {};
+    const savedGetRisk55 = BrowserRisk55.getRiskById;
+
+    try {
+      // --- A. Risk view modal and list render hostile values as text ------------------
+      const hostileRisk55 = (over: any) => ({ id: 'rsk_s23_view', code: 'RSK-900', title: XSS55, projectId: projA55.id, ownerId: 'usr_s23', category: 'Technical', status: 'Identified', severity: 'High', probability: 3, impact: 4, riskScore: 12, ...over });
+      RiskMod55.projects = [{ id: projA55.id, name: XSS55 }];
+      RiskMod55.users = [{ id: 'usr_s23', firstName: XSS55, lastName: '', email: 'x@company.com' }];
+      const viewHtml55 = async (risk: any) => { (BrowserRisk55 as any).getRiskById = async () => risk; el55('view-risk-body').innerHTML = ''; await RiskMod55.openViewModal(risk.id); return el55('view-risk-body').innerHTML; };
+      const escaped55 = '&lt;img src=x onerror=&quot;window.__riskXss=true&quot;&gt;';
+      const contingencyHtml55 = await viewHtml55(hostileRisk55({ contingencyPlan: XSS55 }));
+      assert(contingencyHtml55.includes('Contingency Plan') && contingencyHtml55.includes(escaped55) && !/<img/i.test(contingencyHtml55) && !/onerror="/i.test(contingencyHtml55),
+        'A. A hostile contingencyPlan renders as literal text in the Risk view modal (no element, no handler)');
+      const triggerHtml55 = await viewHtml55(hostileRisk55({ triggerCondition: XSS55 }));
+      assert(triggerHtml55.includes('Trigger Condition') && triggerHtml55.includes(escaped55) && !/<img/i.test(triggerHtml55) && !/onerror="/i.test(triggerHtml55),
+        'A. A hostile triggerCondition renders as literal text in the Risk view modal (no element, no handler)');
+      const allHtml55 = await viewHtml55(hostileRisk55({ contingencyPlan: XSS55, triggerCondition: XSS55, description: XSS55, mitigationPlan: XSS55, probability: XSS55, impact: XSS55, riskScore: XSS55, targetResolutionDate: XSS55 }));
+      assert(!/<img/i.test(allHtml55) && (allHtml55.match(/&lt;img src=x/g) || []).length >= 9 && (globalThis as any).__riskXss === undefined,
+        'A. Every value in the modal (project, owner, scores, text fields, date) is escaped; nothing executes');
+      RiskMod55.risks = [hostileRisk55({ id: '"><img src=x onerror="window.__riskXss=true">', probability: XSS55, riskScore: XSS55, targetResolutionDate: XSS55 })];
+      RiskMod55.renderTable();
+      const rowHtml55 = el55('v2-risk-table-body').innerHTML;
+      assert(!/<img/i.test(rowHtml55) && rowHtml55.includes(escaped55) && !/data-id=""><img/.test(rowHtml55), 'A. The risk list row that opens the modal escapes the project name, id, scores and date');
+
+      // --- F. Project create: one POST, server identity, survives re-sync ------------
+      PM55.projects = await DS55.getProjects();
+      requests55.length = 0;
+      const created55 = await PM55.createServerProject({ id: 'PRJ999', code: 'S23-HACK', name: `S23 created ${stamp55}`, client: 'Client S23', budget: 500, status: 'planning', risk: 'Low' });
+      if (created55?.id) cleanup55.push(() => ProjRepo24.delete(created55.id));
+      const posts55 = requests55.filter((r) => r.method === 'POST' && r.path === '/projects');
+      assert(requests55.length === 1 && posts55.length === 1 && !('id' in posts55[0].body) && !('code' in posts55[0].body), 'F. Creating a project sends exactly one POST /projects, without a browser id or code');
+      assert(!!created55 && /^PRJ-\d+$/.test(created55.id) && created55.id !== 'PRJ999' && created55.code !== 'S23-HACK' && PM55.projects[0] === created55 && (await ProjRepo24.findById(created55.id))?.name === `S23 created ${stamp55}`,
+        'F. The server assigns the project id and code, and its project replaces the browser draft');
+      PM55.projects = [];
+      Store55.set('projects', []);
+      await PM55.syncV2Projects();
+      assert(PM55.projects.some((p: any) => p.id === created55.id) && (Store55.get('projects') || []).some((p: any) => p.id === created55.id), 'F. The created project survives a reload and a re-sync from the server');
+
+      // Through the real "new project" modal: the modal stays open until the server answers.
+      let createCall55: Promise<any> | null = null;
+      const realCreate55 = PM55.createServerProject;
+      PM55.createServerProject = function (draft: any) { createCall55 = realCreate55.call(this, draft); return createCall55; };
+      const overlay55 = (values: Record<string, string>) => {
+        const saveBtn = { disabled: false };
+        const state = { closed: false, saveBtn };
+        return { state, querySelector: (sel: string) => (sel === '#global-modal-save-btn' ? saveBtn : { value: values[sel] ?? '', classList: { add() {}, remove() {} }, selectedOptions: [] }), classList: { remove: () => { state.closed = true; } } };
+      };
+      PM55.openCreateProjectModal();
+      const okOverlay55 = overlay55({ '#mod-name': `S23 modal ${stamp55}`, '#mod-client': 'Client M', '#mod-budget': '750', '#mod-status': 'planning' });
+      requests55.length = 0;
+      const okReturn55 = modalSave55(okOverlay55);
+      const okProject55 = await createCall55;
+      await new Promise((r) => setTimeout(r, 0));
+      if (okProject55?.id) cleanup55.push(() => ProjRepo24.delete(okProject55.id));
+      assert(okReturn55 === false && !!okProject55 && okOverlay55.state.closed && requests55.filter((r) => r.method === 'POST' && r.path === '/projects').length === 1 && !('id' in requests55[0].body),
+        'F. The New Project modal posts once, keeps itself open until the server answers, then closes with the server\'s project');
+
+      // --- H. Failures are visible and change nothing --------------------------------
+      PM55.openCreateProjectModal();
+      const badOverlay55 = overlay55({ '#mod-name': `S23 rejected ${stamp55}`, '#mod-client': 'Client M', '#mod-budget': '750', '#mod-status': 'not-a-status' });
+      toasts55.length = 0;
+      const countBefore55 = (await ProjRepo24.findAll()).length;
+      modalSave55(badOverlay55);
+      const badProject55 = await createCall55;
+      await new Promise((r) => setTimeout(r, 0));
+      assert(badProject55 === null && !badOverlay55.state.closed && toasts55.some(([t, m]) => t === 'danger' && /was not created/.test(m)) && (await ProjRepo24.findAll()).length === countBefore55 && !PM55.projects.some((p: any) => p.name === `S23 rejected ${stamp55}`),
+        'H. A rejected create shows an error, keeps the modal (and its input) open, and adds nothing locally or on the server');
+      PM55.createServerProject = realCreate55;
+
+      // --- G + I. Editing one project: one PATCH, only the changed fields; SOW# is not the id
+      const projA2 = (await call46(ProjCtl55.create, pmA55, { name: `S23 Project A2 ${stamp55}`, client: 'C', budget: 10, status: 'planning', risk: 'Low', progress: 0 })).body.data.project;
+      const projA3 = (await call46(ProjCtl55.create, pmA55, { name: `S23 Project A3 ${stamp55}`, client: 'C', budget: 10, status: 'planning', risk: 'Low', progress: 0 })).body.data.project;
+      cleanup55.push(() => ProjRepo24.delete(projA2.id), () => ProjRepo24.delete(projA3.id));
+      PM55.projects = await DS55.getProjects();
+      const fill55 = (p: any, over: Record<string, string>) => {
+        const form: Record<string, string> = {
+          'edit-id': p.id, 'edit-sow': p.sow || '', 'edit-hd': p.hd || '', 'edit-name': p.name, 'edit-client': p.client || '', 'edit-budget': String(p.budget ?? 0), 'edit-remarks': p.remarks || '',
+          'edit-est-start': '', 'edit-est-end': '', 'edit-act-start': p.actualStart || '', 'edit-act-end': p.actualEnd || '', 'edit-manager': p.manager || '', 'edit-product-manager': p.productManager || '',
+          'edit-ba': p.ba || '', 'edit-developer': p.developer || '', 'edit-qa': p.qa || '', 'edit-confluence': p.confluenceLink || '', 'edit-sprint': p.sprint || '', 'edit-risk': p.risk || 'Low', 'edit-status': p.status || 'planning', 'edit-progress': String(p.progress ?? 0),
+          ...over,
+        };
+        for (const [id, value] of Object.entries(form)) el55(id).value = value;
+      };
+      const others55 = async () => JSON.stringify([await ProjRepo24.findById(projA2.id), await ProjRepo24.findById(projA3.id)]);
+      const othersBefore55 = await others55();
+      const localA55 = PM55.projects.find((p: any) => p.id === projA55.id);
+      fill55(localA55, { 'edit-remarks': 'S23 edited remarks', 'edit-sow': 'ABC-123' });
+      requests55.length = 0;
+      await PM55.executeAutosave();
+      const patches55 = requests55.filter((r) => r.method === 'PATCH');
+      assert(requests55.length === 1 && patches55.length === 1 && patches55[0].path === `/projects/${projA55.id}` && JSON.stringify(Object.keys(patches55[0].body).sort()) === '["remarks","sow"]',
+        `G. Editing one project sends exactly one PATCH, to that project, with only the changed fields (${JSON.stringify(requests55.map((r) => `${r.method} ${r.path} ${Object.keys(r.body || {}).join('+')}`))})`);
+      assert((await others55()) === othersBefore55, 'G. The other projects in the list receive no request and are unchanged (no save-all)');
+      const serverA55 = await ProjRepo24.findById(projA55.id);
+      assert(serverA55?.id === projA55.id && (serverA55 as any)?.sow === 'ABC-123' && serverA55?.remarks === 'S23 edited remarks' && localA55.id === projA55.id && !(await ProjRepo24.findById('ABC-123')),
+        'I. Saving SOW# = ABC-123 stores it as the SOW field; the project id is unchanged locally and on the server');
+      assert(serverA55?.code === projA55.code && localA55.code === projA55.code && (await ProjRepo24.findAll()).filter((p: any) => p.id === 'ABC-123' || p.code === 'ABC-123').length === 0,
+        'I. SOW# never becomes the project code either: the code is unchanged and no project is found under the SOW value');
+      requests55.length = 0;
+      await PM55.executeAutosave();
+      assert(requests55.length === 0, 'G. Saving again with nothing changed sends no request');
+      // Found in the browser run: the form shows stored progress 42 as 40 (5-step slider) and a sprint
+      // missing from its list as ''. Only what the user edits since the form opened is sent.
+      await ProjRepo24.update(projA55.id, { progress: 42, sprint: 'Sprint 18' } as any);
+      Object.assign(localA55, { progress: 42, sprint: 'Sprint 18' });
+      fill55(localA55, { 'edit-progress': '40', 'edit-sprint': '' });
+      PM55.detailBaseline = { id: projA55.id, values: PM55.readDetailForm() };
+      el55('edit-hd').value = 'HD-S23';
+      requests55.length = 0;
+      await PM55.executeAutosave();
+      const fidelity55: any = await ProjRepo24.findById(projA55.id);
+      assert(requests55.length === 1 && JSON.stringify(Object.keys(requests55[0].body)) === '["hd"]' && fidelity55?.hd === 'HD-S23' && fidelity55?.progress === 42 && fidelity55?.sprint === 'Sprint 18',
+        'G. Values the form cannot show exactly (progress 42 on a 5-step slider, a sprint not in its list) are not written back; only the edited field is sent');
+      PM55.selectedIds = new Set([projA2.id, projA3.id]);
+      requests55.length = 0;
+      await PM55.saveSelected(() => ({ status: 'on-hold' }), 'Updated status');
+      assert(requests55.length === 2 && requests55.every((r) => r.method === 'PATCH' && JSON.stringify(r.body) === '{"status":"on-hold"}') && JSON.stringify(requests55.map((r) => r.path).sort()) === JSON.stringify([`/projects/${projA2.id}`, `/projects/${projA3.id}`].sort()),
+        'G. A bulk status change sends one PATCH per selected project and nothing for the rest');
+      const projectsSrc55 = fs35.readFileSync('PM-Portal/js/projects.js', 'utf8');
+      const adapterSrc55 = fs35.readFileSync('PM-Portal/js/services/dataAdapter.js', 'utf8');
+      assert(!/saveProjects\(|saveSingleProject/.test(projectsSrc55 + adapterSrc55) && !/static async saveProject\(|\.catch\(\(\) => \{\}\)/.test(adapterSrc55) && !/proj\.id = sow|existingProj\.id = sowNum|getElementById\('edit-id'\)\.value = val|id: newCode/.test(projectsSrc55),
+        'G/I. The save-all path, the isNew create guess, and every SOW#-to-id rewrite are gone from the Projects page');
+
+      // H. A refused edit is undone locally, reported, and leaves the server alone.
+      actingAs55 = memberA55;
+      const serverBefore55 = JSON.stringify(await ProjRepo24.findById(projA55.id));
+      toasts55.length = 0;
+      const refused55 = await PM55.saveProjectChanges(localA55, { remarks: 'member change' });
+      assert(refused55 === false && localA55.remarks === 'S23 edited remarks' && toasts55.some(([t, m]) => t === 'danger' && m.includes(projA55.id) && /not saved/.test(m)) && JSON.stringify(await ProjRepo24.findById(projA55.id)) === serverBefore55,
+        'H. A refused edit shows an error, restores the local copy, and leaves the server unchanged');
+      fill55(localA55, { 'edit-remarks': 'member autosave' });
+      el55('autosave-status').textContent = '';
+      await PM55.executeAutosave();
+      assert(localA55.remarks === 'S23 edited remarks' && JSON.stringify(await ProjRepo24.findById(projA55.id)) === serverBefore55, 'H. A refused autosave does not pretend to save (local copy restored, server unchanged)');
+      actingAs55 = pmA55;
+
+      // --- J. Sign-out settles and clears the project cache -------------------------
+      const localOnly55 = { id: `PRJ9${String(stamp55).slice(-4)}`, name: `S23 browser-only ${stamp55}`, client: 'Local', budget: 5, status: 'planning' };
+      Store55.set('projects', [...(await DS55.getProjects()), localOnly55]);
+      requests55.length = 0;
+      confirms55.length = 0;
+      confirmAnswer55 = false;
+      const stayed55 = await DS55.settleProjectCacheForLogout();
+      assert(stayed55 === false && confirms55.length === 1 && confirms55[0].includes(localOnly55.name) && (Store55.get('projects') || []).some((p: any) => p.id === localOnly55.id) && !requests55.some((r) => r.path === '/projects/migrate'),
+        'J. Browser-only projects are offered before sign-out; declining keeps the user signed in and keeps the cache');
+      confirmAnswer55 = true;
+      confirms55.length = 0;
+      requests55.length = 0;
+      window55.location.href = '';
+      await BrowserAuth55.logout();
+      const migrated55 = requests55.filter((r) => r.path === '/projects/migrate');
+      const onServer55 = (await ProjRepo24.findAll()).filter((p: any) => p.name === localOnly55.name);
+      onServer55.forEach((p: any) => cleanup55.push(() => ProjRepo24.delete(p.id)));
+      assert(migrated55.length === 1 && migrated55[0].body.projects.length === 1 && migrated55[0].body.projects[0].id === localOnly55.id && onServer55.length === 1,
+        'J. Accepting sends only the browser-only project through the guarded import, and it reaches the server');
+      assert(Store55.get('projects') === null && ls55.getItem('projects') === null && window55.location.href === 'login.html', 'J. Sign-out then clears the project cache (both keys) and returns to the login page');
+
+      // A stale project from another user's session is never re-created, and never comes back.
+      Store55.set('projects', [projB55]);
+      confirms55.length = 0;
+      requests55.length = 0;
+      const settled55 = await DS55.settleProjectCacheForLogout();
+      assert(settled55 === true && confirms55.length === 2 && /could not be saved/.test(confirms55[1]) && (await ProjRepo24.findAll()).filter((p: any) => p.name === projB55.name).length === 1 && Store55.get('projects') === null,
+        'J. A cached project the user cannot see is not duplicated by the import; the user is told, and the cache is cleared');
+      const relogin55 = await DS55.getProjects();
+      assert(!relogin55.some((p: any) => p.id === projB55.id) && !(Store55.get('projects') || []).some((p: any) => p.id === projB55.id), 'J. After signing in again the stale project does not come back');
+      actingAs55 = outsider55;
+      Store55.set('projects', [projA55]);
+      const emptyList55 = await DS55.getProjects();
+      assert(Array.isArray(emptyList55) && emptyList55.length === 0 && JSON.stringify(Store55.get('projects')) === '[]', 'J. A user with no projects gets an empty list, never the cached projects of an earlier session');
+    } finally {
+      browserApi55.request = savedRequest55;
+      (BrowserRisk55 as any).getRiskById = savedGetRisk55;
+      Object.assign(PM55, { app: savedPM55.app, projects: savedPM55.projects, selectedIds: savedPM55.selectedIds, render: savedPM55.render, populateFilterDropdowns: savedPM55.populate });
+    }
+  } finally {
+    for (const [key, value] of Object.entries(savedGlobals55)) {
+      if (value === undefined) delete (globalThis as any)[key];
+      else (globalThis as any)[key] = value;
+    }
+    for (const fn of cleanup55.reverse()) { try { await fn(); } catch { /* already removed */ } }
+    for (const u of [pmA55, pmB55, memberA55, outsider55]) await UserRepo40.update(u.id, { isActive: false });
+  }
+
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('========================================\n');

@@ -1,3 +1,4 @@
+import { withoutClientIdentity } from '../repositories/recordConflict';
 import { Issue, IssueSeverity, IssuePriority, IssueStatus, RootCauseCategory } from '../models/types';
 import { IssueRepository } from '../repositories/issueRepository';
 import { ActivityService } from './activityService';
@@ -139,7 +140,7 @@ export const IssueService = {
     }
 
     const issue = await IssueRepository.create({
-      ...data,
+      ...withoutClientIdentity(data),
       title,
       projectId: project.id,
       projectName: project.name,

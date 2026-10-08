@@ -102,6 +102,8 @@ export const RoadmapController = {
       const item = await RoadmapService.createItem(req.body || {}, actor);
       res.status(201).json({ success: true, data: { item } });
     } catch (err: any) {
+      // Sprint 23: an identity conflict stays a 409 (the record was never replaced).
+      if (err?.status === 409) return res.status(409).json({ success: false, error: { code: 'CONFLICT', message: err.message } });
       // Service validation failures are client errors, not server faults.
       return validationError(res, err?.message || 'Could not create roadmap item.');
     }

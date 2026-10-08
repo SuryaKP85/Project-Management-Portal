@@ -1,3 +1,4 @@
+import { withoutClientIdentity } from '../repositories/recordConflict';
 import { GoalRepository } from '../repositories/goalRepository';
 import { ActivityRepository } from '../repositories/activityRepository';
 import { NotificationRepository } from '../repositories/notificationRepository';
@@ -15,7 +16,7 @@ export const GoalService = {
   },
 
   async createGoal(data: Partial<Goal>, actorUser: SafeUser): Promise<Goal> {
-    const created = await GoalRepository.create(data);
+    const created = await GoalRepository.create(withoutClientIdentity(data));
 
     await ActivityRepository.create({
       id: `act_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,

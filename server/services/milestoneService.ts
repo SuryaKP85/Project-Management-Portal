@@ -1,3 +1,4 @@
+import { withoutClientIdentity } from '../repositories/recordConflict';
 import { Milestone } from '../models/types';
 import { MilestoneRepository } from '../repositories/milestoneRepository';
 import { GovernanceLinkRepository } from '../repositories/governanceLinkRepository';
@@ -41,7 +42,7 @@ export const MilestoneService = {
 
   async createMilestone(data: Partial<Milestone>, actor?: { id: string; name: string }): Promise<Milestone> {
     const milestone = await MilestoneRepository.create({
-      ...data,
+      ...withoutClientIdentity(data),
       createdBy: actor?.id || 'usr_admin_1',
       updatedBy: actor?.id || 'usr_admin_1',
     });

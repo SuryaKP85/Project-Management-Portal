@@ -1,3 +1,4 @@
+import { withoutClientIdentity } from '../repositories/recordConflict';
 import { Risk, RiskCategory, RiskSeverity, RiskStatus } from '../models/types';
 import { RiskRepository, calculateRiskScoreAndSeverity } from '../repositories/riskRepository';
 export { calculateRiskScoreAndSeverity };
@@ -141,7 +142,7 @@ export const RiskService = {
 
     // Sanitize payload
     const sanitizedData: Partial<Risk> = {
-      ...data,
+      ...withoutClientIdentity(data),
       title: data.title.trim(),
       projectId: project.id,
       projectName: project.name,

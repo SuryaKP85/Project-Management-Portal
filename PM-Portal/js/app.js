@@ -35,6 +35,7 @@ import { renderNotifications } from './notifications.js';
 import { HomeModule } from './home.js';
 import { escapeHtml, percent } from './safeHtml.js';
 import { Authentication } from './authentication.js';
+import { dataService } from './services/dataAdapter.js';
 
 class EnterprisePortalApp {
   constructor() {
@@ -59,7 +60,10 @@ class EnterprisePortalApp {
     if (stored && Array.isArray(stored) && stored.length > 0) {
       this.projectsList = stored;
     }
-    
+    // Sprint 23: the project cache is cleared at sign-out, so each session refills it from the server.
+    const initialList = this.projectsList;
+    dataService.getProjects().then((list) => { if (this.projectsList === initialList) this.projectsList = list; });
+
     this.setupGlobalEvents();
     this.setupRouting();
     this.setupModal();

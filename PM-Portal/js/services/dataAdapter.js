@@ -51,11 +51,14 @@ export class ApiAdapter {
     return ProjectService.getProjects();
   }
 
-  static async saveProject(project) {
-    if (project.id && !project.isNew) {
-      return ProjectService.updateProject(project.id, project);
-    }
-    return ProjectService.createProject(project);
+  /** Sprint 23: POST /projects — the server assigns the id and code. */
+  static async createProject(fields) {
+    return ProjectService.createProject(fields);
+  }
+
+  /** Sprint 23: PATCH /projects/:id with just the given fields. */
+  static async updateProject(id, changes) {
+    return ProjectService.updateProject(id, changes);
   }
 
   static async deleteProject(id) {
@@ -141,7 +144,8 @@ export class DataService {
     if (this.mode === 'api' || this.mode === 'hybrid') {
       try {
         const apiProjects = await ApiAdapter.getProjects();
-        if (apiProjects && Array.isArray(apiProjects) && apiProjects.length > 0) {
+        // Sprint 23: an empty list is an answer too — the browser copy never stands in for it.
+        if (Array.isArray(apiProjects)) {
           // Keep local storage up-to-date for backward compatibility & offline resiliency
           LocalStorageAdapter.set('projects', apiProjects);
           return apiProjects;
@@ -155,57 +159,59 @@ export class DataService {
     return Array.isArray(local) ? local : [];
   }
 
-  async saveProjects(projects) {
-    // Persist to local storage for instant UI and fallback
-    LocalStorageAdapter.set('projects', projects);
-
-    if (this.mode === 'api' || this.mode === 'hybrid') {
-      // In hybrid mode, sync any pending project creations or updates
-      try {
-        for (const p of projects) {
-          await ApiAdapter.saveProject(p).catch(() => {});
-        }
-      } catch (e) {
-        console.warn('Syncing projects to API had some issues:', e);
-      }
-    }
-    return true;
+  /**
+   * Sprint 23: projects are written one at a time, and only to the server.
+   * Errors reach the caller (no silent fallback); callers update their own
+   * list and the browser copy from the server's answer.
+   */
+  async createProject(fields) {
+    return ApiAdapter.createProject(fields);
   }
 
-  async saveSingleProject(project) {
-    let saved = project;
-    if (this.mode === 'api' || this.mode === 'hybrid') {
-      try {
-        saved = await ApiAdapter.saveProject(project);
-      } catch (e) {
-        console.warn('API saveSingleProject failed, persisting locally:', e);
-      }
-    }
-
-    // Update in local cache
-    const current = LocalStorageAdapter.get('projects', []) || [];
-    const idx = current.findIndex((p) => p.id === (saved.id || project.id));
-    if (idx >= 0) {
-      current[idx] = { ...current[idx], ...saved };
-    } else {
-      current.unshift(saved);
-    }
-    LocalStorageAdapter.set('projects', current);
-    return saved;
+  async updateProject(id, changes) {
+    return ApiAdapter.updateProject(id, changes);
   }
 
   async deleteProject(id) {
-    if (this.mode === 'api' || this.mode === 'hybrid') {
+    await ApiAdapter.deleteProject(id);
+    const current = LocalStorageAdapter.get('projects', []) || [];
+    LocalStorageAdapter.set('projects', current.filter((p) => p.id !== id && p.code !== id));
+    return true;
+  }
+
+  /**
+   * Sprint 23 — on sign-out the V1.1 project cache is settled and cleared, so
+   * it can never show (or re-import) a stale project in a later session.
+   * Projects that exist only in this browser are offered to the guarded
+   * import first (POST /projects/migrate never overwrites); nothing is
+   * dropped without the user's say. Returns false when the user chose to stay
+   * signed in, in which case the cache is kept as it was.
+   */
+  async settleProjectCacheForLogout(confirmFn = (message) => window.confirm(message)) {
+    const cached = LocalStorageAdapter.get('projects', []);
+    if (Array.isArray(cached) && cached.length > 0) {
+      let localOnly;
       try {
-        await ApiAdapter.deleteProject(id);
-      } catch (e) {
-        console.warn('API deleteProject failed:', e);
+        const known = new Set((await ApiAdapter.getProjects()).flatMap((p) => [p.id, p.code]).filter(Boolean));
+        localOnly = cached.filter((p) => p && typeof p === 'object' && !known.has(p.id) && !known.has(p.code));
+      } catch (err) {
+        if (!confirmFn('The server could not be reached to check for projects saved only in this browser.\n\nOK: sign out and clear the cached projects.\nCancel: stay signed in.')) return false;
+        localOnly = [];
+      }
+      if (localOnly.length > 0) {
+        const names = localOnly.slice(0, 10).map((p) => `- ${p.name || p.id}`).join('\n');
+        if (!confirmFn(`${localOnly.length} project(s) exist only in this browser:\n${names}\n\nOK: save them to the server, then sign out.\nCancel: stay signed in.`)) return false;
+        const result = await ApiAdapter.migrateLocalProjects(localOnly);
+        if (result && result.skipped > 0 && !confirmFn(`${result.skipped} of them could not be saved (already on the server, or not valid).\n\nOK: sign out and discard those browser copies.\nCancel: stay signed in.`)) return false;
       }
     }
-    const current = LocalStorageAdapter.get('projects', []) || [];
-    const filtered = current.filter((p) => p.id !== id && p.code !== id);
-    LocalStorageAdapter.set('projects', filtered);
+    this.clearProjectCache();
     return true;
+  }
+
+  /** Removes the V1.1 project cache (both storage keys it is kept under). */
+  clearProjectCache() {
+    LocalStorageAdapter.remove('projects');
   }
 
   /**

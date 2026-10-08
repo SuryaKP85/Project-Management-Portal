@@ -1,3 +1,4 @@
+import { duplicateRecordError } from './recordConflict';
 import { Sprint, SprintStatus } from '../models/types';
 import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
@@ -185,6 +186,8 @@ export const SprintRepository = {
     }
 
     const id = data.id || `sprint_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    // Sprint 23: never replace an existing record (findById reads PostgreSQL when connected).
+    if (await this.findById(id)) throw duplicateRecordError('sprint', id);
     const code = data.code || `SPR-${Math.floor(100 + Math.random() * 900)}`;
     const now = new Date().toISOString();
 

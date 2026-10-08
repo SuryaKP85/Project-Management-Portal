@@ -1,3 +1,4 @@
+import { duplicateRecordError } from './recordConflict';
 import { RoadmapItem } from '../models/types';
 import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
@@ -358,6 +359,8 @@ export const RoadmapRepository = {
     seedDefaultRoadmapItems();
 
     const id = data.id || `rm_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    // Sprint 23: never replace an existing record (findById reads PostgreSQL when connected).
+    if (await this.findById(id)) throw duplicateRecordError('roadmap item', id);
     const explicitCode = typeof data.code === 'string' && data.code.trim() !== '' ? data.code : undefined;
 
     // An explicit code that already exists is rejected up front in both modes;

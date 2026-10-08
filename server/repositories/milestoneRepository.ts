@@ -1,3 +1,4 @@
+import { duplicateRecordError } from './recordConflict';
 import { Milestone, MilestoneHealth, MilestoneStatus, MilestoneType } from '../models/types';
 import { persistentMap, snapshotRestored } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
@@ -279,6 +280,8 @@ export const MilestoneRepository = {
   async create(data: Partial<Milestone>): Promise<Milestone> {
     seedDefaultMilestones();
     const id = data.id || `mls_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    // Sprint 23: never replace an existing record (findById reads PostgreSQL when connected).
+    if (await this.findById(id)) throw duplicateRecordError('milestone', id);
     const count = memoryMilestones.size + 101;
     const code = data.code || `MLS-${count}`;
 

@@ -106,7 +106,8 @@ export const ProjectsModule = {
 
       await dataService.autoMigrateLocalProjects();
       const v2Projects = await dataService.getProjects();
-      if (v2Projects && Array.isArray(v2Projects) && v2Projects.length > 0) {
+      // Sprint 23: the server's list is the truth, even when it is empty.
+      if (Array.isArray(v2Projects)) {
         this.projects = v2Projects;
         this.app.projectsList = this.projects;
         Storage.set('projects', this.projects);
@@ -140,15 +141,87 @@ export const ProjectsModule = {
     this.app.projectsList = this.projects;
   },
 
-  /**
-   * Save changes to LocalStorage and sync with central state & V2 backend
-   */
-  saveProjects() {
+  /** Sprint 23: keeps the browser copy and the shared list in step with this.projects (never writes to the server). */
+  cacheProjects() {
     Storage.set('projects', this.projects);
     this.app.projectsList = this.projects;
-    dataService.saveProjects(this.projects).catch((err) => {
-      console.warn('[ProjectsModule] Background V2 saveProjects error:', err);
-    });
+  },
+
+  /**
+   * Sprint 23: one edit is one PATCH to that project, carrying only the fields
+   * that changed — no other project is written. If the server refuses, the
+   * change is undone here and the user is told, so nothing pretends to be saved.
+   * Returns whether the change was saved.
+   */
+  async saveProjectChanges(proj, changes) {
+    const blank = (v) => (v === undefined || v === null || (Array.isArray(v) && v.length === 0) ? '' : v);
+    const delta = {};
+    for (const [key, value] of Object.entries(changes)) {
+      if (JSON.stringify(blank(proj[key])) !== JSON.stringify(blank(value))) delta[key] = value;
+    }
+    if (Object.keys(delta).length === 0) return true;
+    const before = { ...proj };
+    Object.assign(proj, delta);
+    try {
+      const saved = await dataService.updateProject(before.id, delta);
+      if (saved && saved.id === before.id) Object.assign(proj, saved);
+      this.cacheProjects();
+      return true;
+    } catch (err) {
+      Object.keys(proj).forEach((key) => delete proj[key]);
+      Object.assign(proj, before);
+      this.app.showToast(`Project ${before.id} was not saved: ${(err && err.message) || 'the server rejected the change'}`, 'danger');
+      return false;
+    }
+  },
+
+  /**
+   * Sprint 23: the server creates a project (POST /projects) and assigns its id
+   * and code; the browser never invents one. Returns the server's project, or
+   * null after telling the user why it failed.
+   */
+  async createServerProject(draft) {
+    const { id, code, createdAt, updatedAt, ...fields } = draft;
+    try {
+      const created = await dataService.createProject(fields);
+      this.projects.unshift(created);
+      this.cacheProjects();
+      return created;
+    } catch (err) {
+      this.app.showToast(`Project "${fields.name || ''}" was not created: ${(err && err.message) || 'the server rejected it'}`, 'danger');
+      return null;
+    }
+  },
+
+  /** Sprint 23: deletes on the server first; the list changes only when that succeeded. */
+  async deleteServerProject(id) {
+    try {
+      await dataService.deleteProject(id);
+    } catch (err) {
+      this.app.showToast(`Project ${id} was not deleted: ${(err && err.message) || 'the server rejected it'}`, 'danger');
+      return false;
+    }
+    this.projects = this.projects.filter((p) => p.id !== id);
+    this.selectedIds.delete(id);
+    this.cacheProjects();
+    return true;
+  },
+
+  /** Sprint 23: a bulk edit is one PATCH per selected project, never the whole list. */
+  async saveSelected(changesFor, label) {
+    const targets = this.projects.filter((p) => this.selectedIds.has(p.id));
+    let saved = 0;
+    for (const p of targets) {
+      if (await this.saveProjectChanges(p, changesFor(p))) saved++;
+    }
+    if (saved > 0) this.app.showToast(`${label} for ${saved} of ${targets.length} project(s)`, saved === targets.length ? 'success' : 'warning');
+    this.selectedIds.clear();
+    this.render();
+  },
+
+  /** Sprint 23: a copy is a new server project (the server gives it its own id and code). */
+  copyDraft(p) {
+    return { ...p, name: `${p.name} (Copy)` };
   },
 
   /**
@@ -278,18 +351,8 @@ export const ProjectsModule = {
       bulkStatus.addEventListener('change', (e) => {
         const val = e.target.value;
         if (!val || this.selectedIds.size === 0) return;
-        
-        this.projects.forEach(p => {
-          if (this.selectedIds.has(p.id)) {
-            p.status = val;
-          }
-        });
-        
-        this.saveProjects();
-        this.app.showToast(`Updated status to '${val}' for ${this.selectedIds.size} projects`, 'success');
         bulkStatus.value = '';
-        this.selectedIds.clear();
-        this.render();
+        this.saveSelected(() => ({ status: val }), `Updated status to '${val}'`);
       });
     }
 
@@ -298,46 +361,24 @@ export const ProjectsModule = {
       bulkRisk.addEventListener('change', (e) => {
         const val = e.target.value;
         if (!val || this.selectedIds.size === 0) return;
-        
-        this.projects.forEach(p => {
-          if (this.selectedIds.has(p.id)) {
-            p.risk = val;
-          }
-        });
-        
-        this.saveProjects();
-        this.app.showToast(`Updated risk to '${val}' for ${this.selectedIds.size} projects`, 'success');
         bulkRisk.value = '';
-        this.selectedIds.clear();
-        this.render();
+        this.saveSelected(() => ({ risk: val }), `Updated risk to '${val}'`);
       });
     }
 
     // 9. Bulk operation buttons
     const bulkDup = document.getElementById('bulk-duplicate-btn');
     if (bulkDup) {
-      bulkDup.addEventListener('click', () => {
+      bulkDup.addEventListener('click', async () => {
         if (this.selectedIds.size === 0) return;
-        
-        const clones = [];
-        let maxNum = this.getMaxProjectCodeNum();
-        
-        this.projects.forEach(p => {
-          if (this.selectedIds.has(p.id)) {
-            maxNum++;
-            const newCode = `PRJ${String(maxNum).padStart(3, '0')}`;
-            clones.push({
-              ...p,
-              id: newCode,
-              name: `${p.name} (Copy)`
-            });
-          }
-        });
-        
-        this.projects = [...clones, ...this.projects];
-        this.saveProjects();
-        this.app.showToast(`Successfully duplicated ${this.selectedIds.size} projects`, 'success');
+        const originals = this.projects.filter((p) => this.selectedIds.has(p.id));
+        let created = 0;
+        for (const p of originals) {
+          if (await this.createServerProject(this.copyDraft(p))) created++;
+        }
+        if (created > 0) this.app.showToast(`Duplicated ${created} of ${originals.length} project(s)`, created === originals.length ? 'success' : 'warning');
         this.selectedIds.clear();
+        this.populateFilterDropdowns();
         this.render();
       });
     }
@@ -346,17 +387,7 @@ export const ProjectsModule = {
     if (bulkArc) {
       bulkArc.addEventListener('click', () => {
         if (this.selectedIds.size === 0) return;
-        
-        this.projects.forEach(p => {
-          if (this.selectedIds.has(p.id)) {
-            p.status = 'archived';
-          }
-        });
-        
-        this.saveProjects();
-        this.app.showToast(`Archived ${this.selectedIds.size} projects successfully`, 'success');
-        this.selectedIds.clear();
-        this.render();
+        this.saveSelected(() => ({ status: 'archived' }), 'Archived');
       });
     }
 
@@ -366,11 +397,14 @@ export const ProjectsModule = {
         if (this.selectedIds.size === 0) return;
         
         const count = this.selectedIds.size;
-        const doBulkDelete = () => {
-          this.projects = this.projects.filter(p => !this.selectedIds.has(p.id));
-          this.saveProjects();
-          this.app.showToast(`Successfully deleted ${count} projects`, 'success');
+        const doBulkDelete = async () => {
+          let deleted = 0;
+          for (const id of [...this.selectedIds]) {
+            if (await this.deleteServerProject(id)) deleted++;
+          }
+          if (deleted > 0) this.app.showToast(`Deleted ${deleted} of ${count} project(s)`, deleted === count ? 'success' : 'warning');
           this.selectedIds.clear();
+          this.populateFilterDropdowns();
           this.render();
         };
 
@@ -534,14 +568,15 @@ export const ProjectsModule = {
    * Import projects from Excel / CSV file and update existing or create new
    */
   importFromExcel(file) {
-    Excel.parseCustomExcelFile(file, (rows, err) => {
+    Excel.parseCustomExcelFile(file, async (rows, err) => {
       if (err || !rows || !Array.isArray(rows) || rows.length === 0) {
         this.app.showToast(`Import Error: ${err || 'No valid rows found in file'}`, 'danger');
         return;
       }
 
-      let updatedCount = 0;
-      let createdCount = 0;
+      // Sprint 23: rows are collected first, then saved one server call per project.
+      const pendingUpdates = [];
+      const pendingCreates = [];
       let skippedCount = 0;
 
       rows.forEach(r => {
@@ -644,38 +679,31 @@ export const ProjectsModule = {
         }
 
         if (existingProj) {
-          // UPDATE existing record - override non-empty imported fields
-          if (sowNum) {
-            existingProj.sow = sowNum;
-            existingProj.id = sowNum; // Project # = SOW#
-          }
-          if (hdNum) existingProj.hd = hdNum;
-          if (jiraLinksArr.length > 0) existingProj.jiraLinks = jiraLinksArr;
-          if (confluenceRaw) existingProj.confluenceLink = confluenceRaw;
-          if (projName) existingProj.name = projName;
-          if (clientName) existingProj.client = clientName;
-          if (pmName) existingProj.manager = pmName;
-          if (prodName) existingProj.productManager = prodName;
-          if (devName) existingProj.developer = devName;
-          if (qaName) existingProj.qa = qaName;
-          if (baName) existingProj.ba = baName;
-          if (sprintName) existingProj.sprint = sprintName;
-          if (parsedRisk) existingProj.risk = parsedRisk;
-          if (parsedProgress !== null) existingProj.progress = parsedProgress;
-          if (parsedBudget !== null) existingProj.budget = parsedBudget;
-          if (parsedStatus) existingProj.status = parsedStatus;
-          if (remarksRaw) existingProj.remarks = remarksRaw;
+          // UPDATE existing record - override non-empty imported fields (SOW# never changes the project id)
+          const changes = {};
+          if (sowNum) changes.sow = sowNum;
+          if (hdNum) changes.hd = hdNum;
+          if (jiraLinksArr.length > 0) changes.jiraLinks = jiraLinksArr;
+          if (confluenceRaw) changes.confluenceLink = confluenceRaw;
+          if (projName) changes.name = projName;
+          if (clientName) changes.client = clientName;
+          if (pmName) changes.manager = pmName;
+          if (prodName) changes.productManager = prodName;
+          if (devName) changes.developer = devName;
+          if (qaName) changes.qa = qaName;
+          if (baName) changes.ba = baName;
+          if (sprintName) changes.sprint = sprintName;
+          if (parsedRisk) changes.risk = parsedRisk;
+          if (parsedProgress !== null) changes.progress = parsedProgress;
+          if (parsedBudget !== null) changes.budget = parsedBudget;
+          if (parsedStatus) changes.status = parsedStatus;
+          if (remarksRaw) changes.remarks = remarksRaw;
 
-          updatedCount++;
+          pendingUpdates.push({ proj: existingProj, changes });
         } else {
-          // CREATE new record
-          const maxNum = this.getMaxProjectCodeNum() + 1;
-          const autoCode = `PRJ${String(maxNum).padStart(3, '0')}`;
-          const newCode = sowNum || projCode || autoCode;
-
+          // CREATE new record (the server assigns its id and code)
           const newProj = {
-            id: newCode,
-            sow: sowNum || newCode,
+            sow: sowNum || '',
             hd: hdNum || '',
             jiraLinks: jiraLinksArr,
             confluenceLink: confluenceRaw || '',
@@ -702,28 +730,32 @@ export const ProjectsModule = {
             year: '2026'
           };
 
-          this.projects.unshift(newProj);
-          createdCount++;
+          pendingCreates.push(newProj);
         }
       });
 
-      if (updatedCount > 0 || createdCount > 0) {
-        this.saveProjects();
-        this.populateFilterDropdowns();
-        this.render();
-
-        let msg = '';
-        if (updatedCount > 0 && createdCount > 0) {
-          msg = `Updated ${updatedCount} existing project(s) & created ${createdCount} new project(s)!`;
-        } else if (updatedCount > 0) {
-          msg = `Successfully updated ${updatedCount} existing project(s)!`;
-        } else {
-          msg = `Successfully created ${createdCount} new project(s)!`;
-        }
-        this.app.showToast(msg, 'success');
-      } else {
+      if (pendingUpdates.length === 0 && pendingCreates.length === 0) {
         this.app.showToast('No valid project rows found in file. Ensure Project Name or Client Name is present.', 'warning');
+        return;
       }
+
+      let updatedCount = 0;
+      let createdCount = 0;
+      for (const { proj, changes } of pendingUpdates) {
+        if (await this.saveProjectChanges(proj, changes)) updatedCount++;
+      }
+      for (const draft of pendingCreates) {
+        if (await this.createServerProject(draft)) createdCount++;
+      }
+      this.populateFilterDropdowns();
+      this.render();
+
+      const failed = pendingUpdates.length + pendingCreates.length - updatedCount - createdCount;
+      const parts = [];
+      if (updatedCount > 0) parts.push(`updated ${updatedCount} existing project(s)`);
+      if (createdCount > 0) parts.push(`created ${createdCount} new project(s)`);
+      if (failed > 0) parts.push(`${failed} row(s) were not saved`);
+      this.app.showToast(`Import: ${parts.join(', ')}.`, failed > 0 ? 'warning' : 'success');
     });
   },
 
@@ -764,20 +796,6 @@ export const ProjectsModule = {
     this.currentPage = 1;
     this.render();
     this.app.showToast('All search registers reset', 'info');
-  },
-
-  /**
-   * Helper to get highest sequential project code index
-   */
-  getMaxProjectCodeNum() {
-    let max = 5;
-    this.projects.forEach(p => {
-      const numPart = parseInt(p.id.replace('PRJ', ''), 10);
-      if (!isNaN(numPart) && numPart > max) {
-        max = numPart;
-      }
-    });
-    return max;
   },
 
   /**
@@ -1153,42 +1171,30 @@ export const ProjectsModule = {
   /**
    * Action methods
    */
-  duplicateProject(id) {
+  async duplicateProject(id) {
     const orig = this.projects.find(p => p.id === id);
     if (!orig) return;
-    
-    const maxNum = this.getMaxProjectCodeNum() + 1;
-    const newCode = `PRJ${String(maxNum).padStart(3, '0')}`;
-    
-    const clone = {
-      ...orig,
-      id: newCode,
-      name: `${orig.name} (Copy)`
-    };
-    
-    this.projects.unshift(clone);
-    this.saveProjects();
+
+    const clone = await this.createServerProject(this.copyDraft(orig));
+    if (!clone) return;
     this.populateFilterDropdowns();
-    this.app.showToast(`Duplicated ${id} to ${newCode} successfully`, 'success');
+    this.app.showToast(`Duplicated ${id} to ${clone.id} successfully`, 'success');
     this.render();
   },
 
-  archiveProject(id) {
+  async archiveProject(id) {
     const proj = this.projects.find(p => p.id === id);
     if (!proj) return;
-    
-    proj.status = 'archived';
-    this.saveProjects();
-    this.app.showToast(`Archived project ${id}`, 'success');
+
+    if (await this.saveProjectChanges(proj, { status: 'archived' })) {
+      this.app.showToast(`Archived project ${id}`, 'success');
+    }
     this.render();
   },
 
   deleteProject(id) {
-    const executeDelete = () => {
-      this.projects = this.projects.filter(p => p.id !== id);
-      this.saveProjects();
-      dataService.deleteProject(id);
-      this.selectedIds.delete(id);
+    const executeDelete = async () => {
+      if (!(await this.deleteServerProject(id))) return;
       this.populateFilterDropdowns();
       this.app.showToast(`Deleted project ${id} successfully`, 'success');
       this.render();
@@ -1358,15 +1364,9 @@ export const ProjectsModule = {
     // Populate form data
     const sowInp = document.getElementById('edit-sow');
     if (sowInp) {
-      sowInp.value = proj.sow || proj.id || '';
-      sowInp.oninput = () => {
-        const val = sowInp.value.trim();
-        if (val) {
-          document.getElementById('detail-proj-id').textContent = val;
-          document.getElementById('edit-id').value = val;
-        }
-        this.triggerAutosave();
-      };
+      // Sprint 23: SOW# is its own field; it never replaces the project's id.
+      sowInp.value = proj.sow || '';
+      sowInp.oninput = () => this.triggerAutosave();
     }
     const hdInp = document.getElementById('edit-hd');
     if (hdInp) hdInp.value = proj.hd || '';
@@ -1410,6 +1410,9 @@ export const ProjectsModule = {
       badge.textContent = `${slider.value}%`;
       this.triggerAutosave();
     };
+
+    // Sprint 23: what the form showed when it opened; autosave sends only what the user changed since.
+    this.detailBaseline = { id: proj.id, values: this.readDetailForm() };
 
     // Render linked delivery work breakdown (Epics, Features, Stories, Tasks)
     this.renderProjectDeliveryItems(proj.id);
@@ -2439,32 +2442,15 @@ export const ProjectsModule = {
   /**
    * Executes form validation & saving
    */
-  executeAutosave() {
+  async executeAutosave() {
+    // Values the validation below checks (the saved values come from readDetailForm).
     const id = document.getElementById('edit-id')?.value || '';
-    const sow = document.getElementById('edit-sow')?.value || '';
-    const hd = document.getElementById('edit-hd')?.value || '';
     const name = document.getElementById('edit-name')?.value || '';
-    const client = document.getElementById('edit-client')?.value || '';
     const budget = document.getElementById('edit-budget')?.value || '0';
-    const remarks = document.getElementById('edit-remarks')?.value || '';
     const estStart = document.getElementById('edit-est-start')?.value || '';
     const estEnd = document.getElementById('edit-est-end')?.value || '';
-    const actStart = document.getElementById('edit-act-start')?.value || '';
-    const actEnd = document.getElementById('edit-act-end')?.value || '';
-    const pm = document.getElementById('edit-manager')?.value || '';
-    const productManager = document.getElementById('edit-product-manager')?.value || '';
-    const ba = document.getElementById('edit-ba')?.value || '';
-    const dev = document.getElementById('edit-developer')?.value || '';
-    const qa = document.getElementById('edit-qa')?.value || '';
     const confluenceLink = document.getElementById('edit-confluence')?.value || '';
-    const sprintEl = document.getElementById('edit-sprint');
-    const sprint = sprintEl ? sprintEl.value : '';
-    const risk = document.getElementById('edit-risk')?.value || 'Low';
-    const status = document.getElementById('edit-status')?.value || 'planning';
-    const progress = document.getElementById('edit-progress')?.value || '0';
-
     const jiraInputs = document.querySelectorAll('#edit-jira-links-container .jira-link-input');
-    const jiraLinks = Array.from(jiraInputs).map(inp => inp.value.trim()).filter(Boolean);
 
     // VALIDATION DECK
     let isValid = true;
@@ -2530,55 +2516,70 @@ export const ProjectsModule = {
       return;
     }
 
-    // Find and update project details in-memory object
+    // Sprint 23: the edit becomes one PATCH to this project carrying only what the
+    // user changed since the form was filled. Values the V1.1 form cannot show
+    // exactly (a 5-step progress slider, a sprint missing from the list) are
+    // therefore never written back by accident.
     const proj = this.projects.find(p => p.id === id);
     if (proj) {
-      proj.name = name;
-      document.getElementById('detail-proj-title').textContent = name;
-      
-      if (sow) {
-        proj.sow = sow;
-        proj.id = sow; // Ensure Project # is updated to SOW#
-        document.getElementById('detail-proj-id').textContent = sow;
+      const formNow = this.readDetailForm();
+      const baseline = this.detailBaseline && this.detailBaseline.id === id ? this.detailBaseline.values : {};
+      const changes = {};
+      for (const [key, value] of Object.entries(formNow)) {
+        if (JSON.stringify(baseline[key]) !== JSON.stringify(value)) changes[key] = value;
       }
-      proj.hd = hd;
-      proj.productManager = productManager;
-      proj.confluenceLink = confluenceLink;
-      proj.jiraLinks = jiraLinks;
-      proj.client = client;
-      proj.budget = Number(budget);
-      proj.remarks = remarks;
-      proj.estimatedStart = estStart;
-      proj.estimatedEnd = estEnd;
-      proj.actualStart = actStart;
-      proj.actualEnd = actEnd;
-      proj.manager = pm;
-      proj.ba = ba;
-      proj.developer = dev;
-      proj.qa = qa;
-      proj.sprint = sprint;
-      proj.risk = risk;
-      proj.status = status;
-      proj.progress = Number(progress);
-      
+
       // Calculate month, quarter, year derived from estStart for advanced filter registers
-      if (estStart) {
+      if ('estimatedStart' in changes && estStart) {
         const dateObj = new Date(estStart);
         if (!isNaN(dateObj.getTime())) {
-          proj.month = dateObj.toLocaleString('default', { month: 'long' });
-          proj.year = String(dateObj.getFullYear());
+          changes.month = dateObj.toLocaleString('default', { month: 'long' });
+          changes.year = String(dateObj.getFullYear());
           const m = dateObj.getMonth();
           let q = 'Q1';
           if (m >= 3 && m <= 5) q = 'Q2';
           else if (m >= 6 && m <= 8) q = 'Q3';
           else if (m >= 9 && m <= 11) q = 'Q4';
-          proj.quarter = q;
+          changes.quarter = q;
         }
       }
 
-      this.saveProjects();
-      this.updateAutosaveIndicator('saved');
+      const saved = await this.saveProjectChanges(proj, changes);
+      if (saved) {
+        this.detailBaseline = { id, values: formNow };
+        document.getElementById('detail-proj-title').textContent = proj.name;
+      }
+      this.updateAutosaveIndicator(saved ? 'saved' : 'error');
     }
+  },
+
+  /** Sprint 23: the project detail form's values, keyed by the project field each one saves to. */
+  readDetailForm() {
+    const val = (id) => document.getElementById(id)?.value || '';
+    const jiraInputs = document.querySelectorAll('#edit-jira-links-container .jira-link-input');
+    return {
+      name: val('edit-name'),
+      sow: val('edit-sow'), // SOW# is stored as its own field; the project id never changes
+      hd: val('edit-hd'),
+      productManager: val('edit-product-manager'),
+      confluenceLink: val('edit-confluence'),
+      jiraLinks: Array.from(jiraInputs).map((inp) => inp.value.trim()).filter(Boolean),
+      client: val('edit-client'),
+      budget: Number(val('edit-budget') || '0'),
+      remarks: val('edit-remarks'),
+      estimatedStart: val('edit-est-start'),
+      estimatedEnd: val('edit-est-end'),
+      actualStart: val('edit-act-start'),
+      actualEnd: val('edit-act-end'),
+      manager: val('edit-manager'),
+      ba: val('edit-ba'),
+      developer: val('edit-developer'),
+      qa: val('edit-qa'),
+      sprint: val('edit-sprint'),
+      risk: val('edit-risk') || 'Low',
+      status: val('edit-status') || 'planning',
+      progress: Number(val('edit-progress') || '0'),
+    };
   },
 
   /**
@@ -2727,11 +2728,8 @@ export const ProjectsModule = {
         return false; // keeps modal open
       }
 
-      const nextNum = this.getMaxProjectCodeNum() + 1;
-      const newCode = `PRJ${String(nextNum).padStart(3, '0')}`;
-      
+      // Sprint 23: the server creates the project and assigns its id and code.
       const newProj = {
-        id: newCode,
         name,
         client,
         manager: pm,
@@ -2755,14 +2753,21 @@ export const ProjectsModule = {
         productName: prodName || undefined,
       };
 
-      this.projects.unshift(newProj);
-      this.saveProjects();
-      dataService.saveSingleProject(newProj);
-      this.populateFilterDropdowns();
-      this.app.showToast(`New Project ${newCode} initiated successfully`, 'success');
-      this.currentPage = 1;
-      this.render();
-      return true; // close modal
+      // The modal stays open (keeping the input) until the server has created the
+      // project; a failure is reported and the user can correct it and retry.
+      const saveBtn = overlay.querySelector('#global-modal-save-btn');
+      if (saveBtn) saveBtn.disabled = true;
+      this.createServerProject(newProj).then((created) => {
+        if (!created) return;
+        overlay.classList.remove('show');
+        this.populateFilterDropdowns();
+        this.app.showToast(`New Project ${created.id} initiated successfully`, 'success');
+        this.currentPage = 1;
+        this.render();
+      }).finally(() => {
+        if (saveBtn) saveBtn.disabled = false;
+      });
+      return false;
     });
 
     // Dynamically load products into dropdown

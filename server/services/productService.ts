@@ -1,3 +1,4 @@
+import { withoutClientIdentity } from '../repositories/recordConflict';
 import { ProductRepository } from '../repositories/productRepository';
 import { ProjectRepository } from '../repositories/projectRepository';
 import { ActivityRepository } from '../repositories/activityRepository';
@@ -59,8 +60,8 @@ export const ProductService = {
 
   async createProduct(data: Partial<Product>, actorUser: SafeUser): Promise<Product> {
     const newProduct: Partial<Product> = {
-      ...data,
-      id: data.id || `prod_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+      ...withoutClientIdentity(data, ['code']),
+      id: `prod_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
       code: data.code || `PROD-${Date.now().toString().slice(-4)}`,
     };
     // Declared health is validated and canonicalised before anything is stored.

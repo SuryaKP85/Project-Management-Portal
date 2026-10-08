@@ -1,3 +1,4 @@
+import { withoutClientIdentity } from '../repositories/recordConflict';
 import {
   RoadmapItem,
   RoadmapItemWithProgress,
@@ -295,7 +296,7 @@ export const RoadmapService = {
     const owner = await resolveOptionalOwner(data.ownerId);
 
     const created = await RoadmapRepository.create({
-      ...data,
+      ...withoutClientIdentity(data),
       name,
       status,
       priority,

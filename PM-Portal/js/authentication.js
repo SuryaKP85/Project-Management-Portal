@@ -1,6 +1,7 @@
 /* authentication.js - Session management backed by the V2 server (Sprint 12) */
 
 import { AuthService } from './services/authService.js';
+import { dataService } from './services/dataAdapter.js';
 
 /**
  * The V2 server is the only authenticator and the only user directory. This
@@ -180,6 +181,15 @@ export const Authentication = {
    * of the outcome before redirecting.
    */
   async logout() {
+    // Sprint 23: the V1.1 project cache is settled (browser-only projects offered
+    // to the server) and cleared while the session can still reach the server.
+    try {
+      if (!(await dataService.settleProjectCacheForLogout())) return;
+    } catch (err) {
+      window.alert(`Sign-out stopped: the projects saved only in this browser could not be sent to the server (${(err && err.message) || 'request failed'}). Nothing was discarded.`);
+      return;
+    }
+
     try {
       await AuthService.logout();
     } catch (err) {
