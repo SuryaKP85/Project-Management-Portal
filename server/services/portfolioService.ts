@@ -1,3 +1,4 @@
+import { ownerOrCaller } from './followThroughSupport';
 import { withoutClientIdentity } from '../repositories/recordConflict';
 import { PortfolioRepository } from '../repositories/portfolioRepository';
 import { ProjectRepository } from '../repositories/projectRepository';
@@ -61,7 +62,9 @@ export const PortfolioService = {
 
   async createPortfolio(data: Partial<Portfolio>, actorUser: SafeUser): Promise<Portfolio> {
     // Declared health is validated and canonicalised before anything is stored.
-    const payload: Partial<Portfolio> = { ...withoutClientIdentity(data, ['code']) };
+    // Sprint 24: the owner is the chosen user or the caller — always an existing, active user.
+    const owner = await ownerOrCaller(data.ownerId, actorUser?.id);
+    const payload: Partial<Portfolio> = { ...withoutClientIdentity(data, ['code']), ownerId: owner?.id, ownerName: owner?.name }; // Sprint 24: the owner's own name
     const health = resolveDeclaredHealth('portfolio', data.health);
     if (health) payload.health = health;
     else delete payload.health;

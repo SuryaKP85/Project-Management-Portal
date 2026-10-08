@@ -1,8 +1,22 @@
+import { ownerOrCaller, validationError } from './followThroughSupport';
 import { TeamRepository } from '../repositories/teamRepository';
 import { ActivityRepository } from '../repositories/activityRepository';
 import { NotificationRepository } from '../repositories/notificationRepository';
 import { SafeUser, Team, TeamMember } from '../models/types';
 import crypto from 'crypto';
+
+/** Sprint 24: every member is an existing, active user (team_members.user_id references users). */
+async function validMembers(list: unknown): Promise<TeamMember[] | undefined> {
+  if (list === undefined) return undefined;
+  if (!Array.isArray(list)) throw validationError("Field 'members' must be a list.");
+  const out: TeamMember[] = [];
+  for (const m of list) {
+    const user = await ownerOrCaller(m?.userId, undefined, 'userId');
+    if (!user) throw validationError("Every team member needs a userId.");
+    out.push({ ...m, userId: user.id, userName: m.userName || user.name });
+  }
+  return out;
+}
 
 export const TeamService = {
   async getAllTeams(): Promise<Team[]> {
@@ -14,8 +28,13 @@ export const TeamService = {
   },
 
   async createTeam(data: Partial<Team>, actorUser?: SafeUser): Promise<Team> {
+    // Sprint 24: the lead is the chosen user or the caller — always an existing, active user.
+    const lead = await ownerOrCaller(data.leadId, actorUser?.id, 'leadId');
+    const members = await validMembers(data.members);
     const newTeam: Partial<Team> = {
       ...data,
+      ...(members ? { members } : {}),
+      leadId: lead?.id,
       id: data.id || `team_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
     };
 
@@ -41,7 +60,11 @@ export const TeamService = {
     const existing = await TeamRepository.findById(id);
     if (!existing) return null;
 
-    const updated = await TeamRepository.update(id, updates);
+    // Sprint 24: a new lead or member list refers to existing, active users.
+    const clean: Partial<Team> = { ...updates };
+    if (updates.leadId !== undefined && updates.leadId !== null && updates.leadId !== '') clean.leadId = (await ownerOrCaller(updates.leadId, undefined, 'leadId'))?.id;
+    if (updates.members !== undefined) clean.members = await validMembers(updates.members);
+    const updated = await TeamRepository.update(id, clean);
     if (updated && actorUser) {
       await ActivityRepository.create({
         id: `act_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
@@ -78,6 +101,10 @@ export const TeamService = {
   },
 
   async addMember(teamId: string, member: TeamMember, actorUser?: SafeUser): Promise<Team | null> {
+    // Sprint 24: a member is an existing, active user (team_members.user_id references users).
+    const user = await ownerOrCaller(member?.userId, undefined, 'userId');
+    if (!user) throw validationError("Field 'userId' is required.");
+    member = { ...member, userId: user.id, userName: member.userName || user.name };
     const team = await TeamRepository.addMember(teamId, member);
     if (team && actorUser) {
       await ActivityRepository.create({

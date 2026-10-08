@@ -3,6 +3,7 @@ import { Issue, IssueSeverity, IssuePriority, IssueStatus, RootCauseCategory } f
 import { IssueRepository } from '../repositories/issueRepository';
 import { ActivityService } from './activityService';
 import { NotificationService } from './notificationService';
+import { notifiableUser, ownerOrCaller, requireActor } from './followThroughSupport';
 import { ProjectRepository } from '../repositories/projectRepository';
 import { UserRepository } from '../repositories/userRepository';
 
@@ -116,9 +117,13 @@ export const IssueService = {
   },
 
   async createIssue(data: Partial<Issue>, actor?: { id: string; name: string }): Promise<Issue> {
+    const who = requireActor(actor); // Sprint 24: the authenticated caller, never a demo user
     const title = requireNonEmptyString(data.title, 'Issue title');
     const project = await validateProject(data.projectId);
-    const ownerId = await validateUser(data.ownerId, 'Owner ID');
+    // Sprint 24: the owner is the chosen user or the caller — always an existing, active user.
+    const ownerId = (await ownerOrCaller(data.ownerId, who.id, 'Owner ID'))?.id;
+    // Sprint 24: the reporter is the chosen user or the caller — an existing, active user (issues.reported_by references users).
+    const reportedBy = (await ownerOrCaller(data.reportedBy, who.id, 'Reported by'))?.id;
     const assigneeId = await validateUser(data.assigneeId, 'Assignee ID');
 
     const status = validateEnum(data.status, VALID_ISSUE_STATUSES, 'status', 'Open');
@@ -147,6 +152,7 @@ export const IssueService = {
       productId: data.productId || project.productId,
       ownerId,
       assigneeId,
+      reportedBy,
       status,
       severity,
       priority,
@@ -154,16 +160,16 @@ export const IssueService = {
       rootCauseCategory,
       reportedDate,
       targetResolutionDate,
-      createdBy: actor?.id || 'usr_admin_1',
-      updatedBy: actor?.id || 'usr_admin_1',
+      createdBy: who.id,
+      updatedBy: who.id,
     });
 
     await ActivityService.logActivity({
       entityType: 'issue',
       entityId: issue.id,
       action: 'create',
-      actorId: actor?.id || 'usr_admin_1',
-      actorName: actor?.name || 'Admin User',
+      actorId: who.id,
+      actorName: who.name,
       details: {
         code: issue.code,
         title: issue.title,
@@ -184,9 +190,11 @@ export const IssueService = {
       });
     }
 
-    if (issue.severity === 'Critical') {
+    // Sprint 24: only to an existing, active recipient.
+    const criticalRecipient = issue.severity === 'Critical' ? await notifiableUser(issue.ownerId || who.id) : undefined;
+    if (criticalRecipient) {
       await NotificationService.sendNotification({
-        userId: issue.ownerId || actor?.id || 'usr_admin_1',
+        userId: criticalRecipient,
         title: `CRITICAL Issue Reported: [${issue.code}]`,
         message: `${issue.title} requires urgent root cause investigation.`,
         type: 'critical_issue',
@@ -199,6 +207,7 @@ export const IssueService = {
   },
 
   async updateIssue(id: string, updates: Partial<Issue>, actor?: { id: string; name: string }): Promise<Issue | null> {
+    const who = requireActor(actor); // Sprint 24: the authenticated caller, never a demo user
     const current = await IssueRepository.findById(id);
     if (!current) return null;
 
@@ -214,6 +223,9 @@ export const IssueService = {
 
     if (updates.ownerId !== undefined) sanitized.ownerId = await validateUser(updates.ownerId, 'Owner ID');
     if (updates.assigneeId !== undefined) sanitized.assigneeId = await validateUser(updates.assigneeId, 'Assignee ID');
+    // Sprint 24: a changed reporter must be an existing, active user; an unchanged one is kept as is.
+    if (updates.reportedBy && updates.reportedBy !== current.reportedBy) sanitized.reportedBy = (await ownerOrCaller(updates.reportedBy, undefined, 'Reported by'))?.id;
+    else delete sanitized.reportedBy;
 
     if (updates.status !== undefined) {
       sanitized.status = validateEnum(updates.status, VALID_ISSUE_STATUSES, 'status', current.status);
@@ -250,7 +262,7 @@ export const IssueService = {
 
     const updated = await IssueRepository.update(id, {
       ...sanitized,
-      updatedBy: actor?.id || 'usr_admin_1',
+      updatedBy: who.id,
     });
     if (!updated) return null;
 
@@ -265,8 +277,8 @@ export const IssueService = {
       entityType: 'issue',
       entityId: updated.id,
       action,
-      actorId: actor?.id || 'usr_admin_1',
-      actorName: actor?.name || 'Admin User',
+      actorId: who.id,
+      actorName: who.name,
       details: {
         code: updated.code,
         previousStatus: current.status,
@@ -288,9 +300,11 @@ export const IssueService = {
       });
     }
 
-    if (updated.severity === 'Critical' && current.severity !== 'Critical') {
+    // Sprint 24: only to an existing, active recipient.
+    const escalationRecipient = updated.severity === 'Critical' && current.severity !== 'Critical' ? await notifiableUser(updated.ownerId || who.id) : undefined;
+    if (escalationRecipient) {
       await NotificationService.sendNotification({
-        userId: updated.ownerId || actor?.id || 'usr_admin_1',
+        userId: escalationRecipient,
         title: `CRITICAL Issue Escalated: [${updated.code}]`,
         message: `Issue "${updated.title}" has escalated to Critical severity and requires immediate attention.`,
         type: 'critical_issue',
@@ -303,6 +317,7 @@ export const IssueService = {
   },
 
   async deleteIssue(id: string, actor?: { id: string; name: string }): Promise<boolean> {
+    const who = requireActor(actor); // Sprint 24: the authenticated caller, never a demo user
     const current = await IssueRepository.findById(id);
     if (!current) return false;
 
@@ -312,8 +327,8 @@ export const IssueService = {
         entityType: 'issue',
         entityId: id,
         action: 'delete',
-        actorId: actor?.id || 'usr_admin_1',
-        actorName: actor?.name || 'Admin User',
+        actorId: who.id,
+        actorName: who.name,
         details: { code: current.code, title: current.title },
       });
     }

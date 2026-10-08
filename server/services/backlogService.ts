@@ -68,7 +68,7 @@ export const BacklogService = {
 
       return story;
     } else {
-      const code = `TSK-${Math.floor(100 + Math.random() * 900)}`;
+      const code = ''; // Sprint 24: the repository issues a collision-safe TSK code
       const task = await TaskRepository.create({
         id: `tsk_${Date.now()}_${crypto.randomBytes(2).toString('hex')}`,
         code,

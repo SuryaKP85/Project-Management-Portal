@@ -1,5 +1,7 @@
 import { Project, ProjectTeamMember, SafeUser } from '../models/types';
 import { ProjectRepository } from '../repositories/projectRepository';
+import { issueMemoryDeliveryCode, issueSequenceDeliveryCode } from '../repositories/deliveryCodes';
+import { isDbConnected } from '../config/database';
 import { UserRepository } from '../repositories/userRepository';
 import { forbidden, httpError, validationError } from './followThroughSupport';
 
@@ -133,19 +135,29 @@ function cleanValues(input: Record<string, any>, current?: Project): Record<stri
       case 'confluenceLink': out.confluenceLink = safeHttpsUrl(value); break;
       case 'jiraLinks': out.jiraLinks = value; break; // normalised by the repository (Sprint 15A)
       case 'remarks': out.remarks = text(value, 'remarks', 5000); break;
+      // Sprint 24: the reporting-period columns are short by design (a month name, 'Q3', '2026').
+      case 'month': out.month = text(value, 'month', 50); break;
+      case 'quarter': out.quarter = text(value, 'quarter', 20); break;
+      case 'year': out.year = text(value, 'year', 20); break;
       default: out[field] = text(value, field, 255);
     }
   }
   return out;
 }
 
-/** The next free PRJ-### id (never an id or code already in use). */
+/**
+ * The next PRJ-### id: never an id or code in use, and — Sprint 24 — never one
+ * issued before, even if that project was deleted. It comes from a persistent
+ * monotonic counter (a PostgreSQL sequence, or the embedded store's counter),
+ * raised above every stored PRJ-### id and code.
+ */
 async function nextProjectId(): Promise<string> {
   const all = await ProjectRepository.findAll();
   const used = new Set<string>(all.flatMap((p) => [p.id, p.code].filter(Boolean) as string[]));
-  let n = Math.max(100, ...all.flatMap((p) => [p.id, p.code]).map((v) => /^PRJ-(\d+)$/.exec(String(v || ''))?.[1]).filter(Boolean).map(Number)) + 1;
-  while (used.has(`PRJ-${n}`)) n += 1;
-  return `PRJ-${n}`;
+  for (;;) {
+    const id = isDbConnected() ? await issueSequenceDeliveryCode('project', used) : issueMemoryDeliveryCode('project', used);
+    if (!used.has(id)) return id;
+  }
 }
 
 /** Roles the PATCH /projects/:id route admits (requireRoles is hierarchical, so product managers too). */
@@ -178,6 +190,11 @@ export const ProjectGuards = {
     }
     // The creator manages the project unless an active manager is named.
     clean.managerId = blank(input.managerId) ? actor.id : await activeUserId(input.managerId, 'managerId');
+    if (blank(clean.managerName)) {
+      // Sprint 24: the name shown for the manager is the manager's own, never a demo default.
+      const manager = await UserRepository.findById(clean.managerId);
+      clean.managerName = manager ? `${manager.firstName || ''} ${manager.lastName || ''}`.trim() || manager.email : '';
+    }
     const memberList = members(input.members);
     await checkMemberUsers(memberList);
     clean.members = memberList;

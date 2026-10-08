@@ -1,5 +1,5 @@
 import { Epic } from '../models/types';
-import { persistentMap, snapshotRestored } from '../config/persistence';
+import { persistentMap, skipDemoSeed } from '../config/persistence';
 import { isDbConnected, query, trackMemoryWrite, withSavepoint } from '../config/database';
 import { MAX_CODE_ATTEMPTS, isCodeCollision, issueMemoryDeliveryCode, issueSequenceDeliveryCode } from './deliveryCodes';
 import { duplicateRecordError } from './recordConflict';
@@ -10,7 +10,7 @@ import { calculateEpicProgress } from '../services/progressCalculator';
 const memoryEpics = persistentMap<Epic>('epics');
 
 function seedDefaultEpics() {
-  if (memoryEpics.size > 0 || snapshotRestored()) return;
+  if (memoryEpics.size > 0 || skipDemoSeed()) return;
   const defaults: Epic[] = [
     {
       id: 'epic_1',

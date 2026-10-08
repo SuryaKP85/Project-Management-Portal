@@ -4,6 +4,7 @@ import { MilestoneRepository } from '../repositories/milestoneRepository';
 import { GovernanceLinkRepository } from '../repositories/governanceLinkRepository';
 import { ActivityService } from './activityService';
 import { NotificationService } from './notificationService';
+import { notifiableUser, ownerOrCaller, validationError, requireActor } from './followThroughSupport';
 
 export const MilestoneService = {
   async getAllMilestones(filter?: {
@@ -41,18 +42,24 @@ export const MilestoneService = {
   },
 
   async createMilestone(data: Partial<Milestone>, actor?: { id: string; name: string }): Promise<Milestone> {
+    const who = requireActor(actor); // Sprint 24: the authenticated caller, never a demo user
+    // Sprint 24: a milestone belongs to a project (no demo default) and has an existing, active owner.
+    if (!data.projectId || typeof data.projectId !== 'string') throw validationError('Project ID is required.');
+    const owner = await ownerOrCaller(data.ownerId, who.id);
     const milestone = await MilestoneRepository.create({
       ...withoutClientIdentity(data),
-      createdBy: actor?.id || 'usr_admin_1',
-      updatedBy: actor?.id || 'usr_admin_1',
+      ownerId: owner?.id,
+      ownerName: owner?.name,
+      createdBy: who.id,
+      updatedBy: who.id,
     });
 
     await ActivityService.logActivity({
       entityType: 'milestone',
       entityId: milestone.id,
       action: 'create',
-      actorId: actor?.id || 'usr_admin_1',
-      actorName: actor?.name || 'Admin User',
+      actorId: who.id,
+      actorName: who.name,
       details: {
         code: milestone.code,
         name: milestone.name,
@@ -65,12 +72,13 @@ export const MilestoneService = {
   },
 
   async updateMilestone(id: string, updates: Partial<Milestone>, actor?: { id: string; name: string }): Promise<Milestone | null> {
+    const who = requireActor(actor); // Sprint 24: the authenticated caller, never a demo user
     const current = await MilestoneRepository.findById(id);
     if (!current) return null;
 
     const updated = await MilestoneRepository.update(id, {
       ...updates,
-      updatedBy: actor?.id || 'usr_admin_1',
+      updatedBy: who.id,
     });
     if (!updated) return null;
 
@@ -82,8 +90,8 @@ export const MilestoneService = {
       entityType: 'milestone',
       entityId: updated.id,
       action,
-      actorId: actor?.id || 'usr_admin_1',
-      actorName: actor?.name || 'Admin User',
+      actorId: who.id,
+      actorName: who.name,
       details: {
         code: updated.code,
         previousTargetDate: current.targetDate,
@@ -93,10 +101,11 @@ export const MilestoneService = {
       },
     });
 
-    // Notify if milestone missed or delayed
-    if (action === 'delayed' || updated.status === 'Missed' || updated.health === 'Critical') {
+    // Notify if milestone missed or delayed (Sprint 24: only to an existing, active recipient)
+    const recipient = action === 'delayed' || updated.status === 'Missed' || updated.health === 'Critical' ? await notifiableUser(updated.ownerId) : undefined;
+    if (recipient) {
       await NotificationService.sendNotification({
-        userId: updated.ownerId || 'usr_admin_1',
+        userId: recipient,
         title: `Milestone Delayed: [${updated.code}]`,
         message: `Milestone "${updated.name}" delivery date moved to ${updated.targetDate}.`,
         type: 'milestone_missed',
@@ -109,6 +118,7 @@ export const MilestoneService = {
   },
 
   async deleteMilestone(id: string, actor?: { id: string; name: string }): Promise<boolean> {
+    const who = requireActor(actor); // Sprint 24: the authenticated caller, never a demo user
     const current = await MilestoneRepository.findById(id);
     if (!current) return false;
 
@@ -118,8 +128,8 @@ export const MilestoneService = {
         entityType: 'milestone',
         entityId: id,
         action: 'delete',
-        actorId: actor?.id || 'usr_admin_1',
-        actorName: actor?.name || 'Admin User',
+        actorId: who.id,
+        actorName: who.name,
         details: { code: current.code, name: current.name },
       });
     }

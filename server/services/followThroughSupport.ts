@@ -55,6 +55,39 @@ export const forbidden = (message: string) => httpError(403, 'FORBIDDEN', messag
 /** One answer for "missing" and "outside your projects", so existence cannot be probed. */
 export const notAvailable = (kind: string) => httpError(404, 'NOT_FOUND', `${kind} not found or not available to you.`);
 
+/**
+ * Sprint 24 — the owner (or lead) of a new record: the chosen user, or the
+ * caller when none is chosen. Either way an existing, active user: a fresh
+ * PostgreSQL database holds only its bootstrap administrator, so no demo user
+ * is ever assumed. Returns undefined only when there is neither.
+ */
+export async function ownerOrCaller(chosen: unknown, callerId: string | undefined, field = 'ownerId'): Promise<{ id: string; name: string } | undefined> {
+  const id = chosen === undefined || chosen === null || chosen === '' ? callerId : chosen;
+  if (id === undefined || id === null || id === '') return undefined;
+  if (typeof id !== 'string') throw validationError(`Field '${field}' must be a user id.`);
+  const user = await UserRepository.findById(id);
+  if (!user) throw validationError(`Field '${field}' does not match a user.`);
+  if (!user.isActive) throw validationError(`Field '${field}' refers to a deactivated user.`);
+  return { id: user.id, name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email };
+}
+
+/**
+ * Sprint 24 — the authenticated caller a write is recorded against (createdBy,
+ * updatedBy, activity). Every such route authenticates first, so a missing
+ * caller is a 401 — never a placeholder user.
+ */
+export function requireActor<T extends { id: string; name: string }>(actor: T | null | undefined): T {
+  if (!actor || typeof actor.id !== 'string' || actor.id === '') throw httpError(401, 'UNAUTHORIZED', 'Not authenticated');
+  return actor;
+}
+
+/** Sprint 24 — a notification goes only to an existing, active user; otherwise it is skipped (never sent to a placeholder). */
+export async function notifiableUser(userId: string | undefined | null): Promise<string | undefined> {
+  if (!userId) return undefined;
+  const user = await UserRepository.findById(userId);
+  return user && user.isActive ? user.id : undefined;
+}
+
 export function canWrite(actor: FollowThroughActor): boolean {
   return FOLLOW_THROUGH_WRITE_ROLES.includes(actor.role);
 }

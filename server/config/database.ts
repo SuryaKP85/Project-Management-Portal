@@ -1,12 +1,85 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import fs from 'fs';
 import path from 'path';
-import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
+import { Pool, PoolClient, QueryResult, QueryResultRow, types } from 'pg';
 import { config } from './env';
-import { holdSaves, releaseSaves } from './persistence';
+import { holdSaves, releaseSaves, setPostgresStore } from './persistence';
 
 let pool: Pool | null = null;
 let isPostgresConnected = false;
+
+/**
+ * Sprint 24 — values cross the database boundary in the application's own
+ * types. A DATE (OID 1082) stays the 'YYYY-MM-DD' text PostgreSQL sends: the
+ * driver default turns it into a local-midnight Date, which serialises as the
+ * previous day east of UTC and broke every string comparison in the services.
+ * NUMERIC (OID 1700) becomes a number instead of text (progress values were
+ * concatenated). TIMESTAMP columns keep the driver's Date (an exact instant).
+ */
+export const PG_DATE_OID = 1082;
+export const PG_NUMERIC_OID = 1700;
+types.setTypeParser(PG_DATE_OID, (value: string) => value);
+types.setTypeParser(PG_NUMERIC_OID, (value: string) => Number(value));
+
+/** Sprint 24: a statement still running after this long is cancelled by PostgreSQL. */
+export const STATEMENT_TIMEOUT_MS = 60_000;
+
+/**
+ * Sprint 24 — TLS for the PostgreSQL connection. In production the server
+ * certificate is verified by default (optionally against PM_PORTAL_DB_SSL_CA_FILE);
+ * PM_PORTAL_DB_SSL_ALLOW_UNVERIFIED=true is the explicit, never-default opt-out.
+ * Outside production TLS is off unless a CA file is configured (as before;
+ * sslmode in DATABASE_URL still applies). Certificate contents are never logged.
+ *
+ * node-postgres lets TLS parameters in DATABASE_URL (sslmode, ssl,
+ * uselibpqcompat, sslrootcert/sslcert/sslkey) replace this option entirely, so
+ * startup refuses the combinations that would silently undo it: a CA file
+ * next to URL TLS parameters (the CA would be ignored), and — in production
+ * without the explicit opt-out — URL parameters that turn TLS or certificate
+ * verification off. The URL itself is never printed.
+ */
+function urlTlsSettings(databaseUrl: string): { present: boolean; unverified: boolean } {
+  let params: URLSearchParams;
+  try {
+    params = new URL(databaseUrl).searchParams;
+  } catch {
+    return { present: false, unverified: false };
+  }
+  const mode = (params.get('sslmode') || '').toLowerCase();
+  const present = ['sslmode', 'ssl', 'uselibpqcompat', 'sslrootcert', 'sslcert', 'sslkey'].some((k) => params.has(k));
+  const unverified =
+    ['disable', 'no-verify'].includes(mode) ||
+    ['false', '0'].includes((params.get('ssl') || '').toLowerCase()) ||
+    (params.get('uselibpqcompat') === 'true' && !['verify-ca', 'verify-full'].includes(mode));
+  return { present, unverified };
+}
+
+export function databaseSslOptions(env: NodeJS.ProcessEnv = process.env, isProduction = config.isProduction, databaseUrl = config.databaseUrl): false | { rejectUnauthorized: boolean; ca?: string } {
+  const caFile = (env.PM_PORTAL_DB_SSL_CA_FILE || '').trim();
+  const allowUnverified = env.PM_PORTAL_DB_SSL_ALLOW_UNVERIFIED === 'true';
+  const fromUrl = urlTlsSettings(databaseUrl || '');
+  if (caFile && fromUrl.present) {
+    throw new DatabaseStartupError('PM_PORTAL_DB_SSL_CA_FILE cannot be combined with TLS parameters in DATABASE_URL (sslmode, ssl, uselibpqcompat, sslrootcert, sslcert, sslkey): the URL settings would replace the CA. Remove them from DATABASE_URL.');
+  }
+  if (isProduction && fromUrl.unverified && !allowUnverified) {
+    throw new DatabaseStartupError('DATABASE_URL turns off TLS or server-certificate verification (sslmode, ssl or uselibpqcompat). Remove that setting, or set PM_PORTAL_DB_SSL_ALLOW_UNVERIFIED=true to accept it explicitly.');
+  }
+  if (!isProduction && !caFile) return false;
+  const ssl: { rejectUnauthorized: boolean; ca?: string } = { rejectUnauthorized: !allowUnverified };
+  if (caFile) {
+    try {
+      ssl.ca = fs.readFileSync(caFile, 'utf8');
+    } catch (err: any) {
+      throw new DatabaseStartupError(`PM_PORTAL_DB_SSL_CA_FILE could not be read (${caFile}): ${err.code || err.message}`);
+    }
+  }
+  return ssl;
+}
+
+/** Sprint 24: an error on an idle pooled client is logged; the pool replaces the client (the process must not crash). */
+export function onPoolError(err: Error): void {
+  console.error('PostgreSQL pool error (the connection will be replaced):', err.message);
+}
 
 /** Sprint 20: a startup condition the server must not run past. */
 export class DatabaseStartupError extends Error {}
@@ -41,9 +114,11 @@ export async function initDatabase(): Promise<{ isPostgres: boolean }> {
   if (!config.databaseUrl) return { isPostgres: false };
   const candidate = new Pool({
     connectionString: config.databaseUrl,
-    ssl: config.isProduction ? { rejectUnauthorized: false } : false,
+    ssl: databaseSslOptions(),
     connectionTimeoutMillis: 3000,
+    statement_timeout: STATEMENT_TIMEOUT_MS,
   });
+  candidate.on('error', onPoolError);
   try {
     const client = await candidate.connect();
     client.release();
@@ -61,6 +136,7 @@ export async function initDatabase(): Promise<{ isPostgres: boolean }> {
   }
   pool = candidate;
   isPostgresConnected = true;
+  setPostgresStore(true);
   console.log('✅ PostgreSQL connected and schema applied.');
   return { isPostgres: true };
 }
@@ -86,6 +162,18 @@ export async function closeDatabase(): Promise<void> {
     await pool.end();
     pool = null;
     isPostgresConnected = false;
+    setPostgresStore(false);
+  }
+}
+
+/** Sprint 24 — readiness: in PostgreSQL mode, whether the database answers a trivial query now. */
+export async function databaseReady(): Promise<boolean> {
+  if (!isPostgresConnected) return true;
+  try {
+    await query('SELECT 1');
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -191,8 +279,10 @@ export function setDatabasePoolForTests(testPool: unknown | null): () => void {
   const previous = { pool, isPostgresConnected };
   pool = (testPool as Pool) || null;
   isPostgresConnected = !!testPool;
+  setPostgresStore(!!testPool);
   return () => {
     pool = previous.pool;
     isPostgresConnected = previous.isPostgresConnected;
+    setPostgresStore(previous.isPostgresConnected);
   };
 }

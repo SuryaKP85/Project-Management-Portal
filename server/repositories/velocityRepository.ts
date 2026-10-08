@@ -1,12 +1,12 @@
 import { VelocityRecord } from '../models/types';
-import { persistentMap, snapshotRestored } from '../config/persistence';
-import { isDbConnected, query } from '../config/database';
+import { persistentMap, skipDemoSeed } from '../config/persistence';
+import { isDbConnected, query, trackMemoryWrite } from '../config/database';
 
 // Sprint 20: restored from / saved to the embedded data file in persistent mode.
 const memoryVelocity = persistentMap<VelocityRecord>('velocityRecords');
 
 function seedDefaultVelocity() {
-  if (memoryVelocity.size > 0 || snapshotRestored()) return;
+  if (memoryVelocity.size > 0 || skipDemoSeed()) return;
   const defaults: VelocityRecord[] = [
     {
       sprintId: 'sprint_hist_21',
@@ -88,7 +88,7 @@ export const VelocityRepository = {
 
   async record(record: VelocityRecord): Promise<VelocityRecord> {
     if (isDbConnected()) {
-      const id = `vel_${Date.now()}`;
+      const id = `vel_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`; // Sprint 24: no same-millisecond id collisions
       await query(
         `INSERT INTO velocity_records (id, sprint_id, sprint_name, project_id, start_date, end_date, completed_date, committed_points, completed_points, committed_hours, completed_hours)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
@@ -107,6 +107,7 @@ export const VelocityRepository = {
         ]
       );
     }
+    trackMemoryWrite(memoryVelocity, record.sprintId); // Sprint 24: undone if the surrounding transaction fails (embedded mode)
     memoryVelocity.set(record.sprintId, record);
     return record;
   },

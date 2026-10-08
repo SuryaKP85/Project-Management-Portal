@@ -1,5 +1,5 @@
 import { Feature } from '../models/types';
-import { persistentMap, snapshotRestored } from '../config/persistence';
+import { persistentMap, skipDemoSeed } from '../config/persistence';
 import { isDbConnected, query, trackMemoryWrite, withSavepoint } from '../config/database';
 import { MAX_CODE_ATTEMPTS, isCodeCollision, issueMemoryDeliveryCode, issueSequenceDeliveryCode } from './deliveryCodes';
 import { duplicateRecordError } from './recordConflict';
@@ -10,7 +10,7 @@ import { calculateFeatureProgress } from '../services/progressCalculator';
 const memoryFeatures = persistentMap<Feature>('features');
 
 function seedDefaultFeatures() {
-  if (memoryFeatures.size > 0 || snapshotRestored()) return;
+  if (memoryFeatures.size > 0 || skipDemoSeed()) return;
   const defaults: Feature[] = [
     {
       id: 'feat_1',

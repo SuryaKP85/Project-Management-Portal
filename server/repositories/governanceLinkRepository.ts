@@ -1,12 +1,12 @@
 import { GovernanceLink, GovernanceLinkTargetType, GovernanceLinkSourceType } from '../models/types';
-import { persistentMap, snapshotRestored } from '../config/persistence';
-import { isDbConnected, query } from '../config/database';
+import { persistentMap, skipDemoSeed } from '../config/persistence';
+import { isDbConnected, query, withTransaction } from '../config/database';
 
 // Sprint 20: restored from / saved to the embedded data file in persistent mode.
 const memoryLinks = persistentMap<GovernanceLink>('governanceLinks');
 
 function seedDefaultLinks() {
-  if (memoryLinks.size > 0 || snapshotRestored()) return;
+  if (memoryLinks.size > 0 || skipDemoSeed()) return;
   const defaults: GovernanceLink[] = [
     // Risk 1 links (Ares Guidance IMU calibration slip)
     {
@@ -113,20 +113,16 @@ export const GovernanceLinkRepository = {
   async getLinksFor(governanceType: string, governanceId: string): Promise<GovernanceLink[]> {
     seedDefaultLinks();
     if (isDbConnected()) {
-      try {
-        const res = await query(
-          `SELECT id, governance_type as "governanceType", governance_id as "governanceId",
-                  target_type as "targetType", target_id as "targetId", target_code as "targetCode",
-                  target_name as "targetName", created_at as "createdAt"
-           FROM governance_links
-           WHERE governance_type = $1 AND governance_id = $2
-           ORDER BY created_at ASC`,
-          [governanceType, governanceId]
-        );
-        return res.rows;
-      } catch (err) {
-        console.warn('DB error fetching governance links, using memory:', err);
-      }
+      const res = await query(
+        `SELECT id, governance_type as "governanceType", governance_id as "governanceId",
+                target_type as "targetType", target_id as "targetId", target_code as "targetCode",
+                target_name as "targetName", created_at as "createdAt"
+         FROM governance_links
+         WHERE governance_type = $1 AND governance_id = $2
+         ORDER BY created_at ASC`,
+        [governanceType, governanceId]
+      );
+      return res.rows;
     }
     return Array.from(memoryLinks.values()).filter(
       (l) => l.governanceType === governanceType && l.governanceId === governanceId
@@ -141,20 +137,16 @@ export const GovernanceLinkRepository = {
   async findBySourceType(governanceType: GovernanceLinkSourceType): Promise<GovernanceLink[]> {
     seedDefaultLinks();
     if (isDbConnected()) {
-      try {
-        const res = await query(
-          `SELECT id, governance_type as "governanceType", governance_id as "governanceId",
-                  target_type as "targetType", target_id as "targetId", target_code as "targetCode",
-                  target_name as "targetName", created_at as "createdAt"
-           FROM governance_links
-           WHERE governance_type = $1
-           ORDER BY created_at ASC`,
-          [governanceType]
-        );
-        return res.rows;
-      } catch (err) {
-        console.warn('DB error fetching governance links by source type, using memory:', err);
-      }
+      const res = await query(
+        `SELECT id, governance_type as "governanceType", governance_id as "governanceId",
+                target_type as "targetType", target_id as "targetId", target_code as "targetCode",
+                target_name as "targetName", created_at as "createdAt"
+         FROM governance_links
+         WHERE governance_type = $1
+         ORDER BY created_at ASC`,
+        [governanceType]
+      );
+      return res.rows;
     }
     // Stable sort: ties on createdAt keep insertion order, matching SQL.
     return Array.from(memoryLinks.values())
@@ -165,20 +157,16 @@ export const GovernanceLinkRepository = {
   async getBacklinks(targetType: GovernanceLinkTargetType, targetId: string): Promise<GovernanceLink[]> {
     seedDefaultLinks();
     if (isDbConnected()) {
-      try {
-        const res = await query(
-          `SELECT id, governance_type as "governanceType", governance_id as "governanceId",
-                  target_type as "targetType", target_id as "targetId", target_code as "targetCode",
-                  target_name as "targetName", created_at as "createdAt"
-           FROM governance_links
-           WHERE target_type = $1 AND target_id = $2
-           ORDER BY created_at ASC`,
-          [targetType, targetId]
-        );
-        return res.rows;
-      } catch (err) {
-        console.warn('DB error fetching governance backlinks, using memory:', err);
-      }
+      const res = await query(
+        `SELECT id, governance_type as "governanceType", governance_id as "governanceId",
+                target_type as "targetType", target_id as "targetId", target_code as "targetCode",
+                target_name as "targetName", created_at as "createdAt"
+         FROM governance_links
+         WHERE target_type = $1 AND target_id = $2
+         ORDER BY created_at ASC`,
+        [targetType, targetId]
+      );
+      return res.rows;
     }
     return Array.from(memoryLinks.values()).filter(
       (l) => l.targetType === targetType && l.targetId === targetId
@@ -194,8 +182,9 @@ export const GovernanceLinkRepository = {
     targetName?: string
   ): Promise<GovernanceLink> {
     seedDefaultLinks();
-    // Check if already exists
-    const existing = Array.from(memoryLinks.values()).find(
+    // Check if already exists (Sprint 24: in the store that holds the links — PostgreSQL when connected)
+    const owned = isDbConnected() ? await this.getLinksFor(governanceType, governanceId) : Array.from(memoryLinks.values());
+    const existing = owned.find(
       (l) =>
         l.governanceType === governanceType &&
         l.governanceId === governanceId &&
@@ -215,18 +204,16 @@ export const GovernanceLinkRepository = {
       targetName,
       createdAt: new Date().toISOString(),
     };
-    memoryLinks.set(id, newLink);
 
+    // Sprint 24: PostgreSQL first (errors propagate); memory only when it is the store.
     if (isDbConnected()) {
-      try {
-        await query(
-          `INSERT INTO governance_links (id, governance_type, governance_id, target_type, target_id, target_code, target_name, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [id, governanceType, governanceId, targetType, targetId, targetCode || null, targetName || null, newLink.createdAt]
-        );
-      } catch (err) {
-        console.warn('DB error inserting governance link:', err);
-      }
+      await query(
+        `INSERT INTO governance_links (id, governance_type, governance_id, target_type, target_id, target_code, target_name, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [id, governanceType, governanceId, targetType, targetId, targetCode || null, targetName || null, newLink.createdAt]
+      );
+    } else {
+      memoryLinks.set(id, newLink);
     }
     return newLink;
   },
@@ -237,26 +224,22 @@ export const GovernanceLinkRepository = {
    */
   async removeLinksFor(governanceType: GovernanceLinkSourceType, governanceId: string): Promise<number> {
     seedDefaultLinks();
-    let removed = 0;
+    // Sprint 24: PostgreSQL is authoritative in PG mode: report what it deleted.
+    if (isDbConnected()) {
+      const res = await query('DELETE FROM governance_links WHERE governance_type = $1 AND governance_id = $2', [
+        governanceType,
+        governanceId,
+      ]);
+      return res.rowCount ?? 0;
+    }
 
+    let removed = 0;
     for (const [id, link] of memoryLinks.entries()) {
       if (link.governanceType === governanceType && link.governanceId === governanceId) {
         memoryLinks.delete(id);
         removed += 1;
       }
     }
-
-    if (isDbConnected()) {
-      try {
-        await query('DELETE FROM governance_links WHERE governance_type = $1 AND governance_id = $2', [
-          governanceType,
-          governanceId,
-        ]);
-      } catch (err) {
-        console.warn('DB error removing governance links for entity:', err);
-      }
-    }
-
     return removed;
   },
 
@@ -268,42 +251,31 @@ export const GovernanceLinkRepository = {
    */
   async removeBacklinks(targetType: GovernanceLinkTargetType, targetId: string): Promise<number> {
     seedDefaultLinks();
-    let removed = 0;
+    if (isDbConnected()) {
+      const res = await query('DELETE FROM governance_links WHERE target_type = $1 AND target_id = $2', [
+        targetType,
+        targetId,
+      ]);
+      // PostgreSQL is authoritative in PG mode: report what it deleted.
+      return res.rowCount ?? 0;
+    }
 
+    let removed = 0;
     for (const [id, link] of memoryLinks.entries()) {
       if (link.targetType === targetType && link.targetId === targetId) {
         memoryLinks.delete(id);
         removed += 1;
       }
     }
-
-    if (isDbConnected()) {
-      try {
-        const res = await query('DELETE FROM governance_links WHERE target_type = $1 AND target_id = $2', [
-          targetType,
-          targetId,
-        ]);
-        // PostgreSQL is authoritative in PG mode: report what it deleted.
-        return res.rowCount ?? 0;
-      } catch (err) {
-        console.warn('DB error removing governance backlinks for entity:', err);
-      }
-    }
-
     return removed;
   },
 
   async removeLink(id: string): Promise<boolean> {
     seedDefaultLinks();
-    const removed = memoryLinks.delete(id);
-    if (isDbConnected()) {
-      try {
-        await query(`DELETE FROM governance_links WHERE id = $1`, [id]);
-      } catch (err) {
-        console.warn('DB error removing governance link:', err);
-      }
-    }
-    return removed;
+    // Sprint 24: the database's row count is the result in PostgreSQL mode.
+    if (!isDbConnected()) return memoryLinks.delete(id);
+    const res = await query(`DELETE FROM governance_links WHERE id = $1`, [id]);
+    return !!res.rowCount;
   },
 
   async replaceLinks(
@@ -312,28 +284,15 @@ export const GovernanceLinkRepository = {
     targets: Array<{ targetType: GovernanceLinkTargetType; targetId: string; targetCode?: string; targetName?: string }>
   ): Promise<GovernanceLink[]> {
     seedDefaultLinks();
-    // Remove existing
-    for (const [id, link] of memoryLinks.entries()) {
-      if (link.governanceType === governanceType && link.governanceId === governanceId) {
-        memoryLinks.delete(id);
+    // Sprint 24: one unit in PostgreSQL — a failed insert restores the previous links.
+    return withTransaction(async () => {
+      await this.removeLinksFor(governanceType, governanceId);
+      const created: GovernanceLink[] = [];
+      for (const t of targets) {
+        const link = await this.addLink(governanceType, governanceId, t.targetType, t.targetId, t.targetCode, t.targetName);
+        created.push(link);
       }
-    }
-    if (isDbConnected()) {
-      try {
-        await query(
-          `DELETE FROM governance_links WHERE governance_type = $1 AND governance_id = $2`,
-          [governanceType, governanceId]
-        );
-      } catch (err) {
-        console.warn('DB error clearing governance links:', err);
-      }
-    }
-
-    const created: GovernanceLink[] = [];
-    for (const t of targets) {
-      const link = await this.addLink(governanceType, governanceId, t.targetType, t.targetId, t.targetCode, t.targetName);
-      created.push(link);
-    }
-    return created;
+      return created;
+    });
   },
 };

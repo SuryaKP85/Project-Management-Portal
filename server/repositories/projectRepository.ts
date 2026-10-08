@@ -1,5 +1,5 @@
 import { Project } from '../models/types';
-import { persistentMap, snapshotRestored } from '../config/persistence';
+import { persistentMap, skipDemoSeed } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 import { cleanProjectJiraLinks } from '../services/jiraReference';
 import { duplicateRecordError } from './recordConflict';
@@ -8,7 +8,7 @@ import { duplicateRecordError } from './recordConflict';
 const memoryProjects = persistentMap<Project>('projects');
 
 function seedDefaultProjects() {
-  if (memoryProjects.size > 0 || snapshotRestored()) return;
+  if (memoryProjects.size > 0 || skipDemoSeed()) return;
   const defaultProjects: Project[] = [
     {
       id: 'PRJ-101',
@@ -243,8 +243,8 @@ export const ProjectRepository = {
       code,
       name: project.name || 'Untitled Project',
       client: project.client || 'Enterprise Client',
-      managerId: project.managerId || 'usr_admin_1',
-      managerName: project.managerName || 'Surya Prashanth',
+      managerId: project.managerId, // Sprint 24: no demo manager (ProjectGuards supplies the caller)
+      managerName: project.managerName || '',
       teamId: project.teamId,
       teamName: project.teamName,
       members: project.members || [],

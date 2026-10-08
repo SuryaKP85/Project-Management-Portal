@@ -1,3 +1,4 @@
+import { ownerOrCaller } from './followThroughSupport';
 import { withoutClientIdentity } from '../repositories/recordConflict';
 import { GoalRepository } from '../repositories/goalRepository';
 import { ActivityRepository } from '../repositories/activityRepository';
@@ -16,7 +17,9 @@ export const GoalService = {
   },
 
   async createGoal(data: Partial<Goal>, actorUser: SafeUser): Promise<Goal> {
-    const created = await GoalRepository.create(withoutClientIdentity(data));
+    // Sprint 24: the owner is the chosen user or the caller — always an existing, active user.
+    const owner = await ownerOrCaller(data.ownerId, actorUser?.id);
+    const created = await GoalRepository.create({ ...withoutClientIdentity(data), ownerId: owner?.id, ownerName: owner?.name }); // Sprint 24: the owner's own name
 
     await ActivityRepository.create({
       id: `act_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,

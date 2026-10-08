@@ -830,3 +830,76 @@ ALTER TABLE epics ADD COLUMN IF NOT EXISTS backlog_order INTEGER;
 ALTER TABLE sprints ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP WITH TIME ZONE;
 CREATE INDEX IF NOT EXISTS idx_stories_sprint_id ON stories(sprint_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_sprint_id ON tasks(sprint_id);
+
+-- ====================================================================
+-- Sprint 24: PostgreSQL integrity
+-- ====================================================================
+-- Idempotent like the rest of this file (applied at every startup).
+
+-- Issues have always been written with their reporter; the column was missing,
+-- so every issue write failed.
+ALTER TABLE issues ADD COLUMN IF NOT EXISTS reported_by VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL;
+
+-- Collision-safe codes for tasks, sprints and governance records (they used
+-- random numbers or memory.size + 101). The server raises each sequence above
+-- the highest stored code before issuing one; UNIQUE(code) stays the backstop.
+CREATE SEQUENCE IF NOT EXISTS task_code_seq START WITH 101 INCREMENT BY 1;
+CREATE SEQUENCE IF NOT EXISTS sprint_code_seq START WITH 101 INCREMENT BY 1;
+CREATE SEQUENCE IF NOT EXISTS risk_code_seq START WITH 101 INCREMENT BY 1;
+CREATE SEQUENCE IF NOT EXISTS issue_code_seq START WITH 101 INCREMENT BY 1;
+CREATE SEQUENCE IF NOT EXISTS milestone_code_seq START WITH 101 INCREMENT BY 1;
+CREATE SEQUENCE IF NOT EXISTS release_code_seq START WITH 101 INCREMENT BY 1;
+CREATE SEQUENCE IF NOT EXISTS dependency_code_seq START WITH 101 INCREMENT BY 1;
+-- Generated project ids (PRJ-###): never re-issued after a project is deleted.
+CREATE SEQUENCE IF NOT EXISTS project_code_seq START WITH 101 INCREMENT BY 1;
+
+-- Text columns at least as long as the server's validation allows (widening a
+-- VARCHAR does not rewrite the table). Names and free text accepted up to 255
+-- characters were rejected by PostgreSQL with 22001.
+ALTER TABLE projects ALTER COLUMN client TYPE VARCHAR(255);
+ALTER TABLE projects ALTER COLUMN poc TYPE VARCHAR(255);
+ALTER TABLE projects ALTER COLUMN developer TYPE VARCHAR(255);
+ALTER TABLE projects ALTER COLUMN qa TYPE VARCHAR(255);
+ALTER TABLE projects ALTER COLUMN ba TYPE VARCHAR(255);
+ALTER TABLE projects ALTER COLUMN sprint TYPE VARCHAR(255);
+ALTER TABLE projects ALTER COLUMN sow_status TYPE VARCHAR(255);
+ALTER TABLE stories ALTER COLUMN sprint TYPE VARCHAR(255);
+ALTER TABLE tasks ALTER COLUMN sprint TYPE VARCHAR(255);
+ALTER TABLE stories ALTER COLUMN target_release TYPE VARCHAR(255);
+ALTER TABLE features ALTER COLUMN target_release TYPE VARCHAR(255);
+
+-- A sprint is completed once: one velocity record per sprint. Duplicates left
+-- by earlier double completions are not deleted: the older rows are moved to
+-- velocity_records_duplicates (kept with archived_at, no foreign keys, so they
+-- survive later deletes) and the newest row per sprint stays. Nothing moves
+-- when there are no duplicates. The whole file runs as one statement batch, so
+-- a failure leaves both tables unchanged.
+CREATE TABLE IF NOT EXISTS velocity_records_duplicates (
+  id VARCHAR(64) NOT NULL,
+  sprint_id VARCHAR(64) NOT NULL,
+  sprint_name VARCHAR(255),
+  project_id VARCHAR(64),
+  start_date DATE,
+  end_date DATE,
+  completed_date TIMESTAMP WITH TIME ZONE,
+  committed_points INTEGER,
+  completed_points INTEGER,
+  committed_hours NUMERIC(10, 2),
+  completed_hours NUMERIC(10, 2),
+  created_at TIMESTAMP WITH TIME ZONE,
+  archived_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+WITH moved AS (
+  DELETE FROM velocity_records v USING velocity_records newer
+   WHERE v.sprint_id = newer.sprint_id
+     AND (COALESCE(v.created_at, '-infinity'::timestamptz), v.id) < (COALESCE(newer.created_at, '-infinity'::timestamptz), newer.id)
+  RETURNING v.id, v.sprint_id, v.sprint_name, v.project_id, v.start_date, v.end_date, v.completed_date,
+            v.committed_points, v.completed_points, v.committed_hours, v.completed_hours, v.created_at
+)
+INSERT INTO velocity_records_duplicates (id, sprint_id, sprint_name, project_id, start_date, end_date, completed_date,
+  committed_points, completed_points, committed_hours, completed_hours, created_at)
+SELECT * FROM moved;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_velocity_records_sprint ON velocity_records(sprint_id);
+
+-- Team membership is stored here (one row per person per team).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_team_members_team_user ON team_members(team_id, user_id);

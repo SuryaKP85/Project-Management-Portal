@@ -1,6 +1,6 @@
 import { duplicateRecordError } from './recordConflict';
 import { Product, ProductHealth, normalizeDeclaredHealth } from '../models/types';
-import { persistentMap, snapshotRestored } from '../config/persistence';
+import { persistentMap, skipDemoSeed } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 
 /**
@@ -23,7 +23,7 @@ function withDeclaredHealth(product: Product): Product {
 const memoryProducts = persistentMap<Product>('products');
 
 function seedDefaultProducts() {
-  if (memoryProducts.size > 0 || snapshotRestored()) return;
+  if (memoryProducts.size > 0 || skipDemoSeed()) return;
   const defaultProducts: Product[] = [
     {
       id: 'prod_1',
@@ -150,8 +150,8 @@ export const ProductRepository = {
       description: product.description || '',
       status: product.status || 'in-development',
       health: product.health || 'healthy',
-      ownerId: product.ownerId || 'usr_admin_1',
-      ownerName: product.ownerName || 'Surya Prashanth',
+      ownerId: product.ownerId, // Sprint 24: no demo owner (the service supplies one)
+      ownerName: product.ownerName || '', // Sprint 24: no demo owner name
       teamId: product.teamId,
       teamName: product.teamName,
       category: product.category,
@@ -236,8 +236,11 @@ export const ProductRepository = {
   },
 
   async delete(id: string): Promise<boolean> {
+    // Sprint 24: the database's row count is the result in PostgreSQL mode.
     if (isDbConnected()) {
-      await query('DELETE FROM products WHERE id = $1', [id]);
+      const res = await query('DELETE FROM products WHERE id = $1', [id]);
+      memoryProducts.delete(id);
+      return !!res.rowCount;
     }
     return memoryProducts.delete(id);
   },

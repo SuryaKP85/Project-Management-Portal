@@ -1,3 +1,4 @@
+import { requireActor } from './followThroughSupport';
 import { withoutClientIdentity } from '../repositories/recordConflict';
 import {
   RoadmapItem,
@@ -221,6 +222,7 @@ export const RoadmapService = {
    * target's code/name are resolved server-side — the client supplies only ids.
    */
   async linkGoal(roadmapId: string, goalId: string, actor?: RoadmapActor) {
+    const who = requireActor(actor); // Sprint 24: the authenticated caller, never a demo user
     const item = await RoadmapRepository.findById(roadmapId);
     if (!item) return null;
 
@@ -246,8 +248,8 @@ export const RoadmapService = {
       entityType: 'roadmap',
       entityId: roadmapId,
       action: 'assign',
-      actorId: actor?.id || 'usr_admin_1',
-      actorName: actor?.name || 'System',
+      actorId: who.id,
+      actorName: who.name,
       details: { code: item.code, goalId: goal.id, goalObjective: goal.objective, linkId: link.id },
     });
 
@@ -256,6 +258,7 @@ export const RoadmapService = {
 
   /** Removes one alignment. Returns false when the link is not on this item. */
   async unlinkGoal(roadmapId: string, linkId: string, actor?: RoadmapActor): Promise<boolean> {
+    const who = requireActor(actor); // Sprint 24: the authenticated caller, never a demo user
     const item = await RoadmapRepository.findById(roadmapId);
     if (!item) return false;
 
@@ -271,8 +274,8 @@ export const RoadmapService = {
       entityType: 'roadmap',
       entityId: roadmapId,
       action: 'reassign',
-      actorId: actor?.id || 'usr_admin_1',
-      actorName: actor?.name || 'System',
+      actorId: who.id,
+      actorName: who.name,
       details: { code: item.code, unlinkedGoalId: target.targetId, linkId },
     });
 
@@ -280,6 +283,7 @@ export const RoadmapService = {
   },
 
   async createItem(data: Partial<RoadmapItem>, actor?: RoadmapActor): Promise<RoadmapItemWithProgress> {
+    const who = requireActor(actor); // Sprint 24: the authenticated caller, never a demo user
     const name = requireNonEmptyString(data.name, 'Roadmap item name');
     const status = validateEnum(data.status, VALID_ROADMAP_STATUSES, 'status', 'proposed');
     const priority = validateEnum(data.priority, VALID_ROADMAP_PRIORITIES, 'priority', 'medium');
@@ -310,16 +314,16 @@ export const RoadmapService = {
       projectName: project.name,
       ownerId: owner.id,
       ownerName: owner.name,
-      createdBy: actor?.id,
-      updatedBy: actor?.id,
+      createdBy: who.id,
+      updatedBy: who.id,
     });
 
     await ActivityService.logActivity({
       entityType: 'roadmap',
       entityId: created.id,
       action: 'create',
-      actorId: actor?.id || 'usr_admin_1',
-      actorName: actor?.name || 'System',
+      actorId: who.id,
+      actorName: who.name,
       details: {
         code: created.code,
         name: created.name,
@@ -338,6 +342,7 @@ export const RoadmapService = {
     updates: Partial<RoadmapItem>,
     actor?: RoadmapActor
   ): Promise<RoadmapItemWithProgress | null> {
+    const who = requireActor(actor); // Sprint 24: the authenticated caller, never a demo user
     const current = await RoadmapRepository.findById(id);
     if (!current) return null;
 
@@ -391,7 +396,7 @@ export const RoadmapService = {
       sanitized.ownerName = owner.name;
     }
 
-    sanitized.updatedBy = actor?.id || current.updatedBy;
+    sanitized.updatedBy = who.id;
 
     const updated = await RoadmapRepository.update(id, sanitized);
     if (!updated) return null;
@@ -402,8 +407,8 @@ export const RoadmapService = {
       entityType: 'roadmap',
       entityId: id,
       action: statusChanged ? 'status_change' : 'update',
-      actorId: actor?.id || 'usr_admin_1',
-      actorName: actor?.name || 'System',
+      actorId: who.id,
+      actorName: who.name,
       details: statusChanged
         ? { code: updated.code, from: current.status, to: updated.status }
         : { code: updated.code, updatedFields: Object.keys(updates) },
@@ -413,6 +418,7 @@ export const RoadmapService = {
   },
 
   async deleteItem(id: string, actor?: RoadmapActor): Promise<boolean> {
+    const who = requireActor(actor); // Sprint 24: the authenticated caller, never a demo user
     const current = await RoadmapRepository.findById(id);
     if (!current) return false;
 
@@ -426,8 +432,8 @@ export const RoadmapService = {
       entityType: 'roadmap',
       entityId: id,
       action: 'delete',
-      actorId: actor?.id || 'usr_admin_1',
-      actorName: actor?.name || 'System',
+      actorId: who.id,
+      actorName: who.name,
       details: { code: current.code, name: current.name, removedGoalLinks: removedLinks },
     });
 
@@ -442,6 +448,7 @@ export const RoadmapService = {
     entries: Array<{ id: string; sequence: number }>,
     actor?: RoadmapActor
   ): Promise<{ applied: number; skipped: number }> {
+    const who = requireActor(actor); // Sprint 24: the authenticated caller, never a demo user
     if (!Array.isArray(entries) || entries.length === 0) {
       throw new Error('Reorder requires a non-empty list of items.');
     }
@@ -461,8 +468,8 @@ export const RoadmapService = {
       entityType: 'roadmap',
       entityId: 'roadmap-order',
       action: 'reorder',
-      actorId: actor?.id || 'usr_admin_1',
-      actorName: actor?.name || 'System',
+      actorId: who.id,
+      actorName: who.name,
       details: { requested: entries.length, applied },
     });
 

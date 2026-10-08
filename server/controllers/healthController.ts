@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { isDbConnected } from '../config/database';
+import { databaseReady, isDbConnected } from '../config/database';
 import { persistenceStatus } from '../config/persistence';
 import { GeminiAIProvider } from '../ai/providers/geminiProvider';
 import { MicrosoftIdentityService } from '../integrations/microsoft365/microsoftIdentityService';
@@ -15,11 +15,22 @@ function storageStatus() {
 }
 
 export const HealthController = {
+  /** Sprint 24 — liveness: the process is up and answering. Never touches the database. */
+  async live(_req: Request, res: Response) {
+    res.json({ success: true, data: { status: 'alive', uptime: process.uptime(), timestamp: new Date().toISOString() } });
+  },
+
+  /**
+   * Readiness. Sprint 24: in PostgreSQL mode the database must answer a
+   * trivial query now (SELECT 1); otherwise 503 'degraded'. The embedded and
+   * temporary stores are in-process and always ready.
+   */
   async status(_req: Request, res: Response) {
-    res.json({
-      success: true,
+    const ready = await databaseReady();
+    (ready ? res : res.status(503)).json({
+      success: ready,
       data: {
-        status: 'healthy',
+        status: ready ? 'healthy' : 'degraded',
         app: 'Surya Project Management Portal & Operating System',
         internalVersion: '2.0.0',
         displayVersion: 'V2.0',
@@ -32,6 +43,7 @@ export const HealthController = {
         services: {
           database: {
             connected: isDbConnected(),
+            ready,
             engine: isDbConnected() ? 'PostgreSQL' : 'Embedded Store',
           },
           ai: {

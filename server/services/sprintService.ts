@@ -34,7 +34,7 @@ export const SprintService = {
     actor: Actor
   ): Promise<Sprint> {
     const id = `spr_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
-    const code = `SPR-${Math.floor(100 + Math.random() * 900)}`;
+    const code = ''; // Sprint 24: the repository issues a collision-safe SPR code
     const sprint: Sprint = {
       id,
       code,

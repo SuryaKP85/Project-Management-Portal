@@ -1,7 +1,7 @@
 import { duplicateRecordError } from './recordConflict';
 import { RoadmapItem } from '../models/types';
-import { persistentMap, snapshotRestored } from '../config/persistence';
-import { isDbConnected, query } from '../config/database';
+import { persistentMap, skipDemoSeed } from '../config/persistence';
+import { isDbConnected, query, withTransaction } from '../config/database';
 
 /**
  * Sprint 9.2 — roadmap persistence.
@@ -104,7 +104,7 @@ async function nextSequenceCode(): Promise<string> {
 }
 
 function seedDefaultRoadmapItems() {
-  if (memoryRoadmapItems.size > 0 || snapshotRestored()) return;
+  if (memoryRoadmapItems.size > 0 || skipDemoSeed()) return;
   const now = new Date().toISOString();
   const defaults: RoadmapItem[] = [
     {
@@ -317,17 +317,13 @@ export const RoadmapRepository = {
     seedDefaultRoadmapItems();
 
     if (isDbConnected()) {
-      try {
-        const where = buildWhereClause(filter);
-        const res = await query(
-          `SELECT * FROM roadmap_items${where.sql} ORDER BY sequence ASC, created_at ASC`,
-          where.params
-        );
-        // The JavaScript pass stays: it is the semantic filter, SQL only narrows.
-        return applyFilter(res.rows.map(mapRow), filter);
-      } catch (err: any) {
-        console.warn('DB error in RoadmapRepository.findAll, falling back to memory:', err.message);
-      }
+      const where = buildWhereClause(filter);
+      const res = await query(
+        `SELECT * FROM roadmap_items${where.sql} ORDER BY sequence ASC, created_at ASC`,
+        where.params
+      );
+      // The JavaScript pass stays: it is the semantic filter, SQL only narrows.
+      return applyFilter(res.rows.map(mapRow), filter);
     }
 
     return applyFilter(Array.from(memoryRoadmapItems.values()), filter).sort(bySequence);
@@ -337,12 +333,9 @@ export const RoadmapRepository = {
     seedDefaultRoadmapItems();
 
     if (isDbConnected()) {
-      try {
-        const res = await query('SELECT * FROM roadmap_items WHERE id = $1', [id]);
-        if (res.rows.length > 0) return mapRow(res.rows[0]);
-      } catch (err: any) {
-        console.warn('DB error in RoadmapRepository.findById, falling back to memory:', err.message);
-      }
+      // Sprint 24: PostgreSQL is the source of truth; memory is never consulted in PG mode.
+      const res = await query('SELECT * FROM roadmap_items WHERE id = $1', [id]);
+      return res.rows.length > 0 ? mapRow(res.rows[0]) : null;
     }
 
     return memoryRoadmapItems.get(id) || null;
@@ -454,7 +447,8 @@ export const RoadmapRepository = {
   async update(id: string, updates: Partial<RoadmapItem>): Promise<RoadmapItem | null> {
     seedDefaultRoadmapItems();
 
-    const existing = memoryRoadmapItems.get(id) || (await this.findById(id));
+    // Sprint 24: the authoritative record (PostgreSQL when connected), never a cached copy.
+    const existing = await this.findById(id);
     if (!existing) return null;
 
     const updated: RoadmapItem = {
@@ -466,52 +460,44 @@ export const RoadmapRepository = {
       updatedAt: new Date().toISOString(),
     };
 
-    memoryRoadmapItems.set(id, updated);
-
     if (isDbConnected()) {
-      try {
-        await query(
-          `UPDATE roadmap_items SET
-            name = $1, description = $2, status = $3, priority = $4, start_date = $5,
-            target_date = $6, owner_id = $7, owner_name = $8, product_id = $9, product_name = $10,
-            portfolio_id = $11, portfolio_name = $12, project_id = $13, project_name = $14,
-            sequence = $15, updated_by = $16, updated_at = $17
-           WHERE id = $18`,
-          [
-            updated.name, updated.description || null, updated.status, updated.priority,
-            updated.startDate || null, updated.targetDate || null, updated.ownerId || null,
-            updated.ownerName || null, updated.productId || null, updated.productName || null,
-            updated.portfolioId || null, updated.portfolioName || null, updated.projectId || null,
-            updated.projectName || null, updated.sequence, updated.updatedBy || null,
-            updated.updatedAt, id,
-          ]
-        );
-      } catch (err: any) {
-        console.warn('DB error in RoadmapRepository.update, memory store retains the record:', err.message);
-      }
+      const res = await query(
+        `UPDATE roadmap_items SET
+          name = $1, description = $2, status = $3, priority = $4, start_date = $5,
+          target_date = $6, owner_id = $7, owner_name = $8, product_id = $9, product_name = $10,
+          portfolio_id = $11, portfolio_name = $12, project_id = $13, project_name = $14,
+          sequence = $15, updated_by = $16, updated_at = $17
+         WHERE id = $18`,
+        [
+          updated.name, updated.description || null, updated.status, updated.priority,
+          updated.startDate || null, updated.targetDate || null, updated.ownerId || null,
+          updated.ownerName || null, updated.productId || null, updated.productName || null,
+          updated.portfolioId || null, updated.portfolioName || null, updated.projectId || null,
+          updated.projectName || null, updated.sequence, updated.updatedBy || null,
+          updated.updatedAt, id,
+        ]
+      );
+      // Sprint 24: the row count is authoritative; a write that changed nothing is not a success.
+      if (!res.rowCount) return null;
     }
 
+    memoryRoadmapItems.set(id, updated);
     return updated;
   },
 
   async delete(id: string): Promise<boolean> {
     seedDefaultRoadmapItems();
 
-    const existedInMemory = memoryRoadmapItems.delete(id);
-
     if (isDbConnected()) {
-      try {
-        // PostgreSQL is authoritative here: a persisted row need not be in the
-        // memory map (for example after a restart), so the answer comes from
-        // rowCount rather than from the cache.
-        const res = await query('DELETE FROM roadmap_items WHERE id = $1', [id]);
-        return (res.rowCount ?? 0) > 0;
-      } catch (err: any) {
-        console.warn('DB error in RoadmapRepository.delete, using memory result:', err.message);
-      }
+      // PostgreSQL is authoritative here: a persisted row need not be in the
+      // memory map (for example after a restart), so the answer comes from
+      // rowCount rather than from the cache.
+      const res = await query('DELETE FROM roadmap_items WHERE id = $1', [id]);
+      memoryRoadmapItems.delete(id);
+      return (res.rowCount ?? 0) > 0;
     }
 
-    return existedInMemory;
+    return memoryRoadmapItems.delete(id);
   },
 
   /**
@@ -521,13 +507,14 @@ export const RoadmapRepository = {
    */
   async reorder(entries: Array<{ id: string; sequence: number }>): Promise<number> {
     seedDefaultRoadmapItems();
-    let applied = 0;
+    // Sprint 24: one unit in PostgreSQL — a failure part-way leaves the previous order.
+    return withTransaction(async () => {
+      let applied = 0;
 
-    for (const entry of entries) {
-      const updatedAt = new Date().toISOString();
+      for (const entry of entries) {
+        const updatedAt = new Date().toISOString();
 
-      if (isDbConnected()) {
-        try {
+        if (isDbConnected()) {
           // Persisted rows are updated directly; they need not be in memory.
           const res = await query('UPDATE roadmap_items SET sequence = $1, updated_at = $2 WHERE id = $3', [
             entry.sequence,
@@ -541,18 +528,16 @@ export const RoadmapRepository = {
             if (cached) memoryRoadmapItems.set(entry.id, { ...cached, sequence: entry.sequence, updatedAt });
           }
           continue;
-        } catch (err: any) {
-          console.warn('DB error in RoadmapRepository.reorder, using memory:', err.message);
         }
+
+        const existing = memoryRoadmapItems.get(entry.id);
+        if (!existing) continue;
+
+        memoryRoadmapItems.set(entry.id, { ...existing, sequence: entry.sequence, updatedAt });
+        applied += 1;
       }
 
-      const existing = memoryRoadmapItems.get(entry.id);
-      if (!existing) continue;
-
-      memoryRoadmapItems.set(entry.id, { ...existing, sequence: entry.sequence, updatedAt });
-      applied += 1;
-    }
-
-    return applied;
+      return applied;
+    });
   },
 };

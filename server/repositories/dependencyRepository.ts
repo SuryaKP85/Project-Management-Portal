@@ -1,7 +1,8 @@
 import { duplicateRecordError } from './recordConflict';
 import { Dependency, DependencyEntityType, DependencyStatus, DependencyType, DependencyCriticality } from '../models/types';
-import { persistentMap, snapshotRestored } from '../config/persistence';
+import { persistentMap, skipDemoSeed } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
+import { insertWithCode, issueMemoryDeliveryCode } from './deliveryCodes';
 
 // Sprint 20: restored from / saved to the embedded data file in persistent mode.
 const memoryDependencies = persistentMap<Dependency>('dependencies');
@@ -166,7 +167,7 @@ export function isDuplicateRelationship(
 }
 
 function seedDefaultDependencies() {
-  if (memoryDependencies.size > 0 || snapshotRestored()) return;
+  if (memoryDependencies.size > 0 || skipDemoSeed()) return;
   const defaults: Dependency[] = [
     {
       id: 'dep_1',
@@ -311,90 +312,85 @@ export const DependencyRepository = {
     const offset = page && limit ? (page - 1) * limit : 0;
 
     if (isDbConnected()) {
-      try {
-        let queryStr = `
-          SELECT id, code, source_entity_id as "sourceEntityId",
-                 source_entity_type as "sourceEntityType", source_entity_name as "sourceEntityName",
-                 source_entity_code as "sourceEntityCode", target_entity_id as "targetEntityId",
-                 target_entity_type as "targetEntityType", target_entity_name as "targetEntityName",
-                 target_entity_code as "targetEntityCode", dependency_type as "dependencyType",
-                 status, criticality, owner_id as "ownerId", project_id as "projectId",
-                 description, target_date as "targetDate", due_date as "dueDate",
-                 resolved_at as "resolvedAt", resolution_date as "resolutionDate",
-                 created_by as "createdBy", updated_by as "updatedBy",
-                 created_at as "createdAt", updated_at as "updatedAt"
-          FROM dependencies
-          WHERE 1=1
-        `;
-        const params: any[] = [];
-        let pIndex = 1;
+      let queryStr = `
+        SELECT id, code, source_entity_id as "sourceEntityId",
+               source_entity_type as "sourceEntityType", source_entity_name as "sourceEntityName",
+               source_entity_code as "sourceEntityCode", target_entity_id as "targetEntityId",
+               target_entity_type as "targetEntityType", target_entity_name as "targetEntityName",
+               target_entity_code as "targetEntityCode", dependency_type as "dependencyType",
+               status, criticality, owner_id as "ownerId", project_id as "projectId",
+               description, target_date as "targetDate", due_date as "dueDate",
+               resolved_at as "resolvedAt", resolution_date as "resolutionDate",
+               created_by as "createdBy", updated_by as "updatedBy",
+               created_at as "createdAt", updated_at as "updatedAt"
+        FROM dependencies
+        WHERE 1=1
+      `;
+      const params: any[] = [];
+      let pIndex = 1;
 
-        if (filter?.projectId) {
-          queryStr += ` AND (project_id = $${pIndex} OR source_entity_id = $${pIndex} OR target_entity_id = $${pIndex})`;
-          params.push(filter.projectId);
-          pIndex++;
-        }
-        if (filter?.entityId) {
-          queryStr += ` AND (source_entity_id = $${pIndex} OR target_entity_id = $${pIndex})`;
-          params.push(filter.entityId);
-          pIndex++;
-        }
-        if (filter?.entityType) {
-          queryStr += ` AND (source_entity_type ILIKE $${pIndex} OR target_entity_type ILIKE $${pIndex})`;
-          params.push(filter.entityType);
-          pIndex++;
-        }
-        if (filter?.sourceEntityId) {
-          queryStr += ` AND source_entity_id = $${pIndex++}`;
-          params.push(filter.sourceEntityId);
-        }
-        if (filter?.sourceEntityType) {
-          queryStr += ` AND source_entity_type ILIKE $${pIndex++}`;
-          params.push(filter.sourceEntityType);
-        }
-        if (filter?.targetEntityId) {
-          queryStr += ` AND target_entity_id = $${pIndex++}`;
-          params.push(filter.targetEntityId);
-        }
-        if (filter?.targetEntityType) {
-          queryStr += ` AND target_entity_type ILIKE $${pIndex++}`;
-          params.push(filter.targetEntityType);
-        }
-        if (filter?.dependencyType && filter.dependencyType !== 'all') {
-          queryStr += ` AND dependency_type = $${pIndex++}`;
-          params.push(filter.dependencyType);
-        }
-        if (filter?.status && filter.status !== 'all') {
-          queryStr += ` AND status = $${pIndex++}`;
-          params.push(filter.status);
-        }
-        if (filter?.criticality && filter.criticality !== 'all') {
-          queryStr += ` AND criticality = $${pIndex++}`;
-          params.push(filter.criticality);
-        }
-        if (filter?.ownerId) {
-          queryStr += ` AND owner_id = $${pIndex++}`;
-          params.push(filter.ownerId);
-        }
-        if (filter?.search) {
-          queryStr += ` AND (source_entity_name ILIKE $${pIndex} OR target_entity_name ILIKE $${pIndex} OR code ILIKE $${pIndex} OR description ILIKE $${pIndex})`;
-          params.push(`%${filter.search}%`);
-          pIndex++;
-        }
-
-        queryStr += ` ORDER BY CASE criticality WHEN 'Critical' THEN 1 WHEN 'High' THEN 2 WHEN 'Medium' THEN 3 WHEN 'Low' THEN 4 ELSE 5 END, created_at DESC`;
-
-        if (limit !== undefined) {
-          queryStr += ` LIMIT $${pIndex++} OFFSET $${pIndex++}`;
-          params.push(limit, offset);
-        }
-
-        const res = await query(queryStr, params);
-        deps = res.rows;
-      } catch (err) {
-        console.warn('DB error in DependencyRepository.findAll, fallback to memory:', err);
-        deps = Array.from(memoryDependencies.values());
+      if (filter?.projectId) {
+        queryStr += ` AND (project_id = $${pIndex} OR source_entity_id = $${pIndex} OR target_entity_id = $${pIndex})`;
+        params.push(filter.projectId);
+        pIndex++;
       }
+      if (filter?.entityId) {
+        queryStr += ` AND (source_entity_id = $${pIndex} OR target_entity_id = $${pIndex})`;
+        params.push(filter.entityId);
+        pIndex++;
+      }
+      if (filter?.entityType) {
+        queryStr += ` AND (source_entity_type ILIKE $${pIndex} OR target_entity_type ILIKE $${pIndex})`;
+        params.push(filter.entityType);
+        pIndex++;
+      }
+      if (filter?.sourceEntityId) {
+        queryStr += ` AND source_entity_id = $${pIndex++}`;
+        params.push(filter.sourceEntityId);
+      }
+      if (filter?.sourceEntityType) {
+        queryStr += ` AND source_entity_type ILIKE $${pIndex++}`;
+        params.push(filter.sourceEntityType);
+      }
+      if (filter?.targetEntityId) {
+        queryStr += ` AND target_entity_id = $${pIndex++}`;
+        params.push(filter.targetEntityId);
+      }
+      if (filter?.targetEntityType) {
+        queryStr += ` AND target_entity_type ILIKE $${pIndex++}`;
+        params.push(filter.targetEntityType);
+      }
+      if (filter?.dependencyType && filter.dependencyType !== 'all') {
+        queryStr += ` AND dependency_type = $${pIndex++}`;
+        params.push(filter.dependencyType);
+      }
+      if (filter?.status && filter.status !== 'all') {
+        queryStr += ` AND status = $${pIndex++}`;
+        params.push(filter.status);
+      }
+      if (filter?.criticality && filter.criticality !== 'all') {
+        queryStr += ` AND criticality = $${pIndex++}`;
+        params.push(filter.criticality);
+      }
+      if (filter?.ownerId) {
+        queryStr += ` AND owner_id = $${pIndex++}`;
+        params.push(filter.ownerId);
+      }
+      if (filter?.search) {
+        queryStr += ` AND (source_entity_name ILIKE $${pIndex} OR target_entity_name ILIKE $${pIndex} OR code ILIKE $${pIndex} OR description ILIKE $${pIndex})`;
+        params.push(`%${filter.search}%`);
+        pIndex++;
+      }
+
+      queryStr += ` ORDER BY CASE criticality WHEN 'Critical' THEN 1 WHEN 'High' THEN 2 WHEN 'Medium' THEN 3 WHEN 'Low' THEN 4 ELSE 5 END, created_at DESC`;
+
+      if (limit !== undefined) {
+        queryStr += ` LIMIT $${pIndex++} OFFSET $${pIndex++}`;
+        params.push(limit, offset);
+      }
+
+      const res = await query(queryStr, params);
+      deps = res.rows;
     } else {
       deps = Array.from(memoryDependencies.values());
     }
@@ -495,48 +491,44 @@ export const DependencyRepository = {
   }): Promise<number> {
     seedDefaultDependencies();
     if (isDbConnected()) {
-      try {
-        let queryStr = `SELECT COUNT(*)::int as count FROM dependencies WHERE 1=1`;
-        const params: any[] = [];
-        let pIndex = 1;
+      let queryStr = `SELECT COUNT(*)::int as count FROM dependencies WHERE 1=1`;
+      const params: any[] = [];
+      let pIndex = 1;
 
-        if (filter?.projectId) {
-          queryStr += ` AND (project_id = $${pIndex} OR source_entity_id = $${pIndex} OR target_entity_id = $${pIndex})`;
-          params.push(filter.projectId);
-          pIndex++;
-        }
-        if (filter?.entityId) {
-          queryStr += ` AND (source_entity_id = $${pIndex} OR target_entity_id = $${pIndex})`;
-          params.push(filter.entityId);
-          pIndex++;
-        }
-        if (filter?.status && filter.status !== 'all') {
-          queryStr += ` AND status = $${pIndex++}`;
-          params.push(filter.status);
-        }
-        if (filter?.criticality && filter.criticality !== 'all') {
-          queryStr += ` AND criticality = $${pIndex++}`;
-          params.push(filter.criticality);
-        }
-        if (filter?.dependencyType && filter.dependencyType !== 'all') {
-          queryStr += ` AND dependency_type = $${pIndex++}`;
-          params.push(filter.dependencyType);
-        }
-        if (filter?.ownerId) {
-          queryStr += ` AND owner_id = $${pIndex++}`;
-          params.push(filter.ownerId);
-        }
-        if (filter?.search) {
-          queryStr += ` AND (source_entity_name ILIKE $${pIndex} OR target_entity_name ILIKE $${pIndex} OR code ILIKE $${pIndex} OR description ILIKE $${pIndex})`;
-          params.push(`%${filter.search}%`);
-          pIndex++;
-        }
-
-        const res = await query(queryStr, params);
-        return res.rows[0]?.count || 0;
-      } catch (err) {
-        console.warn('DB error in DependencyRepository.count, fallback to memory:', err);
+      if (filter?.projectId) {
+        queryStr += ` AND (project_id = $${pIndex} OR source_entity_id = $${pIndex} OR target_entity_id = $${pIndex})`;
+        params.push(filter.projectId);
+        pIndex++;
       }
+      if (filter?.entityId) {
+        queryStr += ` AND (source_entity_id = $${pIndex} OR target_entity_id = $${pIndex})`;
+        params.push(filter.entityId);
+        pIndex++;
+      }
+      if (filter?.status && filter.status !== 'all') {
+        queryStr += ` AND status = $${pIndex++}`;
+        params.push(filter.status);
+      }
+      if (filter?.criticality && filter.criticality !== 'all') {
+        queryStr += ` AND criticality = $${pIndex++}`;
+        params.push(filter.criticality);
+      }
+      if (filter?.dependencyType && filter.dependencyType !== 'all') {
+        queryStr += ` AND dependency_type = $${pIndex++}`;
+        params.push(filter.dependencyType);
+      }
+      if (filter?.ownerId) {
+        queryStr += ` AND owner_id = $${pIndex++}`;
+        params.push(filter.ownerId);
+      }
+      if (filter?.search) {
+        queryStr += ` AND (source_entity_name ILIKE $${pIndex} OR target_entity_name ILIKE $${pIndex} OR code ILIKE $${pIndex} OR description ILIKE $${pIndex})`;
+        params.push(`%${filter.search}%`);
+        pIndex++;
+      }
+
+      const res = await query(queryStr, params);
+      return res.rows[0]?.count || 0;
     }
 
     let deps = Array.from(memoryDependencies.values());
@@ -582,28 +574,24 @@ export const DependencyRepository = {
     seedDefaultDependencies();
     let dep: Dependency | null = null;
     if (isDbConnected()) {
-      try {
-        const res = await query(
-          `SELECT id, code, source_entity_id as "sourceEntityId",
-                  source_entity_type as "sourceEntityType", source_entity_name as "sourceEntityName",
-                  source_entity_code as "sourceEntityCode", target_entity_id as "targetEntityId",
-                  target_entity_type as "targetEntityType", target_entity_name as "targetEntityName",
-                  target_entity_code as "targetEntityCode", dependency_type as "dependencyType",
-                  status, criticality, owner_id as "ownerId", project_id as "projectId",
-                  description, target_date as "targetDate", due_date as "dueDate",
-                  resolved_at as "resolvedAt", resolution_date as "resolutionDate",
-                  created_by as "createdBy", updated_by as "updatedBy",
-                  created_at as "createdAt", updated_at as "updatedAt"
-           FROM dependencies
-           WHERE id = $1`,
-          [id]
-        );
-        if (res.rows.length > 0) dep = res.rows[0];
-      } catch (err) {
-        console.warn('DB error in DependencyRepository.findById:', err);
-      }
-    }
-    if (!dep) {
+      const res = await query(
+        `SELECT id, code, source_entity_id as "sourceEntityId",
+                source_entity_type as "sourceEntityType", source_entity_name as "sourceEntityName",
+                source_entity_code as "sourceEntityCode", target_entity_id as "targetEntityId",
+                target_entity_type as "targetEntityType", target_entity_name as "targetEntityName",
+                target_entity_code as "targetEntityCode", dependency_type as "dependencyType",
+                status, criticality, owner_id as "ownerId", project_id as "projectId",
+                description, target_date as "targetDate", due_date as "dueDate",
+                resolved_at as "resolvedAt", resolution_date as "resolutionDate",
+                created_by as "createdBy", updated_by as "updatedBy",
+                created_at as "createdAt", updated_at as "updatedAt"
+         FROM dependencies
+         WHERE id = $1`,
+        [id]
+      );
+      if (res.rows.length > 0) dep = res.rows[0];
+    } else {
+      // Sprint 24: memory is the store only when PostgreSQL is not.
       dep = memoryDependencies.get(id) || null;
     }
     if (dep) {
@@ -680,8 +668,6 @@ export const DependencyRepository = {
     const id = data.id || `dep_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
     // Sprint 23: never replace an existing record (findById reads PostgreSQL when connected).
     if (await this.findById(id)) throw duplicateRecordError('dependency', id);
-    const count = memoryDependencies.size + 101;
-    const code = data.code || `DEP-${count}`;
     const targetDate = data.targetDate || data.dueDate;
     const todayStr = new Date().toISOString().split('T')[0];
     const status = (data.status as DependencyStatus) || 'Open';
@@ -698,7 +684,7 @@ export const DependencyRepository = {
 
     const newDep: Dependency = {
       id,
-      code,
+      code: data.code || '',
       sourceEntityId: data.sourceEntityId,
       sourceEntityType: sourceType,
       sourceEntityName: data.sourceEntityName || 'Source Entity',
@@ -710,8 +696,9 @@ export const DependencyRepository = {
       dependencyType: (data.dependencyType as DependencyType) || 'Blocks',
       status,
       criticality,
-      ownerId: data.ownerId || 'usr_admin_1',
-      ownerName: data.ownerName || 'Admin User',
+      // Sprint 24: no demo owner — the service supplies one (the caller when none is chosen).
+      ownerId: data.ownerId,
+      ownerName: data.ownerName || '',
       projectId: data.projectId,
       description: data.description || '',
       targetDate,
@@ -729,49 +716,49 @@ export const DependencyRepository = {
       updatedBy: data.updatedBy || 'system',
     };
 
-    memoryDependencies.set(id, newDep);
-
-    if (isDbConnected()) {
-      try {
-        await query(
-          `INSERT INTO dependencies (
-            id, code, source_entity_id, source_entity_type, source_entity_name,
-            source_entity_code, target_entity_id, target_entity_type, target_entity_name,
-            target_entity_code, dependency_type, status, criticality, owner_id, project_id,
-            description, target_date, due_date, resolved_at, resolution_date,
-            created_by, updated_by, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)`,
-          [
-            newDep.id,
-            newDep.code,
-            newDep.sourceEntityId,
-            newDep.sourceEntityType,
-            newDep.sourceEntityName,
-            newDep.sourceEntityCode || null,
-            newDep.targetEntityId,
-            newDep.targetEntityType,
-            newDep.targetEntityName,
-            newDep.targetEntityCode || null,
-            newDep.dependencyType,
-            newDep.status,
-            newDep.criticality,
-            newDep.ownerId || null,
-            newDep.projectId || null,
-            newDep.description || null,
-            newDep.targetDate || null,
-            newDep.dueDate || null,
-            newDep.resolvedAt || null,
-            newDep.resolutionDate || null,
-            newDep.createdBy || null,
-            newDep.updatedBy || null,
-            newDep.createdAt,
-            newDep.updatedAt,
-          ]
-        );
-      } catch (err) {
-        console.warn('DB error inserting dependency:', err);
-      }
+    // Sprint 24: PostgreSQL first (errors propagate, nothing is kept); memory only when it is the store.
+    if (!isDbConnected()) {
+      newDep.code = data.code || issueMemoryDeliveryCode('dependency', Array.from(memoryDependencies.values()).map((d) => d.code));
+      memoryDependencies.set(id, newDep);
+      return { dependency: newDep };
     }
+    newDep.code = await insertWithCode('dependency', data.code, (code) =>
+      query(
+        `INSERT INTO dependencies (
+          id, code, source_entity_id, source_entity_type, source_entity_name,
+          source_entity_code, target_entity_id, target_entity_type, target_entity_name,
+          target_entity_code, dependency_type, status, criticality, owner_id, project_id,
+          description, target_date, due_date, resolved_at, resolution_date,
+          created_by, updated_by, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)`,
+        [
+          newDep.id,
+          code,
+          newDep.sourceEntityId,
+          newDep.sourceEntityType,
+          newDep.sourceEntityName,
+          newDep.sourceEntityCode || null,
+          newDep.targetEntityId,
+          newDep.targetEntityType,
+          newDep.targetEntityName,
+          newDep.targetEntityCode || null,
+          newDep.dependencyType,
+          newDep.status,
+          newDep.criticality,
+          newDep.ownerId || null,
+          newDep.projectId || null,
+          newDep.description || null,
+          newDep.targetDate || null,
+          newDep.dueDate || null,
+          newDep.resolvedAt || null,
+          newDep.resolutionDate || null,
+          newDep.createdBy || null,
+          newDep.updatedBy || null,
+          newDep.createdAt,
+          newDep.updatedAt,
+        ]
+      )
+    );
 
     return { dependency: newDep };
   },
@@ -857,46 +844,44 @@ export const DependencyRepository = {
       updatedAt: new Date().toISOString(),
     };
 
-    memoryDependencies.set(id, updated);
-
-    if (isDbConnected()) {
-      try {
-        await query(
-          `UPDATE dependencies SET
-            source_entity_id = $1, source_entity_type = $2, source_entity_name = $3,
-            source_entity_code = $4, target_entity_id = $5, target_entity_type = $6,
-            target_entity_name = $7, target_entity_code = $8, dependency_type = $9,
-            status = $10, criticality = $11, owner_id = $12, project_id = $13,
-            description = $14, target_date = $15, due_date = $16,
-            resolved_at = $17, resolution_date = $18, updated_by = $19, updated_at = $20
-           WHERE id = $21`,
-          [
-            updated.sourceEntityId,
-            updated.sourceEntityType,
-            updated.sourceEntityName,
-            updated.sourceEntityCode || null,
-            updated.targetEntityId,
-            updated.targetEntityType,
-            updated.targetEntityName,
-            updated.targetEntityCode || null,
-            updated.dependencyType,
-            updated.status,
-            updated.criticality,
-            updated.ownerId || null,
-            updated.projectId || null,
-            updated.description || null,
-            updated.targetDate || null,
-            updated.dueDate || null,
-            updated.resolvedAt || null,
-            updated.resolutionDate || null,
-            updated.updatedBy || null,
-            updated.updatedAt,
-            id,
-          ]
-        );
-      } catch (err) {
-        console.warn('DB error updating dependency:', err);
-      }
+    // Sprint 24: PostgreSQL first, row count authoritative; memory only when it is the store.
+    if (!isDbConnected()) {
+      memoryDependencies.set(id, updated);
+    } else {
+      const res = await query(
+        `UPDATE dependencies SET
+          source_entity_id = $1, source_entity_type = $2, source_entity_name = $3,
+          source_entity_code = $4, target_entity_id = $5, target_entity_type = $6,
+          target_entity_name = $7, target_entity_code = $8, dependency_type = $9,
+          status = $10, criticality = $11, owner_id = $12, project_id = $13,
+          description = $14, target_date = $15, due_date = $16,
+          resolved_at = $17, resolution_date = $18, updated_by = $19, updated_at = $20
+         WHERE id = $21`,
+        [
+          updated.sourceEntityId,
+          updated.sourceEntityType,
+          updated.sourceEntityName,
+          updated.sourceEntityCode || null,
+          updated.targetEntityId,
+          updated.targetEntityType,
+          updated.targetEntityName,
+          updated.targetEntityCode || null,
+          updated.dependencyType,
+          updated.status,
+          updated.criticality,
+          updated.ownerId || null,
+          updated.projectId || null,
+          updated.description || null,
+          updated.targetDate || null,
+          updated.dueDate || null,
+          updated.resolvedAt || null,
+          updated.resolutionDate || null,
+          updated.updatedBy || null,
+          updated.updatedAt,
+          id,
+        ]
+      );
+      if (!res.rowCount) return { error: 'Dependency not found' };
     }
 
     return { dependency: updated };
@@ -904,15 +889,10 @@ export const DependencyRepository = {
 
   async delete(id: string): Promise<boolean> {
     seedDefaultDependencies();
-    const removed = memoryDependencies.delete(id);
-    if (isDbConnected()) {
-      try {
-        await query(`DELETE FROM dependencies WHERE id = $1`, [id]);
-      } catch (err) {
-        console.warn('DB error deleting dependency:', err);
-      }
-    }
-    return removed;
+    // Sprint 24: the database's row count is the result in PostgreSQL mode.
+    if (!isDbConnected()) return memoryDependencies.delete(id);
+    const res = await query(`DELETE FROM dependencies WHERE id = $1`, [id]);
+    return !!res.rowCount;
   },
 
   async getDependencyChain(entityId: string): Promise<{

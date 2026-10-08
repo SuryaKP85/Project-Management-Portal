@@ -1,7 +1,8 @@
 import { duplicateRecordError } from './recordConflict';
 import { Release, ReleaseHealth, ReleaseHealthFactor, ReleaseItem, ReleaseStatus } from '../models/types';
-import { persistentMap, snapshotRestored } from '../config/persistence';
-import { isDbConnected, query } from '../config/database';
+import { persistentMap, skipDemoSeed } from '../config/persistence';
+import { isDbConnected, query, withTransaction } from '../config/database';
+import { insertWithCode, issueMemoryDeliveryCode } from './deliveryCodes';
 import { RiskRepository } from './riskRepository';
 import { IssueRepository } from './issueRepository';
 import { DependencyRepository } from './dependencyRepository';
@@ -17,7 +18,7 @@ const memoryReleases = persistentMap<Release>('releases');
 const memoryReleaseItems = persistentMap<ReleaseItem>('releaseItems');
 
 function seedDefaultReleases() {
-  if (memoryReleases.size > 0 || snapshotRestored()) return;
+  if (memoryReleases.size > 0 || skipDemoSeed()) return;
   const defaults: Release[] = [
     {
       id: 'rel_1',
@@ -155,20 +156,16 @@ export const ReleaseRepository = {
   async getReleaseItems(releaseId: string): Promise<ReleaseItem[]> {
     seedDefaultReleases();
     if (isDbConnected()) {
-      try {
-        const res = await query(
-          `SELECT id, release_id as "releaseId", item_type as "itemType",
-                  item_id as "itemId", item_code as "itemCode", item_title as "itemTitle",
-                  status, progress, added_at as "addedAt"
-           FROM release_items
-           WHERE release_id = $1
-           ORDER BY added_at ASC`,
-          [releaseId]
-        );
-        return res.rows;
-      } catch (err) {
-        console.warn('DB error fetching release items, using memory:', err);
-      }
+      const res = await query(
+        `SELECT id, release_id as "releaseId", item_type as "itemType",
+                item_id as "itemId", item_code as "itemCode", item_title as "itemTitle",
+                status, progress, added_at as "addedAt"
+         FROM release_items
+         WHERE release_id = $1
+         ORDER BY added_at ASC`,
+        [releaseId]
+      );
+      return res.rows;
     }
     return Array.from(memoryReleaseItems.values()).filter((i) => i.releaseId === releaseId);
   },
@@ -183,7 +180,8 @@ export const ReleaseRepository = {
     progress?: number
   ): Promise<ReleaseItem> {
     seedDefaultReleases();
-    const existing = Array.from(memoryReleaseItems.values()).find(
+    // Sprint 24: the duplicate check reads the store that holds the items (PostgreSQL when connected).
+    const existing = (isDbConnected() ? await this.getReleaseItems(releaseId) : Array.from(memoryReleaseItems.values())).find(
       (i) => i.releaseId === releaseId && i.itemType === itemType && i.itemId === itemId
     );
     if (existing) return existing;
@@ -200,18 +198,16 @@ export const ReleaseRepository = {
       progress: progress || 0,
       addedAt: new Date().toISOString(),
     };
-    memoryReleaseItems.set(id, newItem);
 
+    // Sprint 24: PostgreSQL first (errors propagate); memory only when it is the store.
     if (isDbConnected()) {
-      try {
-        await query(
-          `INSERT INTO release_items (id, release_id, item_type, item_id, item_code, item_title, status, progress, added_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-          [id, releaseId, itemType, itemId, itemCode || null, itemTitle || null, status || null, progress || 0, newItem.addedAt]
-        );
-      } catch (err) {
-        console.warn('DB error inserting release item:', err);
-      }
+      await query(
+        `INSERT INTO release_items (id, release_id, item_type, item_id, item_code, item_title, status, progress, added_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [id, releaseId, itemType, itemId, itemCode || null, itemTitle || null, status || null, progress || 0, newItem.addedAt]
+      );
+    } else {
+      memoryReleaseItems.set(id, newItem);
     }
 
     return newItem;
@@ -219,15 +215,9 @@ export const ReleaseRepository = {
 
   async removeReleaseItem(id: string): Promise<boolean> {
     seedDefaultReleases();
-    const removed = memoryReleaseItems.delete(id);
-    if (isDbConnected()) {
-      try {
-        await query(`DELETE FROM release_items WHERE id = $1`, [id]);
-      } catch (err) {
-        console.warn('DB error deleting release item:', err);
-      }
-    }
-    return removed;
+    if (!isDbConnected()) return memoryReleaseItems.delete(id);
+    const res = await query(`DELETE FROM release_items WHERE id = $1`, [id]);
+    return !!res.rowCount;
   },
 
   async calculateReleaseHealth(release: Release): Promise<{
@@ -428,52 +418,47 @@ export const ReleaseRepository = {
     let releases: Release[] = [];
 
     if (isDbConnected()) {
-      try {
-        let queryStr = `
-          SELECT id, code, name, version, product_id as "productId",
-                 project_id as "projectId", owner_id as "ownerId",
-                 status, release_date as "releaseDate", actual_release_date as "actualReleaseDate",
-                 health, description, created_by as "createdBy",
-                 updated_by as "updatedBy", created_at as "createdAt", updated_at as "updatedAt"
-          FROM releases
-          WHERE 1=1
-        `;
-        const params: any[] = [];
-        let pIndex = 1;
+      let queryStr = `
+        SELECT id, code, name, version, product_id as "productId",
+               project_id as "projectId", owner_id as "ownerId",
+               status, release_date as "releaseDate", actual_release_date as "actualReleaseDate",
+               health, description, created_by as "createdBy",
+               updated_by as "updatedBy", created_at as "createdAt", updated_at as "updatedAt"
+        FROM releases
+        WHERE 1=1
+      `;
+      const params: any[] = [];
+      let pIndex = 1;
 
-        if (filter?.projectId) {
-          queryStr += ` AND project_id = $${pIndex++}`;
-          params.push(filter.projectId);
-        }
-        if (filter?.productId) {
-          queryStr += ` AND product_id = $${pIndex++}`;
-          params.push(filter.productId);
-        }
-        if (filter?.ownerId) {
-          queryStr += ` AND owner_id = $${pIndex++}`;
-          params.push(filter.ownerId);
-        }
-        if (filter?.status && filter.status !== 'all') {
-          queryStr += ` AND status = $${pIndex++}`;
-          params.push(filter.status);
-        }
-        if (filter?.health && filter.health !== 'all') {
-          queryStr += ` AND health = $${pIndex++}`;
-          params.push(filter.health);
-        }
-        if (filter?.search) {
-          queryStr += ` AND (name ILIKE $${pIndex} OR code ILIKE $${pIndex} OR version ILIKE $${pIndex} OR description ILIKE $${pIndex})`;
-          params.push(`%${filter.search}%`);
-          pIndex++;
-        }
-        queryStr += ` ORDER BY release_date ASC`;
-
-        const res = await query(queryStr, params);
-        releases = res.rows;
-      } catch (err) {
-        console.warn('DB error in ReleaseRepository.findAll, fallback to memory:', err);
-        releases = Array.from(memoryReleases.values());
+      if (filter?.projectId) {
+        queryStr += ` AND project_id = $${pIndex++}`;
+        params.push(filter.projectId);
       }
+      if (filter?.productId) {
+        queryStr += ` AND product_id = $${pIndex++}`;
+        params.push(filter.productId);
+      }
+      if (filter?.ownerId) {
+        queryStr += ` AND owner_id = $${pIndex++}`;
+        params.push(filter.ownerId);
+      }
+      if (filter?.status && filter.status !== 'all') {
+        queryStr += ` AND status = $${pIndex++}`;
+        params.push(filter.status);
+      }
+      if (filter?.health && filter.health !== 'all') {
+        queryStr += ` AND health = $${pIndex++}`;
+        params.push(filter.health);
+      }
+      if (filter?.search) {
+        queryStr += ` AND (name ILIKE $${pIndex} OR code ILIKE $${pIndex} OR version ILIKE $${pIndex} OR description ILIKE $${pIndex})`;
+        params.push(`%${filter.search}%`);
+        pIndex++;
+      }
+      queryStr += ` ORDER BY release_date ASC`;
+
+      const res = await query(queryStr, params);
+      releases = res.rows;
     } else {
       releases = Array.from(memoryReleases.values());
     }
@@ -513,23 +498,19 @@ export const ReleaseRepository = {
     seedDefaultReleases();
     let release: Release | null = null;
     if (isDbConnected()) {
-      try {
-        const res = await query(
-          `SELECT id, code, name, version, product_id as "productId",
-                  project_id as "projectId", owner_id as "ownerId",
-                  status, release_date as "releaseDate", actual_release_date as "actualReleaseDate",
-                  health, description, created_by as "createdBy",
-                  updated_by as "updatedBy", created_at as "createdAt", updated_at as "updatedAt"
-           FROM releases
-           WHERE id = $1`,
-          [id]
-        );
-        if (res.rows.length > 0) release = res.rows[0];
-      } catch (err) {
-        console.warn('DB error in ReleaseRepository.findById:', err);
-      }
-    }
-    if (!release) {
+      const res = await query(
+        `SELECT id, code, name, version, product_id as "productId",
+                project_id as "projectId", owner_id as "ownerId",
+                status, release_date as "releaseDate", actual_release_date as "actualReleaseDate",
+                health, description, created_by as "createdBy",
+                updated_by as "updatedBy", created_at as "createdAt", updated_at as "updatedAt"
+         FROM releases
+         WHERE id = $1`,
+        [id]
+      );
+      if (res.rows.length > 0) release = res.rows[0];
+    } else {
+      // Sprint 24: memory is the store only when PostgreSQL is not.
       release = memoryReleases.get(id) || null;
     }
     if (release) {
@@ -548,20 +529,19 @@ export const ReleaseRepository = {
     const id = data.id || `rel_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
     // Sprint 23: never replace an existing record (findById reads PostgreSQL when connected).
     if (await this.findById(id)) throw duplicateRecordError('release', id);
-    const count = memoryReleases.size + 101;
-    const code = data.code || `REL-${count}`;
 
+    // Sprint 24: no demo defaults — the service supplies the owner (the caller when none is chosen).
     const newRelease: Release = {
       id,
-      code,
+      code: data.code || '',
       name: data.name || 'Untitled Release',
       version: data.version || 'v1.0.0',
       productId: data.productId,
       productName: data.productName,
       projectId: data.projectId,
       projectName: data.projectName,
-      ownerId: data.ownerId || 'usr_admin_1',
-      ownerName: data.ownerName || 'Admin User',
+      ownerId: data.ownerId as string,
+      ownerName: data.ownerName || '',
       status: (data.status as ReleaseStatus) || 'Planned',
       releaseDate: data.releaseDate || new Date().toISOString().split('T')[0],
       actualReleaseDate: data.actualReleaseDate,
@@ -573,52 +553,48 @@ export const ReleaseRepository = {
       updatedBy: data.updatedBy || 'system',
     };
 
-    memoryReleases.set(id, newRelease);
-
-    if (isDbConnected()) {
-      try {
-        await query(
-          `INSERT INTO releases (
-            id, code, name, version, product_id, project_id,
-            owner_id, status, release_date, actual_release_date,
-            health, description, created_by, updated_by, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-          [
-            newRelease.id,
-            newRelease.code,
-            newRelease.name,
-            newRelease.version,
-            newRelease.productId || null,
-            newRelease.projectId || null,
-            newRelease.ownerId || null,
-            newRelease.status,
-            newRelease.releaseDate,
-            newRelease.actualReleaseDate || null,
-            newRelease.health,
-            newRelease.description || null,
-            newRelease.createdBy || null,
-            newRelease.updatedBy || null,
-            newRelease.createdAt,
-            newRelease.updatedAt,
-          ]
-        );
-      } catch (err) {
-        console.warn('DB error inserting release:', err);
-      }
-    }
-
-    if (data.items && data.items.length > 0) {
-      for (const item of data.items) {
-        await this.addReleaseItem(
+    const insert = (code: string) =>
+      query(
+        `INSERT INTO releases (
+          id, code, name, version, product_id, project_id,
+          owner_id, status, release_date, actual_release_date,
+          health, description, created_by, updated_by, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+        [
           newRelease.id,
-          item.itemType,
-          item.itemId,
-          item.itemCode,
-          item.itemTitle,
-          item.status,
-          item.progress
-        );
+          code,
+          newRelease.name,
+          newRelease.version,
+          newRelease.productId || null,
+          newRelease.projectId || null,
+          newRelease.ownerId || null,
+          newRelease.status,
+          newRelease.releaseDate,
+          newRelease.actualReleaseDate || null,
+          newRelease.health,
+          newRelease.description || null,
+          newRelease.createdBy || null,
+          newRelease.updatedBy || null,
+          newRelease.createdAt,
+          newRelease.updatedAt,
+        ]
+      );
+    const addItems = async () => {
+      for (const item of data.items || []) {
+        await this.addReleaseItem(newRelease.id, item.itemType, item.itemId, item.itemCode, item.itemTitle, item.status, item.progress);
       }
+    };
+
+    // Sprint 24: PostgreSQL first — the release and its items are one unit; any failure propagates and nothing is kept.
+    if (isDbConnected()) {
+      await withTransaction(async () => {
+        newRelease.code = await insertWithCode('release', data.code, insert);
+        await addItems();
+      });
+    } else {
+      newRelease.code = data.code || issueMemoryDeliveryCode('release', Array.from(memoryReleases.values()).map((r) => r.code));
+      memoryReleases.set(id, newRelease);
+      await addItems();
     }
 
     newRelease.items = await this.getReleaseItems(newRelease.id);
@@ -648,35 +624,33 @@ export const ReleaseRepository = {
       updatedAt: new Date().toISOString(),
     };
 
-    memoryReleases.set(id, updated);
-
-    if (isDbConnected()) {
-      try {
-        await query(
-          `UPDATE releases SET
-            name = $1, version = $2, product_id = $3, project_id = $4,
-            owner_id = $5, status = $6, release_date = $7, actual_release_date = $8,
-            health = $9, description = $10, updated_by = $11, updated_at = $12
-           WHERE id = $13`,
-          [
-            updated.name,
-            updated.version,
-            updated.productId || null,
-            updated.projectId || null,
-            updated.ownerId || null,
-            updated.status,
-            updated.releaseDate,
-            updated.actualReleaseDate || null,
-            updated.health,
-            updated.description || null,
-            updated.updatedBy || null,
-            updated.updatedAt,
-            id,
-          ]
-        );
-      } catch (err) {
-        console.warn('DB error updating release:', err);
-      }
+    // Sprint 24: PostgreSQL first, row count authoritative; memory only when it is the store.
+    if (!isDbConnected()) {
+      memoryReleases.set(id, updated);
+    } else {
+      const res = await query(
+        `UPDATE releases SET
+          name = $1, version = $2, product_id = $3, project_id = $4,
+          owner_id = $5, status = $6, release_date = $7, actual_release_date = $8,
+          health = $9, description = $10, updated_by = $11, updated_at = $12
+         WHERE id = $13`,
+        [
+          updated.name,
+          updated.version,
+          updated.productId || null,
+          updated.projectId || null,
+          updated.ownerId || null,
+          updated.status,
+          updated.releaseDate,
+          updated.actualReleaseDate || null,
+          updated.health,
+          updated.description || null,
+          updated.updatedBy || null,
+          updated.updatedAt,
+          id,
+        ]
+      );
+      if (!res.rowCount) return null;
     }
 
     updated.items = await this.getReleaseItems(id);
@@ -691,15 +665,12 @@ export const ReleaseRepository = {
 
   async delete(id: string): Promise<boolean> {
     seedDefaultReleases();
-    const removed = memoryReleases.delete(id);
-    if (isDbConnected()) {
-      try {
-        await query(`DELETE FROM releases WHERE id = $1`, [id]);
-        await query(`DELETE FROM release_items WHERE release_id = $1`, [id]);
-      } catch (err) {
-        console.warn('DB error deleting release:', err);
-      }
-    }
-    return removed;
+    // Sprint 24: the database's row count is the result in PostgreSQL mode (release_items cascade).
+    if (!isDbConnected()) return memoryReleases.delete(id);
+    return withTransaction(async () => {
+      const res = await query(`DELETE FROM releases WHERE id = $1`, [id]);
+      await query(`DELETE FROM release_items WHERE release_id = $1`, [id]);
+      return !!res.rowCount;
+    });
   },
 };

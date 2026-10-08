@@ -1,6 +1,6 @@
 import { duplicateRecordError } from './recordConflict';
 import { Portfolio, PortfolioHealth, normalizeDeclaredHealth } from '../models/types';
-import { persistentMap, snapshotRestored } from '../config/persistence';
+import { persistentMap, skipDemoSeed } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 
 /**
@@ -22,7 +22,7 @@ function withDeclaredHealth(portfolio: Portfolio): Portfolio {
 const memoryPortfolios = persistentMap<Portfolio>('portfolios');
 
 function seedDefaultPortfolios() {
-  if (memoryPortfolios.size > 0 || snapshotRestored()) return;
+  if (memoryPortfolios.size > 0 || skipDemoSeed()) return;
   const defaults: Portfolio[] = [
     {
       id: 'port_1',
@@ -111,8 +111,8 @@ export const PortfolioRepository = {
       code,
       name: portfolioData.name || 'Untitled Portfolio',
       description: portfolioData.description || '',
-      ownerId: portfolioData.ownerId || 'usr_admin_1',
-      ownerName: portfolioData.ownerName || 'Surya Prashanth',
+      ownerId: portfolioData.ownerId, // Sprint 24: no demo owner (the service supplies one)
+      ownerName: portfolioData.ownerName || '', // Sprint 24: no demo owner name
       status: portfolioData.status || 'active',
       health: portfolioData.health || 'healthy',
       productCount: portfolioData.productCount || 0,
@@ -174,8 +174,11 @@ export const PortfolioRepository = {
   },
 
   async delete(id: string): Promise<boolean> {
+    // Sprint 24: the database's row count is the result in PostgreSQL mode.
     if (isDbConnected()) {
-      await query('DELETE FROM portfolios WHERE id = $1', [id]);
+      const res = await query('DELETE FROM portfolios WHERE id = $1', [id]);
+      memoryPortfolios.delete(id);
+      return !!res.rowCount;
     }
     return memoryPortfolios.delete(id);
   },

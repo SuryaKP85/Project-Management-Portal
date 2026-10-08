@@ -73,26 +73,19 @@ export const ActionItemRepository = {
   async findAll(filter?: ActionItemFilter): Promise<ActionItem[]> {
     if (filter?.projectIds && filter.projectIds.length === 0) return [];
     if (isDbConnected()) {
-      try {
-        const res = filter?.projectIds
-          ? await query(`SELECT * FROM action_items WHERE project_id = ANY($1::text[])`, [filter.projectIds])
-          : await query(`SELECT * FROM action_items`);
-        return applyFilter(res.rows.map(mapRow), filter).sort(byDue);
-      } catch (err: any) {
-        console.warn('DB error in ActionItemRepository.findAll, falling back to memory:', err.message);
-      }
+      const res = filter?.projectIds
+        ? await query(`SELECT * FROM action_items WHERE project_id = ANY($1::text[])`, [filter.projectIds])
+        : await query(`SELECT * FROM action_items`);
+      return applyFilter(res.rows.map(mapRow), filter).sort(byDue);
     }
     return applyFilter(Array.from(memoryActionItems.values()), filter).sort(byDue);
   },
 
   async findById(id: string): Promise<ActionItem | null> {
     if (isDbConnected()) {
-      try {
-        const res = await query('SELECT * FROM action_items WHERE id = $1', [id]);
-        if (res.rows.length > 0) return mapRow(res.rows[0]);
-      } catch (err: any) {
-        console.warn('DB error in ActionItemRepository.findById, falling back to memory:', err.message);
-      }
+      const res = await query('SELECT * FROM action_items WHERE id = $1', [id]);
+      // Sprint 24: PostgreSQL is the source of truth; memory is never consulted in PG mode.
+      return res.rows.length > 0 ? mapRow(res.rows[0]) : null;
     }
     return memoryActionItems.get(id) || null;
   },

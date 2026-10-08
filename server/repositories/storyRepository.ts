@@ -1,5 +1,5 @@
 import { UserStory } from '../models/types';
-import { persistentMap, snapshotRestored } from '../config/persistence';
+import { persistentMap, skipDemoSeed } from '../config/persistence';
 import { isDbConnected, query, trackMemoryWrite, withSavepoint } from '../config/database';
 import { MAX_CODE_ATTEMPTS, isCodeCollision, issueMemoryDeliveryCode, issueSequenceDeliveryCode } from './deliveryCodes';
 import { duplicateRecordError } from './recordConflict';
@@ -11,7 +11,7 @@ import { calculateStoryProgress } from '../services/progressCalculator';
 const memoryStories = persistentMap<UserStory>('stories');
 
 function seedDefaultStories() {
-  if (memoryStories.size > 0 || snapshotRestored()) return;
+  if (memoryStories.size > 0 || skipDemoSeed()) return;
   const defaults: UserStory[] = [
     {
       id: 'story_1',
@@ -464,6 +464,7 @@ export const StoryRepository = {
         id,
       ]);
     }
+    trackMemoryWrite(memoryStories, id); // Sprint 24: undone if the surrounding transaction fails (embedded mode)
     memoryStories.set(id, merged);
     return merged;
   },

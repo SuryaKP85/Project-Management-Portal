@@ -95,26 +95,19 @@ export const MeetingRepository = {
   async findAll(filter?: MeetingFilter): Promise<Meeting[]> {
     if (filter?.projectIds && filter.projectIds.length === 0) return [];
     if (isDbConnected()) {
-      try {
-        const res = filter?.projectIds
-          ? await query(`SELECT * FROM meetings WHERE project_id = ANY($1::text[])`, [filter.projectIds])
-          : await query(`SELECT * FROM meetings`);
-        return applyFilter(res.rows.map(mapRow), filter).sort(bySchedule);
-      } catch (err: any) {
-        console.warn('DB error in MeetingRepository.findAll, falling back to memory:', err.message);
-      }
+      const res = filter?.projectIds
+        ? await query(`SELECT * FROM meetings WHERE project_id = ANY($1::text[])`, [filter.projectIds])
+        : await query(`SELECT * FROM meetings`);
+      return applyFilter(res.rows.map(mapRow), filter).sort(bySchedule);
     }
     return applyFilter(Array.from(memoryMeetings.values()), filter).sort(bySchedule);
   },
 
   async findById(id: string): Promise<Meeting | null> {
     if (isDbConnected()) {
-      try {
-        const res = await query('SELECT * FROM meetings WHERE id = $1', [id]);
-        if (res.rows.length > 0) return mapRow(res.rows[0]);
-      } catch (err: any) {
-        console.warn('DB error in MeetingRepository.findById, falling back to memory:', err.message);
-      }
+      const res = await query('SELECT * FROM meetings WHERE id = $1', [id]);
+      // Sprint 24: PostgreSQL is the source of truth; memory is never consulted in PG mode.
+      return res.rows.length > 0 ? mapRow(res.rows[0]) : null;
     }
     return memoryMeetings.get(id) || null;
   },

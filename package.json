@@ -11,7 +11,8 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test": "tsx tests/run-tests.ts",
-    "test:issues": "tsx tests/issue-management.test.ts"
+    "test:issues": "tsx tests/issue-management.test.ts",
+    "test:pg": "tsx tests/postgres-live.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

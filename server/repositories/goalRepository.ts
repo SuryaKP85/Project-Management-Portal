@@ -1,13 +1,13 @@
 import { duplicateRecordError } from './recordConflict';
 import { Goal } from '../models/types';
-import { persistentMap, snapshotRestored } from '../config/persistence';
+import { persistentMap, skipDemoSeed } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 
 // Sprint 20: restored from / saved to the embedded data file in persistent mode.
 const memoryGoals = persistentMap<Goal>('goals');
 
 function seedDefaultGoals() {
-  if (memoryGoals.size > 0 || snapshotRestored()) return;
+  if (memoryGoals.size > 0 || skipDemoSeed()) return;
   const defaults: Goal[] = [
     {
       id: 'goal_1',
@@ -117,8 +117,8 @@ export const GoalRepository = {
       id,
       objective: goalData.objective || 'Untitled Objective',
       description: goalData.description || '',
-      ownerId: goalData.ownerId || 'usr_admin_1',
-      ownerName: goalData.ownerName || 'Surya Prashanth',
+      ownerId: goalData.ownerId, // Sprint 24: no demo owner (the service supplies one)
+      ownerName: goalData.ownerName || '', // Sprint 24: no demo owner name
       status: goalData.status || 'not-started',
       targetValue: goalData.targetValue !== undefined ? Number(goalData.targetValue) : 100,
       currentValue: goalData.currentValue !== undefined ? Number(goalData.currentValue) : 0,
@@ -204,8 +204,11 @@ export const GoalRepository = {
   },
 
   async delete(id: string): Promise<boolean> {
+    // Sprint 24: the database's row count is the result in PostgreSQL mode.
     if (isDbConnected()) {
-      await query('DELETE FROM goals WHERE id = $1', [id]);
+      const res = await query('DELETE FROM goals WHERE id = $1', [id]);
+      memoryGoals.delete(id);
+      return !!res.rowCount;
     }
     return memoryGoals.delete(id);
   },

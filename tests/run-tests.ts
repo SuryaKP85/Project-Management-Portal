@@ -6235,7 +6235,7 @@ async function runTests() {
     assert(parallel48.every((r) => r.statusCode === 201) && new Set(parallelCodes48).size === 15 && parallelCodes48.every((c) => /^STR-\d+$/.test(c)), 'Fifteen concurrent story creates get fifteen distinct STR codes');
     const deliverySrc48 = fs35.readFileSync('server/services/deliveryService.ts', 'utf8');
     const backlogSrc48 = fs35.readFileSync('server/services/backlogService.ts', 'utf8');
-    assert(!/(EPC|FEAT|STR)-\$\{Math\.floor/.test(deliverySrc48 + backlogSrc48) && /TSK-\$\{Math\.floor\(100 \+ Math\.random\(\) \* 900\)\}/.test(deliverySrc48), 'EPC, FEAT and STR codes no longer come from Math.random; task codes are unchanged');
+    assert(!/(EPC|FEAT|STR|TSK)-\$\{Math\.floor/.test(deliverySrc48 + backlogSrc48), 'EPC, FEAT and STR codes no longer come from Math.random (Sprint 24: nor do TSK codes)');
 
     // --- B. Requirement revisions ---
     const revReq48 = req48(await call48(ReqCtl48.create, pmA48, { body: { projectId: projA48.id, title: 'S18 Revision draft', description: 'First text' } }));
@@ -6739,7 +6739,7 @@ async function runTests() {
     const links48t = table48('requirement_links');
     assert(/requirement_id VARCHAR\(64\) NOT NULL REFERENCES requirements\(id\) ON DELETE CASCADE/.test(links48t) && /project_id VARCHAR\(64\) NOT NULL REFERENCES projects\(id\)/.test(links48t) && /target_type VARCHAR\(20\) NOT NULL CHECK \(target_type IN \('epic', 'feature', 'story'\)\)/.test(links48t) && /decomposition_id VARCHAR\(64\) NOT NULL REFERENCES requirement_decompositions\(id\)/.test(links48t) && /UNIQUE \(requirement_id, target_type, target_id\)/.test(links48t), 'Schema: requirement_links with a cascading requirement FK, required project, target type check, decomposition FK and UNIQUE(requirement, type, target)');
     assert(/UNIQUE \(requirement_id, requirement_revision\)/.test(table48('requirement_decompositions')) && ['idx_requirement_links_requirement ON requirement_links\\(requirement_id\\)', 'idx_requirement_links_project ON requirement_links\\(project_id\\)', 'idx_requirement_links_target ON requirement_links\\(target_id, target_type\\)', 'idx_requirement_links_decomposition ON requirement_links\\(decomposition_id\\)'].every((i) => new RegExp(`CREATE INDEX IF NOT EXISTS ${i};`).test(schema48)), 'Schema: one decomposition per requirement revision (UNIQUE) and indexes on requirement, project, target and decomposition');
-    assert(['epic', 'feature', 'story'].every((k) => new RegExp(`CREATE SEQUENCE IF NOT EXISTS ${k}_code_seq START WITH 101 INCREMENT BY 1;`).test(schema48)) && !/task_code_seq/.test(schema48), 'Schema: epic, feature and story code sequences (no task sequence)');
+    assert(['epic', 'feature', 'story'].every((k) => new RegExp(`CREATE SEQUENCE IF NOT EXISTS ${k}_code_seq START WITH 101 INCREMENT BY 1;`).test(schema48)), 'Schema: epic, feature and story code sequences (Sprint 24 adds task and others, §56)');
     const dbSrc48 = fs35.readFileSync('server/config/database.ts', 'utf8');
     const repoSrc48 = ['epicRepository', 'featureRepository', 'storyRepository'].map((f) => fs35.readFileSync(`server/repositories/${f}.ts`, 'utf8'));
     assert(/query\('BEGIN'\)/.test(dbSrc48) && /query\('COMMIT'\)/.test(dbSrc48) && /query\('ROLLBACK'\)/.test(dbSrc48) && /tx\.client\.query<T>\(text, params\)/.test(dbSrc48) && repoSrc48.every((s) => /trackMemoryWrite\(/.test(s) && /withSavepoint\(/.test(s) && /issueSequenceDeliveryCode\(/.test(s)), 'Transactions route queries through the client; delivery repositories record memory writes and retry codes inside savepoints');
@@ -8879,6 +8879,653 @@ if (step === 'fresh') {
     for (const fn of cleanup55.reverse()) { try { await fn(); } catch { /* already removed */ } }
     for (const u of [pmA55, pmB55, memberA55, outsider55]) await UserRepo40.update(u.id, { isActive: false });
   }
+
+  // 56. Sprint 24 PostgreSQL Integrity
+  // No real PostgreSQL runs here: a stand-in pool executes the repositories'
+  // own SQL against in-test tables (single-table INSERT/SELECT/UPDATE/DELETE,
+  // code sequences, the team-member join), so the PostgreSQL code paths run.
+  // The live proof is npm run test:pg (gated on DATABASE_URL); its script is
+  // exercised here in its embedded dry-run mode.
+  console.log('\n--- 56. Sprint 24 PostgreSQL Integrity ---');
+  const Db56 = await import('../server/config/database');
+  const Persist56 = await import('../server/config/persistence');
+  const pg56: any = await import('pg');
+  const pgTypes56 = pg56.types || pg56.default?.types;
+  const PgDatabaseError56 = pg56.DatabaseError || pg56.default?.DatabaseError;
+  const { RiskRepository: RiskRepo56 } = await import('../server/repositories/riskRepository');
+  const { IssueRepository: IssueRepo56 } = await import('../server/repositories/issueRepository');
+  const { MilestoneRepository: MlsRepo56 } = await import('../server/repositories/milestoneRepository');
+  const { ReleaseRepository: RelRepo56 } = await import('../server/repositories/releaseRepository');
+  const { DependencyRepository: DepRepo56 } = await import('../server/repositories/dependencyRepository');
+  const { RoadmapRepository: RoadmapRepo56 } = await import('../server/repositories/roadmapRepository');
+  const { GovernanceLinkRepository: LinkRepo56 } = await import('../server/repositories/governanceLinkRepository');
+  const { TeamRepository: TeamRepo56 } = await import('../server/repositories/teamRepository');
+  const { SprintRepository: SprintRepo56 } = await import('../server/repositories/sprintRepository');
+  const { TaskRepository: TaskRepo56 } = await import('../server/repositories/taskRepository');
+  const { VelocityRepository: VelRepo56 } = await import('../server/repositories/velocityRepository');
+  const { ActionItemRepository: ActionRepo56 } = await import('../server/repositories/actionItemRepository');
+  const { RequirementRepository: ReqRepo56 } = await import('../server/repositories/requirementRepository');
+  const { RiskService: RiskSvc56 } = await import('../server/services/riskService');
+  const { IssueService: IssueSvc56 } = await import('../server/services/issueService');
+  const { MilestoneService: MlsSvc56 } = await import('../server/services/milestoneService');
+  const { ReleaseService: RelSvc56 } = await import('../server/services/releaseService');
+  const { DependencyService: DepSvc56 } = await import('../server/services/dependencyService');
+  const { GoalService: GoalSvc56 } = await import('../server/services/goalService');
+  const { ProductService: ProdSvc56 } = await import('../server/services/productService');
+  const { PortfolioService: PortSvc56 } = await import('../server/services/portfolioService');
+  const { TeamService: TeamSvc56 } = await import('../server/services/teamService');
+  const { NotificationService: NotifySvc56 } = await import('../server/services/notificationService');
+  const { notifiableUser: notifiable56 } = await import('../server/services/followThroughSupport');
+  const { ProjectGuards: ProjGuards56 } = await import('../server/services/projectGuards');
+  const { ProjectController: ProjCtl56 } = await import('../server/controllers/projectController');
+  const { DeliveryController: DelCtl56 } = await import('../server/controllers/deliveryController');
+  const { SprintController: SprintCtl56, SPRINT_NAME_MAX: SPRINT_NAME_MAX56 } = await import('../server/controllers/sprintController');
+  const { HealthController: HealthCtl56 } = await import('../server/controllers/healthController');
+  const { databaseFailure: dbFailure56 } = await import('../server/middleware/errorHandler');
+  const { spawnSync: spawn56 } = await import('child_process');
+  const os56 = await import('os');
+  const path56 = await import('path');
+
+  const stamp56 = Date.now();
+  const schema56 = fs35.readFileSync('server/db/schema.sql', 'utf8');
+  const rejects56 = async (fn: () => Promise<unknown>) => { try { await fn(); return null; } catch (e: any) { return e; } };
+  const dbError56 = (message: string, code: string, extra: Record<string, unknown> = {}) => Object.assign(new PgDatabaseError56(message, 0, 'error'), { code, severity: code === '23505' ? 'ERROR' : 'FATAL', ...extra });
+
+  // --- The stand-in pool: the repositories' own SQL against in-test tables ----
+  type Row56 = Record<string, any>;
+  const mini56 = (opts: { tables?: Record<string, Row56[]>; seqs?: Record<string, { last: number; called: boolean }>; fail?: RegExp; beforeInsert?: (table: string, row: Row56, tables: Record<string, Row56[]>) => void } = {}) => {
+    const tables: Record<string, Row56[]> = opts.tables || {};
+    const seqs: Record<string, { last: number; called: boolean }> = opts.seqs || {};
+    const log: Array<{ sql: string; params: any[]; client: boolean }> = [];
+    const pick = (row: Row56, list: string) => {
+      if (list.trim() === '*') return { ...row };
+      const out: Row56 = {};
+      for (const item of list.split(',')) {
+        const m = /^\s*(?:\w+\.)?(\w+)(?:\s+as\s+"(\w+)")?\s*$/i.exec(item);
+        if (m) out[m[2] || m[1]] = row[m[1]];
+      }
+      return out;
+    };
+    const where = (rows: Row56[], clause: string | undefined, params: any[]) => {
+      if (!clause) return rows;
+      const conds = clause.split(/\s+AND\s+/i).filter((c) => !/^1\s*=\s*1$/.test(c.trim()));
+      const parsed = conds.map((c) => /^\s*(?:\w+\.)?(\w+)\s*=\s*\$(\d+)\s*$/.exec(c));
+      if (parsed.some((p) => !p)) return []; // a condition the stand-in does not evaluate matches nothing
+      return rows.filter((r) => parsed.every((p) => r[p![1]] === params[Number(p![2]) - 1]));
+    };
+    const exec = (client: boolean) => async (text: string, params: any[] = []) => {
+      const sql = String(text).replace(/\s+/g, ' ').trim();
+      log.push({ sql, params, client });
+      if (opts.fail && opts.fail.test(sql)) throw dbError56('stand-in database failure', '08006');
+      if (/^(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE SAVEPOINT)\b/i.test(sql)) return { rows: [], rowCount: 0 };
+      let m: RegExpExecArray | null;
+      if (sql === 'SELECT 1') return { rows: [{ ok: 1 }], rowCount: 1 };
+      if ((m = /^SELECT last_value, is_called FROM (\w+)$/i.exec(sql))) { const s = (seqs[m[1]] ||= { last: 101, called: false }); return { rows: [{ last_value: String(s.last), is_called: s.called }], rowCount: 1 }; }
+      if (/^SELECT setval\(/i.test(sql)) { const s = (seqs[params[0]] ||= { last: 101, called: false }); s.last = Number(params[1]); s.called = true; return { rows: [], rowCount: 1 }; }
+      if ((m = /^SELECT nextval\('(\w+)'\) AS n$/i.exec(sql))) { const s = (seqs[m[1]] ||= { last: 101, called: false }); if (s.called) s.last += 1; s.called = true; return { rows: [{ n: String(s.last) }], rowCount: 1 }; }
+      if ((m = /^INSERT INTO (\w+) \(([^)]*)\) VALUES/i.exec(sql))) {
+        const table = m[1];
+        const row: Row56 = {};
+        m[2].split(',').map((c) => c.trim()).forEach((c, i) => { row[c] = params[i]; });
+        const t = (tables[table] ||= []);
+        opts.beforeInsert?.(table, row, tables);
+        if (/ON CONFLICT \(team_id, user_id\)/i.test(sql)) {
+          const same = t.find((r) => r.team_id === row.team_id && r.user_id === row.user_id);
+          if (same) { Object.assign(same, { role_in_team: row.role_in_team, allocated_hrs: row.allocated_hrs }); return { rows: [], rowCount: 1 }; }
+        }
+        if (t.some((r) => r.id === row.id)) throw dbError56('duplicate key value violates unique constraint', '23505', { constraint: `${table}_pkey` });
+        if (row.code !== undefined && t.some((r) => r.code === row.code)) throw dbError56('duplicate key value violates unique constraint', '23505', { constraint: `${table}_code_key` });
+        if (table === 'velocity_records' && t.some((r) => r.sprint_id === row.sprint_id)) throw dbError56('duplicate key value violates unique constraint', '23505', { constraint: 'uq_velocity_records_sprint' });
+        t.push({ created_at: new Date().toISOString(), ...row });
+        return { rows: [], rowCount: 1 };
+      }
+      if (/FROM team_members tm JOIN users u ON u\.id = tm\.user_id WHERE tm\.team_id = ANY\(\$1\)/i.test(sql)) {
+        const rows = (tables.team_members || []).filter((r) => (params[0] as string[]).includes(r.team_id)).map((r) => {
+          const u = (tables.users || []).find((x) => x.id === r.user_id) || {};
+          return { ...r, first_name: u.first_name, last_name: u.last_name, email: u.email };
+        });
+        return { rows, rowCount: rows.length };
+      }
+      if ((m = /^SELECT (.+?) FROM (\w+)(?: WHERE (.+?))?(?: ORDER BY .+)?$/i.exec(sql))) {
+        const list = m[1];
+        const rows = where(tables[m[2]] || [], m[3], params).map((r) => pick(r, list));
+        return { rows, rowCount: rows.length };
+      }
+      if ((m = /^UPDATE (\w+) SET (.+?) WHERE (.+)$/i.exec(sql))) {
+        const sets = Array.from(m[2].matchAll(/(\w+) = \$(\d+)/g));
+        const hit = where(tables[m[1]] || [], m[3], params);
+        for (const r of hit) for (const s of sets) r[s[1]] = params[Number(s[2]) - 1];
+        return { rows: [], rowCount: hit.length };
+      }
+      if ((m = /^DELETE FROM (\w+) WHERE (.+)$/i.exec(sql))) {
+        const t = tables[m[1]] || [];
+        const hit = new Set(where(t, m[2], params));
+        tables[m[1]] = t.filter((r) => !hit.has(r));
+        return { rows: [], rowCount: hit.size };
+      }
+      return { rows: [], rowCount: 0 };
+    };
+    return { tables, seqs, log, pool: { query: exec(false), connect: async () => ({ query: exec(true), release() {} }), on() {}, end: async () => {} } };
+  };
+  const withPg56 = async <T>(pg: { pool: unknown }, fn: () => Promise<T>): Promise<T> => {
+    const restore = Db56.setDatabasePoolForTests(pg.pool);
+    try { return await fn(); } finally { restore(); }
+  };
+
+  // --- A. Generic schema contract (every repository column exists) -----------
+  const contract56 = (schemaSql: string) => {
+    const clean = schemaSql.replace(/--[^\n]*/g, '').replace(/\r/g, '');
+    const tables: Record<string, Set<string>> = {};
+    for (const m of clean.matchAll(/CREATE TABLE IF NOT EXISTS (\w+) \(([\s\S]*?)\n\);/g)) {
+      tables[m[1]] = new Set(m[2].split('\n').map((l) => l.trim().split(/\s+/)[0]).filter((w) => /^[a-z_]+$/.test(w)));
+    }
+    for (const m of clean.matchAll(/ALTER TABLE (\w+) ADD COLUMN IF NOT EXISTS (\w+)/g)) (tables[m[1]] ||= new Set()).add(m[2]);
+    const problems: string[] = [];
+    for (const file of fs35.readdirSync('server/repositories').filter((f: string) => f.endsWith('.ts'))) {
+      const src = fs35.readFileSync(`server/repositories/${file}`, 'utf8');
+      const columnsConst = /const COLUMNS = `([^`]*)`/.exec(src)?.[1] || '';
+      const has = (table: string, col: string) => !!tables[table] && tables[table].has(col);
+      for (const m of src.matchAll(/INSERT INTO (\w+)\s*\(([^)]*)\)/g)) {
+        for (const c of m[2].replace('${COLUMNS}', columnsConst).split(',').map((s: string) => s.trim()).filter(Boolean)) if (!has(m[1], c)) problems.push(`${file}: INSERT ${m[1]}.${c}`);
+      }
+      for (const m of src.matchAll(/UPDATE (\w+) SET([\s\S]*?)WHERE/g)) {
+        for (const c of m[2].matchAll(/(\w+)\s*=\s*\$\d+/g)) if (!has(m[1], c[1])) problems.push(`${file}: UPDATE ${m[1]}.${c[1]}`);
+      }
+      for (const m of src.matchAll(/SELECT\s+([\s\S]*?)\s+FROM\s+(\w+)(?:\s+\w+)?([\s\S]*?)(?:WHERE|ORDER BY|GROUP BY|LIMIT|`|'|;)/g)) {
+        if (/_seq$/.test(m[2])) continue;
+        const from = [m[2], ...Array.from(m[3].matchAll(/JOIN\s+(\w+)/g)).map((j: any) => j[1])];
+        for (const item of m[1].split(',')) {
+          const one = /^\s*(?:\w+\.)?([a-z_]+)(?:\s+as\s+"\w+")?\s*$/i.exec(item);
+          if (one && !from.some((t) => has(t, one[1]))) problems.push(`${file}: SELECT ${from.join('/')}.${one[1]}`);
+        }
+      }
+    }
+    return { tables, problems };
+  };
+  const contractNow56 = contract56(schema56);
+  assert(contractNow56.problems.length === 0 && Object.keys(contractNow56.tables).length >= 30, `A. Every column a repository INSERTs, UPDATEs or SELECTs exists in schema.sql (${contractNow56.problems.join('; ') || 'none missing'})`);
+  const contractOld56 = contract56(schema56.replace(/ALTER TABLE issues ADD COLUMN IF NOT EXISTS reported_by[^;]*;/, ''));
+  assert(contractOld56.problems.some((p) => /issues\.reported_by/.test(p)), 'A. The contract catches the original defect: without the Sprint 24 ALTER, issues.reported_by is reported missing');
+  assert(/ALTER TABLE issues ADD COLUMN IF NOT EXISTS reported_by VARCHAR\(64\) REFERENCES users\(id\) ON DELETE SET NULL;/.test(schema56), 'A. issues.reported_by is added idempotently (VARCHAR(64), references users, ON DELETE SET NULL)');
+
+  // --- B. An issue round-trips through the PostgreSQL repository SQL ----------
+  const pgIssue56 = mini56({ tables: { issues: [], governance_links: [] } });
+  const trip56 = await withPg56(pgIssue56, async () => {
+    const created = await IssueRepo56.create({ id: `iss_s24_${stamp56}`, title: 'S24 PG issue', projectId: 'PRJ-S24', reportedBy: 'usr_s24_reporter', ownerId: 'usr_s24_owner', severity: 'High', priority: 'High', status: 'Open', targetResolutionDate: '2026-10-08' } as any);
+    const read1 = await IssueRepo56.findById(created.id);
+    const updated = await IssueRepo56.update(created.id, { status: 'Resolved', reportedBy: 'usr_s24_other' } as any);
+    const read2 = await IssueRepo56.findById(created.id);
+    const missingUpdate = await IssueRepo56.update('iss_s24_missing', { status: 'Closed' } as any);
+    const removed = await IssueRepo56.delete(created.id);
+    const removedAgain = await IssueRepo56.delete(created.id);
+    const read3 = await IssueRepo56.findById(created.id);
+    return { created, read1, updated, read2, missingUpdate, removed, removedAgain, read3 };
+  });
+  assert(trip56.created.code === 'ISS-101' && trip56.read1?.reportedBy === 'usr_s24_reporter' && trip56.read1?.targetResolutionDate === '2026-10-08' && trip56.read2?.status === 'Resolved' && trip56.read2?.reportedBy === 'usr_s24_other',
+    'B. An issue round-trips through the PostgreSQL repository SQL: created (reported_by stored, ISS-101 from the sequence), read, updated, read');
+  assert(trip56.missingUpdate === null && trip56.removed === true && trip56.removedAgain === false && trip56.read3 === null, 'B. Row counts are authoritative: updating a missing issue is null; delete is true once, then false');
+  assert(pgIssue56.log.some((l) => l.client && l.sql === 'BEGIN') && pgIssue56.log.some((l) => l.client && /^INSERT INTO issues .*reported_by/.test(l.sql)) && pgIssue56.log.some((l) => l.client && l.sql === 'COMMIT'), 'B. The issue and its links are written in one transaction');
+
+  // --- C. A failed PostgreSQL write is an error and changes nothing -----------
+  const failWrites56 = () => mini56({ fail: /^(INSERT|UPDATE|DELETE) /i });
+  const failed56: Record<string, any> = {};
+  failed56.risk = await withPg56(failWrites56(), () => rejects56(() => RiskRepo56.create({ id: `rsk_s24_fail_${stamp56}`, title: 'S24 fail risk', projectId: 'PRJ-S24' } as any)));
+  failed56.issue = await withPg56(failWrites56(), () => rejects56(() => IssueRepo56.create({ id: `iss_s24_fail_${stamp56}`, title: 'S24 fail issue', projectId: 'PRJ-S24' } as any)));
+  failed56.milestone = await withPg56(failWrites56(), () => rejects56(() => MlsRepo56.create({ id: `mls_s24_fail_${stamp56}`, name: 'S24 fail milestone', projectId: 'PRJ-S24' } as any)));
+  failed56.release = await withPg56(failWrites56(), () => rejects56(() => RelRepo56.create({ id: `rel_s24_fail_${stamp56}`, name: 'S24 fail release' } as any)));
+  failed56.dependency = await withPg56(failWrites56(), () => rejects56(() => DepRepo56.create({ id: `dep_s24_fail_${stamp56}`, sourceEntityType: 'epic', sourceEntityId: 'ep_s24_a', targetEntityType: 'epic', targetEntityId: 'ep_s24_b' } as any)));
+  failed56.link = await withPg56(failWrites56(), () => rejects56(() => LinkRepo56.addLink('risk', `rsk_s24_link_${stamp56}`, 'epic', 'ep_s24_a')));
+  failed56.releaseItem = await withPg56(failWrites56(), () => rejects56(() => RelRepo56.addReleaseItem(`rel_s24_item_${stamp56}`, 'epic', 'ep_s24_a')));
+  const failKinds56 = Object.keys(failed56);
+  assert(failKinds56.every((k) => failed56[k] && dbFailure56(failed56[k])?.status === 503 && dbFailure56(failed56[k])?.code === 'PERSISTENCE_FAILED'), `C. Failed PostgreSQL writes propagate as 503 PERSISTENCE_FAILED, never success (${failKinds56.filter((k) => !failed56[k]).join(', ') || 'all rejected'})`);
+  const leaked56 = [
+    await RiskRepo56.findById(`rsk_s24_fail_${stamp56}`), await IssueRepo56.findById(`iss_s24_fail_${stamp56}`), await MlsRepo56.findById(`mls_s24_fail_${stamp56}`),
+    await RelRepo56.findById(`rel_s24_fail_${stamp56}`), await DepRepo56.findById(`dep_s24_fail_${stamp56}`),
+  ];
+  assert(leaked56.every((r) => r === null) && (await LinkRepo56.getLinksFor('risk', `rsk_s24_link_${stamp56}`)).length === 0 && (await RelRepo56.getReleaseItems(`rel_s24_item_${stamp56}`)).length === 0,
+    'C. A failed write leaves nothing behind in memory (the old code wrote memory first and reported success)');
+  // Updates, deletes and reorders: the stored row is unchanged when the write fails.
+  const keep56 = mini56({ tables: { risks: [], governance_links: [], roadmap_items: [] } });
+  const kept56 = await withPg56(keep56, () => RiskRepo56.create({ id: `rsk_s24_keep_${stamp56}`, title: 'S24 keep', projectId: 'PRJ-S24', ownerId: 'usr_s24' } as any));
+  keep56.tables.roadmap_items.push({ id: `rm_s24_keep_${stamp56}`, code: 'RM-901', name: 'S24 roadmap keep', status: 'proposed', priority: 'medium', sequence: 10, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+  const keepFail56 = mini56({ tables: keep56.tables, fail: /^(UPDATE|DELETE) /i });
+  const writeErrs56 = await withPg56(keepFail56, async () => [
+    await rejects56(() => RiskRepo56.update(kept56.id, { title: 'S24 changed' } as any)),
+    await rejects56(() => RiskRepo56.delete(kept56.id)),
+    await rejects56(() => RoadmapRepo56.update(`rm_s24_keep_${stamp56}`, { name: 'S24 roadmap changed' } as any)),
+    await rejects56(() => RoadmapRepo56.reorder([{ id: `rm_s24_keep_${stamp56}`, sequence: 99 }])),
+  ]);
+  assert(writeErrs56.every((e) => !!e && dbFailure56(e)?.status === 503) && keep56.tables.risks[0]?.title === 'S24 keep' && keep56.tables.roadmap_items[0]?.name === 'S24 roadmap keep' && keep56.tables.roadmap_items[0]?.sequence === 10 && keepFail56.log.some((l) => l.client && l.sql === 'ROLLBACK'),
+    'C. Failed updates, deletes and roadmap reorders are errors; the stored rows are unchanged and the transaction rolls back');
+
+  // --- D. A PostgreSQL read failure never falls back to memory ----------------
+  const readErrs56 = await withPg56(mini56({ fail: /^SELECT /i }), async () => [
+    await rejects56(() => RiskRepo56.findAll({ projectId: 'PRJ-101' } as any)),
+    await rejects56(() => RiskRepo56.findById('rsk_1')),
+    await rejects56(() => RiskRepo56.count({} as any)),
+    await rejects56(() => IssueRepo56.findAll({} as any)),
+    await rejects56(() => MlsRepo56.findById('mls_1')),
+    await rejects56(() => DepRepo56.findAll({} as any)),
+    await rejects56(() => ActionRepo56.findAll({} as any)),
+    await rejects56(() => ReqRepo56.findById('req_s24')),
+    await rejects56(() => RoadmapRepo56.findById('rm_1')),
+  ]);
+  assert(readErrs56.every((e) => !!e && dbFailure56(e)?.status === 503), `D. A PostgreSQL read failure is an error (503), never memory or demo data (${readErrs56.filter((e) => !e).length} returned data instead)`);
+
+  // --- E. Demo data stays out of PostgreSQL mode ------------------------------
+  const iso56 = await withPg56(mini56(), async () => ({
+    skip: Persist56.skipDemoSeed(),
+    risk: await RiskRepo56.findById('rsk_1'), risks: await RiskRepo56.findAll({} as any), issue: await IssueRepo56.findById('iss_1'),
+    milestone: await MlsRepo56.findById('mls_1'), release: await RelRepo56.findById('rel_1'), dependency: await DepRepo56.findById('dep_1'), roadmap: await RoadmapRepo56.findById('rm_1'),
+  }));
+  assert(iso56.skip === true && iso56.risk === null && iso56.risks.length === 0 && iso56.issue === null && iso56.milestone === null && iso56.release === null && iso56.dependency === null && iso56.roadmap === null,
+    'E. In PostgreSQL mode no demo record is seeded or served: the seed ids (rsk_1, iss_1, mls_1, rel_1, dep_1, rm_1) are not found and lists are empty');
+  assert(Persist56.skipDemoSeed() === false && (await RiskRepo56.findById('rsk_1')) !== null, 'E. The temporary store the tests use keeps its demo records (embedded and temporary modes are unchanged)');
+
+  // --- F. Collision-safe codes -------------------------------------------------
+  const codeNum56 = (code: string) => Number(/-(\d+)$/.exec(String(code))?.[1]);
+  const cycle56 = async (create: (n: number) => Promise<any>, remove: (rec: any) => Promise<unknown>) => {
+    const first = await create(1);
+    await remove(first);
+    const second = await create(2);
+    await remove(second);
+    return [first.code, second.code];
+  };
+  const cycles56: Record<string, string[]> = {
+    risk: await cycle56((n) => RiskRepo56.create({ title: `S24 code risk ${n}`, projectId: 'PRJ-S24' } as any), (r) => RiskRepo56.delete(r.id)),
+    issue: await cycle56((n) => IssueRepo56.create({ title: `S24 code issue ${n}`, projectId: 'PRJ-S24' } as any), (r) => IssueRepo56.delete(r.id)),
+    milestone: await cycle56((n) => MlsRepo56.create({ name: `S24 code milestone ${n}`, projectId: 'PRJ-S24' } as any), (r) => MlsRepo56.delete(r.id)),
+    release: await cycle56((n) => RelRepo56.create({ name: `S24 code release ${n}` } as any), (r) => RelRepo56.delete(r.id)),
+    dependency: await cycle56(async (n) => (await DepRepo56.create({ sourceEntityType: 'epic', sourceEntityId: `ep_s24_src_${stamp56}_${n}`, targetEntityType: 'epic', targetEntityId: `ep_s24_dst_${stamp56}_${n}` } as any)).dependency, (r) => DepRepo56.delete(r.id)),
+    task: await cycle56((n) => TaskRepo56.create({ id: `task_s24_code_${stamp56}_${n}`, code: '', title: `S24 code task ${n}`, projectId: 'PRJ-S24', status: 'backlog', priority: 'medium' } as any), (r) => TaskRepo56.delete(r.id)),
+    sprint: await cycle56((n) => SprintRepo56.create({ name: `S24 code sprint ${n}`, projectId: 'PRJ-S24', startDate: '2026-10-01', endDate: '2026-10-14', status: 'planning' } as any), (r) => SprintRepo56.delete(r.id)),
+  };
+  const prefixes56: Record<string, string> = { risk: 'RSK', issue: 'ISS', milestone: 'MLS', release: 'REL', dependency: 'DEP', task: 'TSK', sprint: 'SPR' };
+  assert(Object.entries(cycles56).every(([k, [a, b]]) => new RegExp(`^${prefixes56[k]}-\\d+$`).test(a) && new RegExp(`^${prefixes56[k]}-\\d+$`).test(b) && codeNum56(b) > codeNum56(a)),
+    `C/F. Create, delete, create again: a deleted code is never re-issued (embedded store) for RSK, ISS, MLS, REL, DEP, TSK, SPR (${JSON.stringify(cycles56)})`);
+  const burst56 = await Promise.all([1, 2, 3, 4, 5].map((n) => RiskRepo56.create({ title: `S24 burst ${n}`, projectId: 'PRJ-S24' } as any)));
+  assert(new Set(burst56.map((r) => r.code)).size === 5, 'F. Concurrent creates in one process get distinct codes');
+  for (const r of burst56) await RiskRepo56.delete(r.id);
+  // PostgreSQL restart: the sequence lags behind stored rows, codes still continue above them.
+  const restart56 = mini56({ tables: { risks: [{ id: 'rsk_old_1', code: 'RSK-101' }, { id: 'rsk_old_2', code: 'RSK-150' }], governance_links: [] }, seqs: { risk_code_seq: { last: 101, called: true } } });
+  const afterRestart56 = await withPg56(restart56, () => RiskRepo56.create({ title: 'S24 after restart', projectId: 'PRJ-S24' } as any));
+  assert(afterRestart56.code === 'RSK-151', `F. After a restart (sequence behind the stored codes) the next code continues above the highest stored one: ${afterRestart56.code}`);
+  // A race: another process stores the drawn code first; the unique index rejects ours and a new code is drawn.
+  let raced56 = false;
+  const race56 = mini56({ tables: { risks: [], governance_links: [] }, beforeInsert: (table, row, tables) => {
+    if (table === 'risks' && !raced56) { raced56 = true; tables.risks.push({ id: 'rsk_other_process', code: row.code }); }
+  } });
+  const afterRace56 = await withPg56(race56, () => RiskRepo56.create({ title: 'S24 race', projectId: 'PRJ-S24' } as any));
+  const attempts56 = race56.log.filter((l) => /^INSERT INTO risks/.test(l.sql)).length;
+  assert(raced56 && attempts56 === 2 && afterRace56.code === 'RSK-102' && race56.tables.risks.length === 2, `F. A concurrent create that takes the same code loses on UNIQUE(code), retries with the next code (${attempts56} attempts, ${afterRace56.code})`);
+  const explicit56 = await withPg56(mini56({ tables: { risks: [{ id: 'rsk_x', code: 'RSK-777' }], governance_links: [] } }), () => rejects56(() => RiskRepo56.create({ title: 'S24 explicit', projectId: 'PRJ-S24', code: 'RSK-777' } as any)));
+  assert(!!explicit56 && dbFailure56(explicit56)?.status === 409, 'F. A collision on an explicit code is not retried or swallowed: it is a 409');
+  const sprintTask56 = await withPg56(mini56({ tables: { sprints: [], tasks: [] } }), async () => ({
+    sprint: await SprintRepo56.create({ name: 'S24 PG sprint', projectId: 'PRJ-S24', startDate: '2026-10-01', endDate: '2026-10-14', status: 'planning' } as any),
+    task: await TaskRepo56.create({ id: `task_s24_pg_${stamp56}`, code: '', title: 'S24 PG task', projectId: 'PRJ-S24', status: 'backlog', priority: 'medium' } as any),
+  }));
+  assert(sprintTask56.sprint.code === 'SPR-101' && sprintTask56.task.code === 'TSK-101', 'F. Sprint and task codes come from PostgreSQL sequences (SPR-101, TSK-101), not random numbers');
+  const repoSources56 = fs35.readdirSync('server/repositories').map((f: string) => fs35.readFileSync(`server/repositories/${f}`, 'utf8')).join('\n');
+  const codeSources56 = repoSources56 + fs35.readFileSync('server/controllers/sprintController.ts', 'utf8') + fs35.readFileSync('server/services/deliveryService.ts', 'utf8') + fs35.readFileSync('server/services/sprintService.ts', 'utf8') + fs35.readFileSync('server/services/backlogService.ts', 'utf8');
+  assert(!/memory\w+\.size \+ 101/.test(repoSources56) && !/(TSK|SPR)-\$\{Math\.floor/.test(codeSources56) && ['task', 'sprint', 'risk', 'issue', 'milestone', 'release', 'dependency'].every((k) => new RegExp(`CREATE SEQUENCE IF NOT EXISTS ${k}_code_seq START WITH 101`).test(schema56)),
+    'F. No code is derived from the number of rows or from random numbers; every family has an idempotent sequence');
+
+  // --- G/H. Owners default to the caller; notifications only to real users ------
+  const mk56 = (key: string, role: any) => Auth40.register({ email: `s24.${key}.${stamp56}@company.com`, password: 'Sprint24@12345', firstName: `S24${key}`, lastName: 'Persist', role }, login40.user);
+  const owner56 = await mk56('owner', 'project-manager');
+  const inactive56 = await mk56('inactive', 'team-member');
+  await UserRepo40.update(inactive56.id, { isActive: false });
+  const cleanup56: Array<() => Promise<unknown>> = [];
+  const sent56: string[] = [];
+  const realSend56 = NotifySvc56.sendNotification;
+  (NotifySvc56 as any).sendNotification = async (n: any) => { sent56.push(n.userId); return realSend56.call(NotifySvc56, n); };
+  try {
+    const proj56 = (await call46(ProjCtl56.create, owner56, { name: `S24 project ${stamp56}`, client: 'S24 client', budget: 10 })).body.data.project;
+    cleanup56.push(() => ProjRepo24.delete(proj56.id));
+    const actor56 = { id: owner56.id, name: 'S24 Owner' };
+    const epicA56 = (await call46(DelCtl56.createEpic, owner56, { name: 'S24 epic A', projectId: proj56.id })).body.data.epic;
+    const epicB56 = (await call46(DelCtl56.createEpic, owner56, { name: 'S24 epic B', projectId: proj56.id })).body.data.epic;
+    const owned56 = {
+      risk: await RiskSvc56.createRisk({ projectId: proj56.id, title: 'S24 critical risk', probability: 5, impact: 5 } as any, actor56),
+      issue: await IssueSvc56.createIssue({ projectId: proj56.id, title: 'S24 critical issue', severity: 'Critical', priority: 'High' } as any, actor56),
+      milestone: await MlsSvc56.createMilestone({ projectId: proj56.id, name: 'S24 milestone', targetDate: '2026-12-01' } as any, actor56),
+      release: await RelSvc56.createRelease({ projectId: proj56.id, name: 'S24 release', version: '1.0.0' } as any, actor56),
+      dependency: await DepSvc56.createDependency({ sourceEntityType: 'epic', sourceEntityId: epicA56.id, targetEntityType: 'epic', targetEntityId: epicB56.id, dependencyType: 'Blocks', criticality: 'Critical' } as any, actor56),
+      goal: await GoalSvc56.createGoal({ objective: `S24 goal ${stamp56}` } as any, owner56),
+      product: await ProdSvc56.createProduct({ name: 'S24 product', code: `S24-PROD-${stamp56}` } as any, owner56),
+      portfolio: await PortSvc56.createPortfolio({ name: 'S24 portfolio', code: `S24-PORT-${stamp56}` } as any, owner56),
+      team: await TeamSvc56.createTeam({ name: `S24 team ${stamp56}` } as any, owner56),
+    };
+    const ownerOf56 = (k: string, r: any) => (k === 'team' ? r.leadId : r.ownerId);
+    assert(Object.entries(owned56).every(([k, r]) => ownerOf56(k, r) === owner56.id), `G. With no owner chosen, risk, issue, milestone, release, dependency, goal, product, portfolio and team (lead) belong to the caller (${Object.entries(owned56).filter(([k, r]) => ownerOf56(k, r) !== owner56.id).map(([k]) => k).join(', ') || 'all'})`);
+    const badOwner56 = await rejects56(() => RiskSvc56.createRisk({ projectId: proj56.id, title: 'S24 bad owner', probability: 1, impact: 1, ownerId: 'usr_does_not_exist' } as any, actor56));
+    const inactiveOwner56 = await rejects56(() => GoalSvc56.createGoal({ objective: 'S24 inactive owner', ownerId: inactive56.id } as any, owner56));
+    const noProject56 = await rejects56(() => MlsSvc56.createMilestone({ name: 'S24 no project' } as any, actor56));
+    const badMember56 = await rejects56(() => TeamSvc56.addMember(owned56.team.id, { userId: 'usr_does_not_exist', userName: 'Ghost', roleInTeam: 'Dev' }, owner56));
+    assert([badOwner56, inactiveOwner56, noProject56, badMember56].every((e) => e?.status === 400), 'G. An owner, lead or member must be an existing, active user, and a milestone needs a project (400 otherwise)');
+    assert(sent56.filter((u) => u === owner56.id).length >= 3 && !sent56.includes('usr_admin_1'), `H. Critical risk, critical issue and blocking dependency without an owner notify the caller; nothing is sent to the demo user (${JSON.stringify(sent56)})`);
+    assert((await notifiable56('usr_does_not_exist')) === undefined && (await notifiable56(inactive56.id)) === undefined && (await notifiable56(owner56.id)) === owner56.id, 'H. A notification goes only to an existing, active user; otherwise it is skipped');
+
+    // --- L. Sprint completion: once, atomically -------------------------------
+    const sprintS56 = (await call46(SprintCtl56.createSprint, owner56, { name: `S24 sprint ${stamp56}`, projectId: proj56.id, startDate: '2026-10-01', endDate: '2026-10-14' })).body.data;
+    const done1 = await call46(SprintCtl56.completeSprint, owner56, { carryoverAction: 'backlog' }, { id: sprintS56.id });
+    const done2 = await call46(SprintCtl56.completeSprint, owner56, { carryoverAction: 'backlog' }, { id: sprintS56.id });
+    const velocity56 = (await VelRepo56.findByProject(proj56.id)).filter((v: any) => v.sprintId === sprintS56.id);
+    assert(/^SPR-\d+$/.test(sprintS56.code) && done1.statusCode === 200 && done2.statusCode === 409 && done2.body.error?.code === 'CONFLICT' && velocity56.length === 1,
+      'L. A sprint is completed once: a second completion is refused with 409 and exactly one velocity record exists');
+    const longName56 = await call46(SprintCtl56.createSprint, owner56, { name: 'x'.repeat(SPRINT_NAME_MAX56 + 1), projectId: proj56.id, startDate: '2026-10-01', endDate: '2026-10-14' });
+    assert(SPRINT_NAME_MAX56 === 255 && longName56.statusCode === 400, 'N. A sprint name longer than the 255-character columns it is stored in is refused (400)');
+  } finally {
+    (NotifySvc56 as any).sendNotification = realSend56;
+    for (const fn of cleanup56.reverse()) { try { await fn(); } catch { /* already removed */ } }
+  }
+  // PostgreSQL: completion is one transaction; a failure rolls everything back.
+  const sprintRow56 = () => ({ id: 'spr_s24_pg', code: 'SPR-500', name: 'S24 PG sprint', project_id: 'PRJ-S24PG', start_date: '2026-10-01', end_date: '2026-10-14', status: 'active', capacity_hours: 80, capacity_points: 20, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+  const pgDone56 = mini56({ tables: { sprints: [sprintRow56()], velocity_records: [] } });
+  const okPg56 = await withPg56(pgDone56, () => call46(SprintCtl56.completeSprint, adminUser40, { carryoverAction: 'backlog' }, { id: 'spr_s24_pg' }));
+  const txSql56 = pgDone56.log.filter((l) => l.client).map((l) => l.sql.split(' ').slice(0, 3).join(' '));
+  assert(okPg56.statusCode === 200 && pgDone56.tables.sprints[0].status === 'completed' && pgDone56.tables.velocity_records.length === 1 && txSql56[0] === 'BEGIN' && txSql56.includes('INSERT INTO velocity_records') && txSql56.includes('UPDATE sprints SET') && txSql56[txSql56.length - 1] === 'COMMIT',
+    `L. PostgreSQL completion is one transaction: BEGIN, velocity, carry-over, sprint status, COMMIT (${txSql56.join(' > ')})`);
+  const pgFail56 = mini56({ tables: { sprints: [sprintRow56()], velocity_records: [] }, fail: /^UPDATE sprints/ });
+  const badPg56 = await withPg56(pgFail56, () => call46(SprintCtl56.completeSprint, adminUser40, { carryoverAction: 'backlog' }, { id: 'spr_s24_pg' }));
+  assert(badPg56.statusCode === 503 && pgFail56.log.some((l) => l.client && l.sql === 'ROLLBACK') && !pgFail56.log.some((l) => l.sql === 'COMMIT'), 'L. If any completion step fails, the transaction rolls back (no COMMIT) and the response is 503');
+  const pgRace56 = mini56({ tables: { sprints: [sprintRow56()], velocity_records: [{ id: 'vel_other', sprint_id: 'spr_s24_pg' }] } });
+  const racePg56 = await withPg56(pgRace56, () => call46(SprintCtl56.completeSprint, adminUser40, { carryoverAction: 'backlog' }, { id: 'spr_s24_pg' }));
+  assert(racePg56.statusCode === 409 && pgRace56.tables.velocity_records.length === 1 && /INSERT INTO velocity_records_duplicates/.test(schema56) &&/CREATE UNIQUE INDEX IF NOT EXISTS uq_velocity_records_sprint ON velocity_records\(sprint_id\)/.test(schema56),
+    'L. A concurrent second completion loses on the one-velocity-per-sprint index (409); the index is created after older duplicates are archived');
+
+  // --- I. DATE and NUMERIC at the database boundary ----------------------------
+  const parseDate56 = pgTypes56.getTypeParser(Db56.PG_DATE_OID, 'text');
+  const parseNum56 = pgTypes56.getTypeParser(Db56.PG_NUMERIC_OID, 'text');
+  const localMidnight56 = new Date(2026, 9, 8).toISOString().slice(0, 10);
+  assert(parseDate56('2026-10-08') === '2026-10-08' && JSON.stringify({ d: parseDate56('2026-10-08') }) === '{"d":"2026-10-08"}' && parseDate56('2026-10-08') < '2026-10-09',
+    `I. A PostgreSQL DATE reaches the application as YYYY-MM-DD text: 2026-10-08 stays 2026-10-08 on any host (the old local-midnight Date serialised here as ${localMidnight56})`);
+  assert(parseNum56('10.50') === 10.5 && parseNum56('10') + parseNum56('20') === 30 && Number.isFinite(parseNum56('0.00')), 'I. NUMERIC values are numbers: 10 + 20 is 30, never "1020" or NaN');
+  const pgDates56 = mini56({ tables: { milestones: [{ id: 'mls_s24_due', code: 'MLS-900', name: 'S24 overdue', project_id: 'PRJ-S24', status: 'Planned', target_date: parseDate56('2020-01-01'), progress: parseNum56('10.00'), health: 'On Track', type: 'Delivery' }], governance_links: [] } });
+  const overdue56 = await withPg56(pgDates56, async () => { const m = await MlsRepo56.findById('mls_s24_due'); return m && { ...(await MlsRepo56.computeDerivedProgressAndHealth(m)), rawProgress: m.progress }; });
+  assert(overdue56?.status === 'Missed' && typeof overdue56?.rawProgress === 'number', `I. A milestone read from PostgreSQL with a past date is Missed (date comparisons work on the normalised value): ${overdue56?.status}`);
+
+  // --- J. Readiness and liveness -------------------------------------------------
+  const resLike56 = () => { const r: any = { code: 200, body: null }; r.status = (c: number) => { r.code = c; return r; }; r.json = (b: any) => { r.body = b; return r; }; return r; };
+  const healthDown56 = await withPg56(mini56({ fail: /^SELECT 1$/ }), async () => { const r = resLike56(); await HealthCtl56.status({} as any, r); return r; });
+  const healthUp56 = await withPg56(mini56(), async () => { const r = resLike56(); await HealthCtl56.status({} as any, r); return r; });
+  const live56 = resLike56();
+  await HealthCtl56.live({} as any, live56);
+  assert(healthDown56.code === 503 && healthDown56.body?.data?.status === 'degraded' && healthDown56.body?.data?.services?.database?.ready === false && !/postgres(ql)?:\/\//i.test(JSON.stringify(healthDown56.body)),
+    'J. Readiness: with PostgreSQL configured and not answering SELECT 1, /health is 503 degraded (no connection details)');
+  assert(healthUp56.code === 200 && healthUp56.body?.data?.services?.database?.ready === true && live56.code === 200 && live56.body?.data?.status === 'alive' && /healthRoutes\.get\('\/health\/live', HealthController\.live\)/.test(fs35.readFileSync('server/routes/healthRoutes.ts', 'utf8')),
+    'J. A database that answers is ready (200); /health/live is liveness only and never needs the database');
+
+  // --- K. Pool safety and TLS -------------------------------------------------------
+  const dbSrc56 = fs35.readFileSync('server/config/database.ts', 'utf8');
+  const PoolCtor56 = pg56.Pool || pg56.default?.Pool;
+  const probePool56 = new PoolCtor56({ connectionString: 'postgresql://s24:s24@127.0.0.1:1/s24' });
+  const loud56 = (() => { try { probePool56.emit('error', new Error('idle client lost')); return null; } catch (e) { return e; } })();
+  probePool56.on('error', Db56.onPoolError);
+  const realError56 = console.error;
+  let logged56 = '';
+  console.error = (...a: any[]) => { logged56 += a.join(' '); };
+  const quiet56 = (() => { try { probePool56.emit('error', new Error('idle client lost')); return null; } catch (e) { return e; } })();
+  console.error = realError56;
+  await probePool56.end().catch(() => {});
+  assert(!!loud56 && quiet56 === null && /idle client lost/.test(logged56) && /candidate\.on\('error', onPoolError\)/.test(dbSrc56) && /statement_timeout: STATEMENT_TIMEOUT_MS/.test(dbSrc56) && Db56.STATEMENT_TIMEOUT_MS === 60000,
+    'K. An idle-client error would crash an unguarded pool; the portal\'s pool logs it and keeps running, and statements time out after 60 s');
+  const caFile56 = path56.join(os56.tmpdir(), `s24-ca-${stamp56}.pem`);
+  fs35.writeFileSync(caFile56, 'S24-TEST-CA');
+  const caOk56: any = Db56.databaseSslOptions({ PM_PORTAL_DB_SSL_CA_FILE: caFile56 }, true);
+  fs35.unlinkSync(caFile56);
+  const caMissing56: any = (() => { try { Db56.databaseSslOptions({ PM_PORTAL_DB_SSL_CA_FILE: caFile56 }, true); return null; } catch (e) { return e; } })();
+  assert(JSON.stringify(Db56.databaseSslOptions({}, true)) === '{"rejectUnauthorized":true}' && (Db56.databaseSslOptions({ PM_PORTAL_DB_SSL_ALLOW_UNVERIFIED: 'true' }, true) as any).rejectUnauthorized === false && Db56.databaseSslOptions({}, false) === false && !/rejectUnauthorized: false/.test(dbSrc56),
+    'K. Production PostgreSQL TLS verifies the server certificate by default; skipping it needs the explicit PM_PORTAL_DB_SSL_ALLOW_UNVERIFIED=true; development keeps TLS off unless configured');
+  assert(caOk56.ca === 'S24-TEST-CA' && caOk56.rejectUnauthorized === true && caMissing56 instanceof Db56.DatabaseStartupError && !/S24-TEST-CA/.test(caMissing56.message), 'K. PM_PORTAL_DB_SSL_CA_FILE supplies the CA; an unreadable file stops startup without printing certificate contents');
+
+  // --- M. Team membership persists in team_members ------------------------------------
+  const pgTeam56 = mini56({ tables: { teams: [], team_members: [], users: [{ id: 'usr_s24_a', first_name: 'S24', last_name: 'Lead', email: 'a@s24.test' }, { id: 'usr_s24_b', first_name: 'S24', last_name: 'Dev', email: 'b@s24.test' }] } });
+  const team56 = await withPg56(pgTeam56, async () => {
+    const created = await TeamRepo56.create({ name: 'S24 PG team', leadId: 'usr_s24_a', members: [{ userId: 'usr_s24_a', userName: 'S24 Lead', roleInTeam: 'Lead', allocatedHrs: 30 }] } as any);
+    const added = await TeamRepo56.addMember(created.id, { userId: 'usr_s24_b', userName: 'S24 Dev', roleInTeam: 'Dev', allocatedHrs: 20 });
+    const readded = await TeamRepo56.addMember(created.id, { userId: 'usr_s24_b', userName: 'S24 Dev', roleInTeam: 'QA', allocatedHrs: 10 });
+    return { created, added, readded, rows: pgTeam56.tables.team_members.length };
+  });
+  // "Restart": a new pool over the same tables; nothing is held in memory in PostgreSQL mode.
+  const teamAfter56 = await withPg56(mini56({ tables: pgTeam56.tables }), async () => {
+    const reread = await TeamRepo56.findById(team56.created.id);
+    const listed = (await TeamRepo56.findAll()).find((t: any) => t.id === team56.created.id);
+    const removed = await TeamRepo56.removeMember(team56.created.id, 'usr_s24_a');
+    return { reread, listed, removed };
+  });
+  assert(team56.created.memberCount === 1 && team56.added?.memberCount === 2 && team56.readded?.memberCount === 2 && team56.rows === 2,
+    'M. Team members are stored in team_members; adding the same person again updates their row (no duplicate)');
+  assert(teamAfter56.reread?.memberCount === 2 && teamAfter56.reread?.members?.find((m: any) => m.userId === 'usr_s24_b')?.roleInTeam === 'QA' && teamAfter56.reread?.allocatedHrs === 40 && teamAfter56.listed?.memberCount === 2 && teamAfter56.removed?.memberCount === 1 && pgTeam56.tables.team_members.length === 1,
+    'M. After a restart membership reads back from team_members (count and hours from the rows); removing a member deletes its row');
+  assert(!/member_count/.test(fs35.readFileSync('server/repositories/teamRepository.ts', 'utf8')) && /CREATE UNIQUE INDEX IF NOT EXISTS uq_team_members_team_user ON team_members\(team_id, user_id\)/.test(schema56), 'M. memberCount no longer reads a column that does not exist; one row per person per team is enforced');
+
+  // --- N. Validation never accepts more than the column holds ---------------------------
+  const columnLength56 = (table: string, column: string) => {
+    const clean = schema56.replace(/\r/g, '');
+    let len = Number(new RegExp(`CREATE TABLE IF NOT EXISTS ${table} \\(([\\s\\S]*?)\\n\\);`).exec(clean)?.[1].match(new RegExp(`\\n\\s*${column} VARCHAR\\((\\d+)\\)`))?.[1]);
+    for (const m of clean.matchAll(new RegExp(`ALTER TABLE ${table} ALTER COLUMN ${column} TYPE VARCHAR\\((\\d+)\\)`, 'g'))) len = Number(m[1]);
+    return len;
+  };
+  const projectLimits56: Array<[string, string, number]> = [['client', 'client', 255], ['poc', 'poc', 255], ['developer', 'developer', 255], ['qa', 'qa', 255], ['ba', 'ba', 255], ['sprint', 'sprint', 255], ['sowStatus', 'sow_status', 255], ['month', 'month', 50], ['quarter', 'quarter', 20], ['year', 'year', 20]];
+  const projectChecks56: string[] = [];
+  for (const [field, column, max] of projectLimits56) {
+    const accepted = await rejects56(() => ProjGuards56.prepareCreate({ name: 'S24 length', [field]: 'x'.repeat(max) }, { id: adminUser40.id, role: 'admin' } as any));
+    const refused = await rejects56(() => ProjGuards56.prepareCreate({ name: 'S24 length', [field]: 'x'.repeat(max + 1) }, { id: adminUser40.id, role: 'admin' } as any));
+    if (accepted || refused?.status !== 400 || columnLength56('projects', column) < max) projectChecks56.push(`${field}: validator ${max}, column ${columnLength56('projects', column)}`);
+  }
+  assert(projectChecks56.length === 0, `N. Every project text field is validated to at most its column length (${projectChecks56.join('; ') || 'all aligned'})`);
+  assert(['stories.sprint', 'tasks.sprint', 'stories.target_release', 'features.target_release'].every((tc) => { const [t, c] = tc.split('.'); return columnLength56(t, c) >= 255; }) && columnLength56('sprints', 'name') >= SPRINT_NAME_MAX56,
+    'N. The delivery sprint and target-release columns and sprint names hold 255 characters (the 100-character delivery limit is exercised in R8)');
+
+  // --- O. test:pg exists, is gated, and its script stays correct -----------------------------
+  const pkg56 = JSON.parse(fs35.readFileSync('package.json', 'utf8'));
+  const runLive56 = (env: Record<string, string>) => spawn56(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'tests/postgres-live.test.ts'], { env: { ...process.env, DATABASE_URL: '', PM_PORTAL_DATA_MODE: '', ...env }, encoding: 'utf8', timeout: 400000 });
+  const skip56 = runLive56({});
+  assert(pkg56.scripts?.['test:pg'] === 'tsx tests/postgres-live.test.ts' && skip56.status === 0 && /SKIPPED/.test(skip56.stdout) && !/PASS|FAIL/.test(skip56.stdout), 'O. npm run test:pg exists and, without DATABASE_URL, skips cleanly and says so');
+  const dry56 = runLive56({ PM_PORTAL_PG_TEST_DRY_RUN: 'embedded' });
+  const dryPasses56 = (String(dry56.stdout).match(/✅ PASS/g) || []).length;
+  assert(dry56.status === 0 && /PASSED/.test(dry56.stdout) && !/❌/.test(dry56.stdout) && dryPasses56 >= 20,
+    `O. The live script's create → restart → verify → restart → reverify flow passes against a temporary embedded store (${dryPasses56} checks; the PostgreSQL run itself needs DATABASE_URL)`);
+
+  // 56R. Sprint 24 correction pass: the caller is required (no placeholder
+  // user), identity fields are validated, request-value database errors are
+  // 400, embedded sprint completion rolls back, URL TLS settings cannot
+  // silently undo the TLS defaults, and duplicate velocity rows are archived.
+  console.log('\n--- 56R. Sprint 24 correction pass ---');
+  const { DeliveryGuards: DelGuards56 } = await import('../server/services/deliveryGuards');
+  const { RoadmapService: RoadmapSvc56 } = await import('../server/services/roadmapService');
+  const { RiskController: RiskCtl56 } = await import('../server/controllers/riskController');
+  const { StoryRepository: StoryRepo56 } = await import('../server/repositories/storyRepository');
+  const { respondToDatabaseFailure: respondDb56 } = await import('../server/middleware/errorHandler');
+  const ownerActor56 = { id: owner56.id, name: 'S24 Owner' };
+  const ownerName56 = `${owner56.firstName} ${owner56.lastName}`;
+  const cleanupR56: Array<() => Promise<unknown>> = [];
+  try {
+    const projR56 = (await call46(ProjCtl56.create, owner56, { name: `S24R project ${stamp56}`, client: 'S24 client' })).body.data.project;
+    cleanupR56.push(() => ProjRepo24.delete(projR56.id));
+
+    // --- R1. Writes require the authenticated caller ---------------------------
+    const noActor56 = [
+      await rejects56(() => RiskSvc56.createRisk({ projectId: projR56.id, title: 'S24R no actor', probability: 1, impact: 1 } as any)),
+      await rejects56(() => IssueSvc56.createIssue({ projectId: projR56.id, title: 'S24R no actor', severity: 'High', priority: 'High' } as any)),
+      await rejects56(() => MlsSvc56.createMilestone({ projectId: projR56.id, name: 'S24R no actor', targetDate: '2026-12-01' } as any)),
+      await rejects56(() => RelSvc56.createRelease({ projectId: projR56.id, name: 'S24R no actor', version: '9.9.9' } as any)),
+      await rejects56(() => DepSvc56.createDependency({ sourceEntityType: 'epic', sourceEntityId: 'ep_s24r_a', targetEntityType: 'epic', targetEntityId: 'ep_s24r_b' } as any)),
+      await rejects56(() => RoadmapSvc56.createItem({ name: 'S24R no actor' } as any)),
+    ];
+    const ctlNoUser56 = await run41(RiskCtl56.createRisk, reqAs40(null, { body: { projectId: projR56.id, title: 'S24R controller without user', probability: 1, impact: 1 } }));
+    const sprintNoUser56 = await run41(SprintCtl56.createSprint, reqAs40(null, { body: { name: 'S24R no user', projectId: projR56.id, startDate: '2026-10-01', endDate: '2026-10-14' } }));
+    // What the refused calls would have created, wherever it landed (project ids can be re-issued in memory mode).
+    const leftovers56 = [
+      ...(await RiskRepo56.findAll({} as any)), ...(await IssueRepo56.findAll({} as any)), ...(await MlsRepo56.findAll({})),
+      ...(await RelRepo56.findAll({} as any)), ...(await SprintRepo56.findAll({} as any)), ...(await RoadmapRepo56.findAll({} as any)),
+    ].filter((r: any) => /^S24R (no actor|controller without user|no user)$/.test(r.title || r.name || ''));
+    assert(noActor56.every((e) => e?.status === 401 && e?.code === 'UNAUTHORIZED') && ctlNoUser56.statusCode === 401 && sprintNoUser56.statusCode === 401 && leftovers56.length === 0,
+      `R1. Without an authenticated caller every risk, issue, milestone, release, dependency, roadmap and sprint write is refused with 401 and nothing is created (${noActor56.map((e) => e?.status).join(',')}; controllers ${ctlNoUser56.statusCode}/${sprintNoUser56.statusCode}; created: ${leftovers56.map((r: any) => r.title || r.name).join(' | ') || 'none'})`);
+    const ownRisk56 = await RiskSvc56.createRisk({ projectId: projR56.id, title: 'S24R caller risk', probability: 2, impact: 2 } as any, ownerActor56);
+    cleanupR56.push(() => RiskRepo56.delete(ownRisk56.id));
+    const updRisk56 = await RiskSvc56.updateRisk(ownRisk56.id, { title: 'S24R caller risk (edited)' } as any, ownerActor56);
+    assert(ownRisk56.createdBy === owner56.id && ownRisk56.updatedBy === owner56.id && updRisk56?.updatedBy === owner56.id, 'R1. createdBy and updatedBy are the authenticated caller');
+    const bareProject56 = await ProjRepo24.create({ name: `S24R bare project ${stamp56}`, client: 'S24 client' } as any);
+    cleanupR56.push(() => ProjRepo24.delete(bareProject56.id));
+    assert(projR56.managerId === owner56.id && projR56.managerName === ownerName56 && bareProject56.managerId === undefined && bareProject56.managerName === '',
+      `R1. A new project is managed by its creator and shows the creator's name; the repository itself never fills in the demo manager (${projR56.managerName})`);
+    const ownedR56 = [
+      await GoalSvc56.createGoal({ objective: `S24R goal ${stamp56}` } as any, owner56),
+      await ProdSvc56.createProduct({ name: 'S24R product', code: `S24R-PROD-${stamp56}` } as any, owner56),
+      await PortSvc56.createPortfolio({ name: 'S24R portfolio', code: `S24R-PORT-${stamp56}` } as any, owner56),
+    ];
+    assert(ownedR56.every((r: any) => r.ownerId === owner56.id && r.ownerName === ownerName56), `R1. Goals, products and portfolios show their owner's own name, never the demo name (${ownedR56.map((r: any) => r.ownerName).join(' | ')})`);
+    const fallbackSources56 = ['services', 'controllers', 'repositories'].flatMap((d) => fs35.readdirSync(`server/${d}`).filter((f: string) => f.endsWith('.ts')).map((f: string) => fs35.readFileSync(`server/${d}/${f}`, 'utf8'))).join('\n');
+    assert(!/\|\|\s*'usr_admin_1'|\{ id: 'usr_admin_1'|\|\|\s*'(Admin User|Surya Prashanth)'/.test(fallbackSources56), 'R1. No service, controller or repository falls back to the demo user (usr_admin_1) for an owner, actor, creator or manager');
+
+    // --- R2. Team members and leads are existing, active users -------------------
+    const teamGhost56 = await rejects56(() => TeamSvc56.createTeam({ name: `S24R ghost team ${stamp56}`, members: [{ userId: 'usr_does_not_exist', userName: 'Ghost', roleInTeam: 'Dev' }] } as any, owner56));
+    const teamInactive56 = await rejects56(() => TeamSvc56.createTeam({ name: `S24R inactive team ${stamp56}`, members: [{ userId: inactive56.id, roleInTeam: 'Dev' }] } as any, owner56));
+    const teamOk56 = await TeamSvc56.createTeam({ name: `S24R team ${stamp56}`, members: [{ userId: owner56.id, roleInTeam: 'Lead', allocatedHrs: 10 }] } as any, owner56);
+    cleanupR56.push(() => TeamRepo56.delete(teamOk56.id));
+    const leadGhost56 = await rejects56(() => TeamSvc56.updateTeam(teamOk56.id, { leadId: 'usr_does_not_exist' } as any, owner56));
+    const membersInactive56 = await rejects56(() => TeamSvc56.updateTeam(teamOk56.id, { members: [{ userId: inactive56.id }] } as any, owner56));
+    const teamAfterR56 = await TeamRepo56.findById(teamOk56.id);
+    const strayTeams56 = (await TeamRepo56.findAll()).filter((t: any) => /S24R (ghost|inactive) team/.test(t.name));
+    assert([teamGhost56, teamInactive56, leadGhost56, membersInactive56].every((e) => e?.status === 400) && strayTeams56.length === 0 && teamOk56.members?.[0]?.userName === ownerName56 && teamAfterR56?.leadId === owner56.id && teamAfterR56?.members?.length === 1,
+      'R2. Team create and update refuse a member or lead that does not exist or is deactivated (400; in PostgreSQL this was a foreign-key 503); nothing is changed');
+
+    // --- R3. The issue reporter is an existing, active user (default: the caller) ---
+    const repIssue56 = await IssueSvc56.createIssue({ projectId: projR56.id, title: 'S24R reporter default', severity: 'High', priority: 'High' } as any, ownerActor56);
+    cleanupR56.push(() => IssueRepo56.delete(repIssue56.id));
+    const repGhost56 = await rejects56(() => IssueSvc56.createIssue({ projectId: projR56.id, title: 'S24R ghost reporter', severity: 'High', priority: 'High', reportedBy: 'usr_does_not_exist' } as any, ownerActor56));
+    const repInactive56 = await rejects56(() => IssueSvc56.createIssue({ projectId: projR56.id, title: 'S24R inactive reporter', severity: 'High', priority: 'High', reportedBy: inactive56.id } as any, ownerActor56));
+    const repUpdGhost56 = await rejects56(() => IssueSvc56.updateIssue(repIssue56.id, { reportedBy: 'usr_does_not_exist' } as any, ownerActor56));
+    await IssueRepo56.update(repIssue56.id, { reportedBy: inactive56.id } as any); // the reporter was deactivated later
+    const repKept56 = await IssueSvc56.updateIssue(repIssue56.id, { title: 'S24R reporter kept', reportedBy: inactive56.id } as any, ownerActor56);
+    assert(repIssue56.reportedBy === owner56.id && repIssue56.createdBy === owner56.id && [repGhost56, repInactive56, repUpdGhost56].every((e) => e?.status === 400) && repKept56?.reportedBy === inactive56.id && repKept56?.title === 'S24R reporter kept',
+      'R3. An issue reporter defaults to the caller; a reporter that does not exist or is deactivated is refused (400); an unchanged reporter never blocks an edit');
+
+    // --- R5. Embedded sprint completion is all-or-nothing ---------------------------
+    const sprintR56 = (await call46(SprintCtl56.createSprint, owner56, { name: `S24R sprint ${stamp56}`, projectId: projR56.id, startDate: '2026-10-01', endDate: '2026-10-14' })).body.data;
+    cleanupR56.push(() => SprintRepo56.delete(sprintR56.id));
+    const storyR56 = (await call46(DelCtl56.createStory, owner56, { title: 'S24R carried story', projectId: projR56.id, storyPoints: 3 })).body.data.story;
+    cleanupR56.push(() => StoryRepo56.delete(storyR56.id));
+    const addedR56 = await call46(SprintCtl56.addSprintItem, owner56, { itemId: storyR56.id, itemType: 'story' }, { id: sprintR56.id });
+    const storyBefore56 = JSON.stringify(await StoryRepo56.findById(storyR56.id));
+    const realSprintUpdate56 = SprintRepo56.update;
+    (SprintRepo56 as any).update = async (...args: any[]) => {
+      if (args[1]?.status === 'completed') throw new Error('S24R injected failure');
+      return (realSprintUpdate56 as any).apply(SprintRepo56, args);
+    };
+    let failedDone56: any;
+    try {
+      failedDone56 = await call46(SprintCtl56.completeSprint, owner56, { carryoverAction: 'backlog' }, { id: sprintR56.id });
+    } finally {
+      (SprintRepo56 as any).update = realSprintUpdate56;
+    }
+    const velAfterFail56 = (await VelRepo56.findByProject(projR56.id)).filter((v: any) => v.sprintId === sprintR56.id);
+    assert(addedR56.statusCode === 200 && JSON.parse(storyBefore56)?.sprintId === sprintR56.id && failedDone56.statusCode >= 400 && velAfterFail56.length === 0
+      && JSON.stringify(await StoryRepo56.findById(storyR56.id)) === storyBefore56 && (await SprintRepo56.findById(sprintR56.id))?.status !== 'completed',
+      'R5. Embedded store: when the last completion step fails, the velocity record and the carry-over are undone and the sprint stays open');
+    const doneR56 = await call46(SprintCtl56.completeSprint, owner56, { carryoverAction: 'backlog' }, { id: sprintR56.id });
+    assert(doneR56.statusCode === 200 && (await VelRepo56.findByProject(projR56.id)).filter((v: any) => v.sprintId === sprintR56.id).length === 1 && !(await StoryRepo56.findById(storyR56.id))?.sprintId,
+      'R5. Retried, the completion succeeds once: one velocity record, the story carried to the backlog');
+
+    // --- R8. Delivery text is validated to its limit (behaviour, not source text) ---
+    const lenOk56 = await rejects56(() => DelGuards56.prepareUpdate('story', storyR56, { sprint: 'x'.repeat(100), targetRelease: 'y'.repeat(100) }, owner56));
+    const lenBad56 = await rejects56(() => DelGuards56.prepareUpdate('story', storyR56, { sprint: 'x'.repeat(101) }, owner56));
+    const lenBadRel56 = await rejects56(() => DelGuards56.prepareUpdate('story', storyR56, { targetRelease: 'y'.repeat(101) }, owner56));
+    assert(lenOk56 === null && lenBad56?.status === 400 && lenBadRel56?.status === 400 && columnLength56('stories', 'sprint') >= 100 && columnLength56('stories', 'target_release') >= 100,
+      'R8. Story sprint and target-release text is accepted up to 100 characters and refused at 101 (columns hold 255)');
+  } finally {
+    for (const fn of cleanupR56.reverse()) { try { await fn(); } catch { /* already removed */ } }
+  }
+
+  // --- R4. Database errors caused by the request's values are 400, not 503 ----------
+  const map56 = (code: string) => dbFailure56(dbError56('stand-in', code));
+  assert(['23503', '23502', '23514', '22001', '22P02', '22007', '22003'].every((c) => map56(c)?.status === 400 && map56(c)?.code === 'VALIDATION_ERROR') && map56('23505')?.status === 409
+    && ['08006', '57014', '40P01', '53300', 'XX000'].every((c) => map56(c)?.status === 503 && map56(c)?.code === 'PERSISTENCE_FAILED'),
+    'R4. A foreign-key, NOT NULL, CHECK or data error (classes 22/23) is 400; a unique violation 409; connection, timeout, deadlock and internal errors 503');
+  assert(dbFailure56(Object.assign(new Error('Owner not found'), { status: 400, code: 'VALIDATION_ERROR' })) === null && dbFailure56(Object.assign(new Error('Not found'), { status: 404, code: 'NOT_FOUND' })) === null && dbFailure56(Object.assign(new Error('x'), { code: 'CONFLICT' })) === null,
+    'R4. Application validation, not-found and conflict errors are never treated as database failures');
+  const fk56 = mini56({ tables: { risks: [], governance_links: [] }, beforeInsert: () => { throw dbError56('insert or update on table "risks" violates foreign key constraint "risks_project_id_fkey"', '23503', { constraint: 'risks_project_id_fkey' }); } });
+  const fkErr56 = await withPg56(fk56, () => rejects56(() => RiskRepo56.create({ title: 'S24R fk', projectId: 'PRJ-S24-NOPE' } as any)));
+  const fkRes56 = resLike56();
+  const realConsoleError56 = console.error;
+  console.error = () => {};
+  try { respondDb56(fkRes56, fkErr56); } finally { console.error = realConsoleError56; }
+  assert(fkRes56.code === 400 && fkRes56.body?.error?.code === 'VALIDATION_ERROR' && !/risks_project_id_fkey|PRJ-S24-NOPE|foreign key constraint/.test(JSON.stringify(fkRes56.body)) && fk56.log.filter((l) => /^INSERT INTO risks/.test(l.sql)).length === 1,
+    'R4. PostgreSQL: a write that references a missing record answers 400 with a generic message (no constraint or value), and is not retried');
+
+  // --- R6. TLS parameters in DATABASE_URL cannot silently undo the TLS defaults -------
+  const tls56 = (url: string, env: Record<string, string> = {}, prod = true): { ok?: any; err?: any } => { try { return { ok: Db56.databaseSslOptions(env, prod, url) }; } catch (e: any) { return { err: e }; } };
+  const secretUrl56 = 'postgresql://s24user:S24-secret-pw@db.s24.test:5432/pm';
+  const refusedTls56 = ['?sslmode=no-verify', '?sslmode=disable', '?ssl=false', '?ssl=0', '?uselibpqcompat=true&sslmode=require'].map((q) => tls56(secretUrl56 + q));
+  const allowedTls56 = ['', '?sslmode=verify-full', '?sslmode=require', '?uselibpqcompat=true&sslmode=verify-full'].map((q) => tls56(secretUrl56 + q));
+  assert(refusedTls56.every((r) => r.err instanceof Db56.DatabaseStartupError && !/S24-secret-pw|s24user|db\.s24\.test/.test(r.err.message)) && allowedTls56.every((r) => r.ok?.rejectUnauthorized === true),
+    'R6. Production: DATABASE_URL settings that turn TLS or verification off (sslmode=disable/no-verify, ssl=false, libpq-compatible require) stop startup without printing the URL; verifying settings are accepted');
+  const caR56 = path56.join(os56.tmpdir(), `s24r-ca-${stamp56}.pem`);
+  fs35.writeFileSync(caR56, 'S24R-TEST-CA');
+  const caWithUrl56 = tls56(secretUrl56 + '?sslmode=require', { PM_PORTAL_DB_SSL_CA_FILE: caR56 }, false);
+  const caAlone56 = tls56(secretUrl56, { PM_PORTAL_DB_SSL_CA_FILE: caR56 }, true);
+  fs35.unlinkSync(caR56);
+  assert(tls56(secretUrl56 + '?sslmode=no-verify', { PM_PORTAL_DB_SSL_ALLOW_UNVERIFIED: 'true' }).ok?.rejectUnauthorized === false && tls56(secretUrl56 + '?sslmode=disable', {}, false).ok === false
+    && caWithUrl56.err instanceof Db56.DatabaseStartupError && !/S24R-TEST-CA|S24-secret-pw/.test(caWithUrl56.err.message) && caAlone56.ok?.ca === 'S24R-TEST-CA',
+    'R6. The explicit opt-out still allows it; development is unchanged; a CA file next to URL TLS parameters (which would replace the CA) stops startup');
+
+  // --- R9. Duplicate velocity rows are archived, never deleted ---------------------------
+  const schemaLf56 = schema56.replace(/\r/g, '');
+  assert(/CREATE TABLE IF NOT EXISTS velocity_records_duplicates \([\s\S]*?archived_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP\n\);/.test(schemaLf56)
+    && /WITH moved AS \(\n  DELETE FROM velocity_records v USING velocity_records newer[\s\S]*?RETURNING [^)]*\)\nINSERT INTO velocity_records_duplicates \([^)]*\)\nSELECT \* FROM moved;\nCREATE UNIQUE INDEX IF NOT EXISTS uq_velocity_records_sprint/.test(schemaLf56)
+    && (schemaLf56.match(/DELETE FROM velocity_records/g) || []).length === 1 && /COALESCE\(v\.created_at, '-infinity'::timestamptz\)/.test(schemaLf56),
+    'R9. Before the one-record-per-sprint index, older duplicate velocity rows are moved to velocity_records_duplicates in the same statement (schema text; test:pg runs it on PostgreSQL)');
+
+  // 56F. Sprint 24 final checks: schema application is all-or-nothing, and a
+  // generated project id is never issued twice (not even after a delete).
+  console.log('\n--- 56F. Sprint 24 final checks ---');
+  const PgQuery56: any = pg56.Query || pg56.default?.Query;
+
+  // --- F1. schema.sql is applied as ONE simple-protocol query (PostgreSQL runs a
+  // multi-statement simple query as a single implicit transaction) and contains no
+  // statement that would break that (explicit transaction control, non-transactional commands).
+  const schemaCalls56: Array<{ text: string; extra: number }> = [];
+  await Db56.applySchema({ query: async (...args: any[]) => { schemaCalls56.push({ text: args[0], extra: args.length - 1 }); } } as any);
+  const schemaText56 = fs35.readFileSync(Db56.schemaFilePath(), 'utf8');
+  assert(schemaCalls56.length === 1 && schemaCalls56[0].text === schemaText56 && schemaCalls56[0].extra === 0 && new PgQuery56(schemaCalls56[0].text).requiresPreparation() === false,
+    'F1. The whole schema file is sent as one parameterless query, which node-postgres sends over the simple protocol (one implicit transaction on the server)');
+  const schemaNoComments56 = schemaText56.replace(/--[^\n]*/g, '').replace(/\r/g, '');
+  const breaksAtomicity56 = /(^|;)\s*(BEGIN|START\s+TRANSACTION|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE|PREPARE\s+TRANSACTION|VACUUM|REINDEX|CLUSTER|CREATE\s+DATABASE|DROP\s+DATABASE|ALTER\s+SYSTEM|DO)\b|\bCONCURRENTLY\b/i.exec(schemaNoComments56);
+  assert(!breaksAtomicity56 && /CREATE TABLE IF NOT EXISTS velocity_records_duplicates/.test(schemaNoComments56) && /CREATE SEQUENCE IF NOT EXISTS project_code_seq START WITH 101/.test(schemaNoComments56),
+    `F1. schema.sql has no transaction control or non-transactional statement, so a failure part-way (e.g. during the velocity archive) applies nothing (${breaksAtomicity56?.[0]?.trim() || 'none found'}; the live failure test is in test:pg)`);
+
+  // --- F2. Project ids: a deleted project's id is never issued again ---------------------
+  const prjNum56 = (id: string) => Number(/^PRJ-(\d+)$/.exec(String(id))?.[1]);
+  const mkPrj56 = async (n: string) => (await call46(ProjCtl56.create, owner56, { name: `S24F ${n} ${stamp56}`, client: 'S24 client' })).body.data.project;
+  const prjA56 = await mkPrj56('A');
+  await ProjRepo24.delete(prjA56.id);
+  const prjB56 = await mkPrj56('B');
+  await ProjRepo24.delete(prjB56.id);
+  const prjC56 = await mkPrj56('C');
+  await ProjRepo24.delete(prjC56.id);
+  assert(/^PRJ-\d+$/.test(prjA56.id) && prjNum56(prjB56.id) > prjNum56(prjA56.id) && prjNum56(prjC56.id) > prjNum56(prjB56.id) && prjB56.code === prjB56.id,
+    `F2. Create, delete, create: each new project gets a new, higher id even when the newest project was deleted (${prjA56.id} → ${prjB56.id} → ${prjC56.id})`);
+  const prjBurst56 = await Promise.all([1, 2, 3, 4].map((n) => ProjGuards56.prepareCreate({ name: `S24F burst ${n}` }, owner56)));
+  const prjChosen56 = await ProjGuards56.prepareCreate({ id: 'PRJ-999999', name: 'S24F chosen id' }, owner56);
+  assert(new Set(prjBurst56.map((p: any) => p.id)).size === 4 && prjChosen56.id !== 'PRJ-999999' && prjNum56(prjChosen56.id) > prjNum56(prjC56.id),
+    'F2. Concurrent creates get distinct ids, and a client-supplied id is ignored (the server issues it)');
+  // PostgreSQL: the sequence is reconciled with every stored PRJ id — including a project whose
+  // code was client-proposed — never goes back after a delete, and survives a restart.
+  const prjRow56 = (id: string, code = id) => ({ id, code, name: `S24F ${id}`, client: 'S24 client', status: 'planning', created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+  const pgPrj56 = mini56({ tables: { projects: [prjRow56('PRJ-101'), prjRow56('PRJ-160', 'CLIENT-CODE-1')], users: [] }, seqs: { project_code_seq: { last: 101, called: true } } });
+  const pgPrjSeq56 = await withPg56(pgPrj56, async () => {
+    const first = await ProjGuards56.prepareCreate({ name: 'S24F pg first' }, adminUser40);
+    pgPrj56.tables.projects.push(prjRow56(first.id));
+    pgPrj56.tables.projects = pgPrj56.tables.projects.filter((r: any) => r.id !== first.id); // the newest project is deleted
+    const second = await ProjGuards56.prepareCreate({ name: 'S24F pg second' }, adminUser40);
+    const burst = await Promise.all([1, 2, 3].map((n) => ProjGuards56.prepareCreate({ name: `S24F pg burst ${n}` }, adminUser40)));
+    return { first: first.id, second: second.id, burst: burst.map((p: any) => p.id) };
+  });
+  const restartedPrj56 = await withPg56(mini56({ tables: pgPrj56.tables, seqs: pgPrj56.seqs }), () => ProjGuards56.prepareCreate({ name: 'S24F pg after restart' }, adminUser40));
+  assert(pgPrjSeq56.first === 'PRJ-161' && pgPrjSeq56.second === 'PRJ-162' && new Set(pgPrjSeq56.burst).size === 3 && pgPrjSeq56.burst.every((id: string) => prjNum56(id) > 162) && prjNum56(restartedPrj56.id) > Math.max(...pgPrjSeq56.burst.map(prjNum56)),
+    `F2. PostgreSQL: ids come from project_code_seq — above every stored PRJ id (PRJ-160 has a custom code), not re-issued after a delete, distinct under concurrency, still monotonic after a restart (${pgPrjSeq56.first}, ${pgPrjSeq56.second}, ${pgPrjSeq56.burst.join('/')}, ${restartedPrj56.id})`);
 
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

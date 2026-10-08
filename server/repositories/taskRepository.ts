@@ -1,7 +1,8 @@
 import { Task } from '../models/types';
-import { persistentMap, snapshotRestored } from '../config/persistence';
-import { isDbConnected, query } from '../config/database';
+import { persistentMap, skipDemoSeed } from '../config/persistence';
+import { isDbConnected, query, trackMemoryWrite } from '../config/database';
 import { duplicateRecordError } from './recordConflict';
+import { insertWithCode, issueMemoryDeliveryCode } from './deliveryCodes';
 import { SubtaskRepository } from './subtaskRepository';
 import { calculateTaskProgress } from '../services/progressCalculator';
 
@@ -9,7 +10,7 @@ import { calculateTaskProgress } from '../services/progressCalculator';
 const memoryTasks = persistentMap<Task>('tasks');
 
 function seedDefaultTasks() {
-  if (memoryTasks.size > 0 || snapshotRestored()) return;
+  if (memoryTasks.size > 0 || skipDemoSeed()) return;
   const defaults: Task[] = [
     {
       id: 'task_1',
@@ -330,6 +331,10 @@ export const TaskRepository = {
   async create(task: Task): Promise<Task> {
     // Sprint 16: never overwrite an existing record (both modes; findById reads PostgreSQL when connected).
     if (await this.findById(task.id)) throw duplicateRecordError('task', task.id);
+    // Sprint 24: a task without a code gets a collision-safe one (deliveryCodes.ts), like epics, features and stories.
+    if (!isDbConnected() && !task.code) {
+      task = { ...task, code: issueMemoryDeliveryCode('task', Array.from(memoryTasks.values()).map((t) => t.code)) };
+    }
     if (isDbConnected()) {
       const q = `
         INSERT INTO tasks (
@@ -344,9 +349,9 @@ export const TaskRepository = {
           $22, $23
         ) RETURNING *
       `;
-      await query(q, [
+      const code = await insertWithCode('task', task.code || undefined, (c) => query(q, [
         task.id,
-        task.code,
+        c,
         task.title,
         task.description || null,
         task.storyId || null,
@@ -368,7 +373,8 @@ export const TaskRepository = {
         task.updatedAt || new Date().toISOString(),
         task.sprintId || null,
         task.backlogOrder ?? null,
-      ]);
+      ]));
+      task = { ...task, code };
     }
     memoryTasks.set(task.id, task);
     return task;
@@ -425,6 +431,7 @@ export const TaskRepository = {
         id,
       ]);
     }
+    trackMemoryWrite(memoryTasks, id); // Sprint 24: undone if the surrounding transaction fails (embedded mode)
     memoryTasks.set(id, merged);
     return merged;
   },

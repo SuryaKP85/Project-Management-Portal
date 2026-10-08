@@ -1,3 +1,4 @@
+import { respondToDatabaseFailure } from '../middleware/errorHandler';
 import { Request, Response } from 'express';
 import { SprintRepository } from '../repositories/sprintRepository';
 import { StoryRepository } from '../repositories/storyRepository';
@@ -9,18 +10,24 @@ import { ActivityRepository } from '../repositories/activityRepository';
 import { NotificationService } from '../services/notificationService';
 import crypto from 'crypto';
 import { ProjectScope, scopeActor } from '../services/projectScope';
-import { notAvailable } from '../services/followThroughSupport';
+import { notAvailable, requireActor } from '../services/followThroughSupport';
+import { withTransaction } from '../config/database';
 
 function getActor(req: Request) {
-  if (!req.user) return { id: 'usr_admin_1', name: 'Admin User' };
-  return {
-    id: req.user.userId,
-    name: `${req.user.firstName} ${req.user.lastName}`.trim() || req.user.email,
-  };
+  // Sprint 24: the authenticated caller (401 without one) — never a placeholder user.
+  return requireActor(req.user ? { id: req.user.userId, name: `${req.user.firstName} ${req.user.lastName}`.trim() || req.user.email } : undefined);
 }
 
 /** Sprint 22A: access errors keep their status (404 / 403); other errors keep this handler's fallback. */
+/** Sprint 24: sprint names fit sprints.name and the stories/tasks sprint columns (255 characters). */
+export const SPRINT_NAME_MAX = 255;
+function sprintNameError(name: unknown): string | null {
+  if (typeof name !== 'string' || !name.trim()) return 'Sprint name must be text.';
+  return name.length > SPRINT_NAME_MAX ? `Sprint name must be at most ${SPRINT_NAME_MAX} characters.` : null;
+}
+
 function failWith(res: Response, err: any, fallback: number) {
+  if (respondToDatabaseFailure(res, err)) return res; // Sprint 24: database failures are 409/503, never a validation error
   const status = Number(err?.status) >= 400 && Number(err?.status) < 500 ? Number(err.status) : fallback;
   return res.status(status).json({ success: false, message: err?.message, ...(err?.code ? { error: { code: err.code, message: err.message } } : {}) });
 }
@@ -83,11 +90,12 @@ export const SprintController = {
       if (!name || !projectId || !startDate || !endDate) {
         return res.status(400).json({ success: false, message: 'Name, projectId, startDate, and endDate are required' });
       }
+      if (sprintNameError(name)) return res.status(400).json({ success: false, message: sprintNameError(name) });
       await ProjectScope.assertWrite(scopeActor(req), String(projectId), 'Project');
 
       const sprint = await SprintRepository.create({
         name,
-        code: `SPR-${Math.floor(100 + Math.random() * 900)}`,
+        code: '', // Sprint 24: the repository issues a collision-safe SPR code
         projectId,
         goal,
         startDate,
@@ -123,6 +131,7 @@ export const SprintController = {
       if (movedTo !== undefined && movedTo !== current.projectId) {
         return res.status(400).json({ success: false, message: 'A sprint cannot be moved to another project.' });
       }
+      if (updates.name !== undefined && sprintNameError(updates.name)) return res.status(400).json({ success: false, message: sprintNameError(updates.name) });
       const sprint = await SprintRepository.update(req.params.id, updates);
       if (!sprint) {
         return res.status(404).json({ success: false, message: 'Sprint not found' });
@@ -194,9 +203,14 @@ export const SprintController = {
 
   async completeSprint(req: Request, res: Response) {
     try {
+      const actor = getActor(req); // Sprint 24: before any change
       const sprint = await writableSprint(req, req.params.id);
       if (!sprint) {
         return res.status(404).json({ success: false, message: 'Sprint not found' });
+      }
+      // Sprint 24: a sprint is completed once (its velocity is recorded once).
+      if (sprint.status === 'completed') {
+        return res.status(409).json({ success: false, message: 'This sprint is already completed.', error: { code: 'CONFLICT', message: 'This sprint is already completed.' } });
       }
 
       const { carryoverAction = 'carryover', targetSprintId } = req.body;
@@ -225,71 +239,74 @@ export const SprintController = {
       const committedHours = allTasks.reduce((sum, t) => sum + (t.estimatedEffortHrs || 0), 0);
       const completedHours = completedTasks.reduce((sum, t) => sum + (t.actualEffortHrs || t.estimatedEffortHrs || 0), 0);
 
-      // Record velocity
-      await VelocityRepository.record({
-        sprintId: sprint.id,
-        sprintName: sprint.name,
-        projectId: sprint.projectId,
-        startDate: sprint.startDate,
-        endDate: sprint.endDate,
-        completedDate: new Date().toISOString(),
-        committedPoints,
-        completedPoints,
-        committedHours,
-        completedHours,
+      // Sprint 24: velocity, carry-over and the sprint's completion are one unit (a PostgreSQL
+      // transaction): a failure part-way leaves the sprint and its items as they were.
+      const updatedSprint = await withTransaction(async () => {
+        // Record velocity
+        await VelocityRepository.record({
+          sprintId: sprint.id,
+          sprintName: sprint.name,
+          projectId: sprint.projectId,
+          startDate: sprint.startDate,
+          endDate: sprint.endDate,
+          completedDate: new Date().toISOString(),
+          committedPoints,
+          completedPoints,
+          committedHours,
+          completedHours,
+        });
+
+        // Handle carryover for incomplete items
+        if (carryoverAction === 'backlog') {
+          // Return to backlog
+          for (const story of incompleteStories) {
+            await StoryRepository.update(story.id, {
+              sprintId: undefined,
+              sprint: undefined,
+              status: story.status === 'in-progress' ? 'ready' : story.status,
+            });
+          }
+          for (const task of incompleteTasks) {
+            await TaskRepository.update(task.id, {
+              sprintId: undefined,
+              sprint: undefined,
+              status: task.status === 'in-progress' ? 'ready' : task.status,
+            });
+          }
+        } else if (carryoverAction === 'cancelled') {
+          // Cancel incomplete items
+          for (const story of incompleteStories) {
+            await StoryRepository.update(story.id, { status: 'cancelled' });
+          }
+          for (const task of incompleteTasks) {
+            await TaskRepository.update(task.id, { status: 'cancelled' });
+          }
+        } else {
+          // Move to targetSprintId if provided, else clear sprint so they can be planned
+          const destSprintId = targetSprintId || null;
+          let destSprintName = '';
+          if (destSprintId) {
+            const destSprint = await SprintRepository.findById(destSprintId);
+            if (destSprint) destSprintName = destSprint.name;
+          }
+
+          for (const story of incompleteStories) {
+            await StoryRepository.update(story.id, {
+              sprintId: destSprintId || undefined,
+              sprint: destSprintName || undefined,
+            });
+          }
+          for (const task of incompleteTasks) {
+            await TaskRepository.update(task.id, {
+              sprintId: destSprintId || undefined,
+              sprint: destSprintName || undefined,
+            });
+          }
+        }
+
+        // Mark sprint completed
+        return SprintRepository.update(sprint.id, { status: 'completed' });
       });
-
-      // Handle carryover for incomplete items
-      if (carryoverAction === 'backlog') {
-        // Return to backlog
-        for (const story of incompleteStories) {
-          await StoryRepository.update(story.id, {
-            sprintId: undefined,
-            sprint: undefined,
-            status: story.status === 'in-progress' ? 'ready' : story.status,
-          });
-        }
-        for (const task of incompleteTasks) {
-          await TaskRepository.update(task.id, {
-            sprintId: undefined,
-            sprint: undefined,
-            status: task.status === 'in-progress' ? 'ready' : task.status,
-          });
-        }
-      } else if (carryoverAction === 'cancelled') {
-        // Cancel incomplete items
-        for (const story of incompleteStories) {
-          await StoryRepository.update(story.id, { status: 'cancelled' });
-        }
-        for (const task of incompleteTasks) {
-          await TaskRepository.update(task.id, { status: 'cancelled' });
-        }
-      } else {
-        // Move to targetSprintId if provided, else clear sprint so they can be planned
-        const destSprintId = targetSprintId || null;
-        let destSprintName = '';
-        if (destSprintId) {
-          const destSprint = await SprintRepository.findById(destSprintId);
-          if (destSprint) destSprintName = destSprint.name;
-        }
-
-        for (const story of incompleteStories) {
-          await StoryRepository.update(story.id, {
-            sprintId: destSprintId || undefined,
-            sprint: destSprintName || undefined,
-          });
-        }
-        for (const task of incompleteTasks) {
-          await TaskRepository.update(task.id, {
-            sprintId: destSprintId || undefined,
-            sprint: destSprintName || undefined,
-          });
-        }
-      }
-
-      // Mark sprint completed
-      const updatedSprint = await SprintRepository.update(sprint.id, { status: 'completed' });
-      const actor = getActor(req);
 
       // Activity log
       await ActivityRepository.create({
@@ -326,6 +343,8 @@ export const SprintController = {
         message: `Sprint "${sprint.name}" completed successfully.`,
       });
     } catch (err: any) {
+      // Sprint 24: a concurrent completion loses on the one-velocity-per-sprint index; nothing of it was kept.
+      if (err?.code === '23505') return res.status(409).json({ success: false, message: 'This sprint is already completed.', error: { code: 'CONFLICT', message: 'This sprint is already completed.' } });
       return failWith(res, err, 500);
     }
   },

@@ -1,3 +1,4 @@
+import { respondToDatabaseFailure } from '../middleware/errorHandler';
 import { Request, Response } from 'express';
 import { BacklogRepository } from '../repositories/backlogRepository';
 import { ActivityRepository } from '../repositories/activityRepository';
@@ -16,6 +17,7 @@ function getActor(req: Request) {
 
 /** Sprint 22A: access errors keep their status (404 / 403 / 400); other errors stay a 500 as before. */
 function failWith(res: Response, err: any, fallback: number) {
+  if (respondToDatabaseFailure(res, err)) return res; // Sprint 24: database failures are 409/503, never a validation error
   const status = Number(err?.status) >= 400 && Number(err?.status) < 500 ? Number(err.status) : fallback;
   return res.status(status).json({ success: false, message: err?.message, ...(err?.code ? { error: { code: err.code, message: err.message } } : {}) });
 }

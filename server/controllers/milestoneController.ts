@@ -3,9 +3,7 @@ import { MilestoneService } from '../services/milestoneService';
 import { ProjectScope, scopeActor } from '../services/projectScope';
 
 function getActor(req: Request) {
-  if (!req.user) {
-    return { id: 'usr_admin_1', name: 'Surya Prashanth' };
-  }
+  if (!req.user) return undefined; // Sprint 24: no placeholder user — the service answers 401
   return {
     id: req.user.userId,
     name: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || req.user.email,

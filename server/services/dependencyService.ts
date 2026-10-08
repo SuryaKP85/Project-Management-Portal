@@ -9,6 +9,7 @@ import {
 import { DependencyRepository } from '../repositories/dependencyRepository';
 import { ActivityService } from './activityService';
 import { NotificationService } from './notificationService';
+import { notifiableUser, ownerOrCaller, requireActor } from './followThroughSupport';
 import { PortfolioRepository } from '../repositories/portfolioRepository';
 import { ProductRepository } from '../repositories/productRepository';
 import { ProjectRepository } from '../repositories/projectRepository';
@@ -447,6 +448,7 @@ export const DependencyService = {
     data: Partial<Dependency>,
     actor?: { id: string; name: string }
   ): Promise<Dependency> {
+    const who = requireActor(actor); // Sprint 24: the authenticated caller, never a demo user
     // 1. Validate required entity identifiers
     if (!data.sourceEntityType || !data.sourceEntityId) {
       throw new Error('Source entity type and ID are required');
@@ -503,15 +505,9 @@ export const DependencyService = {
     }
     criticality = VALID_CRITICALITIES.find((c) => c.toLowerCase() === criticality.toLowerCase()) || 'Medium';
 
-    // 7. Validate owner
-    let ownerName = data.ownerName;
-    if (data.ownerId) {
-      const user = await UserRepository.findById(data.ownerId);
-      if (!user) {
-        throw new Error(`Invalid owner: User with ID "${data.ownerId}" does not exist`);
-      }
-      ownerName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email;
-    }
+    // 7. Validate owner (Sprint 24: the chosen user or the caller — always an existing, active user)
+    const owner = await ownerOrCaller(data.ownerId, who.id);
+    const ownerName = owner?.name;
 
     const projectId = data.projectId || sourceInfo.projectId || targetInfo.projectId;
 
@@ -526,11 +522,11 @@ export const DependencyService = {
       dependencyType: canonicalDepType,
       status: canonicalStatus,
       criticality,
-      ownerId: data.ownerId,
+      ownerId: owner?.id,
       ownerName,
       projectId,
-      createdBy: actor?.id || 'usr_admin_1',
-      updatedBy: actor?.id || 'usr_admin_1',
+      createdBy: who.id,
+      updatedBy: who.id,
     };
 
     const res = await DependencyRepository.create(payload);
@@ -545,8 +541,8 @@ export const DependencyService = {
       entityType: 'dependency',
       entityId: dep.id,
       action: 'create',
-      actorId: actor?.id || 'usr_admin_1',
-      actorName: actor?.name || 'Admin User',
+      actorId: who.id,
+      actorName: who.name,
       details: {
         code: dep.code,
         source: dep.sourceEntityName,
@@ -557,10 +553,12 @@ export const DependencyService = {
       },
     });
 
-    // Notifications
-    const recipient = dep.ownerId || actor?.id || 'usr_admin_1';
+    // Notifications (Sprint 24: only to an existing, active recipient; otherwise skipped)
+    const recipient = await notifiableUser(dep.ownerId || who.id);
 
-    if (dep.criticality === 'Critical') {
+    if (!recipient) {
+      // nothing to notify
+    } else if (dep.criticality === 'Critical') {
       await NotificationService.sendNotification({
         userId: recipient,
         title: `Critical Dependency Linked: [${dep.code}]`,
@@ -580,7 +578,7 @@ export const DependencyService = {
       });
     }
 
-    if (dep.ownerId && dep.ownerId !== actor?.id) {
+    if (dep.ownerId && dep.ownerId !== who.id) {
       await NotificationService.sendNotification({
         userId: dep.ownerId,
         title: `Dependency Assigned: [${dep.code}]`,
@@ -599,6 +597,7 @@ export const DependencyService = {
     updates: Partial<Dependency>,
     actor?: { id: string; name: string }
   ): Promise<Dependency> {
+    const who = requireActor(actor); // Sprint 24: the authenticated caller, never a demo user
     const current = await DependencyRepository.findById(id);
     if (!current) throw new Error('Dependency not found');
 
@@ -684,7 +683,7 @@ export const DependencyService = {
 
     const res = await DependencyRepository.update(id, {
       ...updates,
-      updatedBy: actor?.id || 'usr_admin_1',
+      updatedBy: who.id,
     });
 
     if (res.error) {
@@ -706,8 +705,8 @@ export const DependencyService = {
       entityType: 'dependency',
       entityId: updated.id,
       action,
-      actorId: actor?.id || 'usr_admin_1',
-      actorName: actor?.name || 'Admin User',
+      actorId: who.id,
+      actorName: who.name,
       details: {
         code: updated.code,
         previousStatus: current.status,
@@ -717,10 +716,10 @@ export const DependencyService = {
       },
     });
 
-    // Dispatch notifications
-    const recipient = updated.ownerId || actor?.id || 'usr_admin_1';
+    // Dispatch notifications (Sprint 24: only to an existing, active recipient)
+    const recipient = await notifiableUser(updated.ownerId || who.id);
 
-    if (updated.criticality === 'Critical' && current.criticality !== 'Critical') {
+    if (recipient && updated.criticality === 'Critical' && current.criticality !== 'Critical') {
       await NotificationService.sendNotification({
         userId: recipient,
         title: `Dependency Escalated to Critical: [${updated.code}]`,
@@ -731,7 +730,7 @@ export const DependencyService = {
       });
     }
 
-    if ((updated.status === 'Blocked' || updated.status === 'At Risk') && (current.status !== 'Blocked' && current.status !== 'At Risk')) {
+    if (recipient && (updated.status === 'Blocked' || updated.status === 'At Risk') && (current.status !== 'Blocked' && current.status !== 'At Risk')) {
       await NotificationService.sendNotification({
         userId: recipient,
         title: `Dependency Blocked Alert: [${updated.code}]`,
@@ -757,6 +756,7 @@ export const DependencyService = {
   },
 
   async deleteDependency(id: string, actor?: { id: string; name: string }): Promise<boolean> {
+    const who = requireActor(actor); // Sprint 24: the authenticated caller, never a demo user
     const current = await DependencyRepository.findById(id);
     if (!current) return false;
 
@@ -766,8 +766,8 @@ export const DependencyService = {
         entityType: 'dependency',
         entityId: id,
         action: 'delete',
-        actorId: actor?.id || 'usr_admin_1',
-        actorName: actor?.name || 'Admin User',
+        actorId: who.id,
+        actorName: who.name,
         details: { code: current.code, source: current.sourceEntityName, target: current.targetEntityName },
       });
     }

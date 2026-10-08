@@ -1,8 +1,9 @@
 import { duplicateRecordError } from './recordConflict';
 import { Risk, RiskCategory, RiskSeverity, RiskStatus } from '../models/types';
-import { persistentMap, snapshotRestored } from '../config/persistence';
-import { isDbConnected, query } from '../config/database';
+import { persistentMap, skipDemoSeed } from '../config/persistence';
+import { isDbConnected, query, withTransaction } from '../config/database';
 import { GovernanceLinkRepository } from './governanceLinkRepository';
+import { insertWithCode, issueMemoryDeliveryCode } from './deliveryCodes';
 
 export function calculateRiskScoreAndSeverity(probability: number, impact: number): { riskScore: number; severity: RiskSeverity } {
   const prob = Math.max(1, Math.min(5, Math.round(Number(probability) || 1)));
@@ -19,7 +20,7 @@ export function calculateRiskScoreAndSeverity(probability: number, impact: numbe
 const memoryRisks = persistentMap<Risk>('risks');
 
 function seedDefaultRisks() {
-  if (memoryRisks.size > 0 || snapshotRestored()) return;
+  if (memoryRisks.size > 0 || skipDemoSeed()) return;
   const defaults: Risk[] = [
     {
       id: 'rsk_1',
@@ -200,68 +201,63 @@ export const RiskRepository = {
     const offset = page && limit ? (page - 1) * limit : 0;
 
     if (isDbConnected()) {
-      try {
-        let queryStr = `
-          SELECT id, code, title, description, project_id as "projectId",
-                 product_id as "productId", portfolio_id as "portfolioId",
-                 owner_id as "ownerId", team_id as "teamId", category,
-                 probability, impact, risk_score as "riskScore", severity,
-                 status, mitigation, contingency_plan as "contingencyPlan",
-                 trigger, target_resolution_date as "targetResolutionDate",
-                 created_by as "createdBy", updated_by as "updatedBy",
-                 created_at as "createdAt", updated_at as "updatedAt"
-          FROM risks
-          WHERE 1=1
-        `;
-        const params: any[] = [];
-        let pIndex = 1;
+      let queryStr = `
+        SELECT id, code, title, description, project_id as "projectId",
+               product_id as "productId", portfolio_id as "portfolioId",
+               owner_id as "ownerId", team_id as "teamId", category,
+               probability, impact, risk_score as "riskScore", severity,
+               status, mitigation, contingency_plan as "contingencyPlan",
+               trigger, target_resolution_date as "targetResolutionDate",
+               created_by as "createdBy", updated_by as "updatedBy",
+               created_at as "createdAt", updated_at as "updatedAt"
+        FROM risks
+        WHERE 1=1
+      `;
+      const params: any[] = [];
+      let pIndex = 1;
 
-        if (filter?.projectId) {
-          queryStr += ` AND project_id = $${pIndex++}`;
-          params.push(filter.projectId);
-        }
-        if (filter?.productId) {
-          queryStr += ` AND product_id = $${pIndex++}`;
-          params.push(filter.productId);
-        }
-        if (filter?.portfolioId) {
-          queryStr += ` AND portfolio_id = $${pIndex++}`;
-          params.push(filter.portfolioId);
-        }
-        if (filter?.ownerId) {
-          queryStr += ` AND owner_id = $${pIndex++}`;
-          params.push(filter.ownerId);
-        }
-        if (filter?.category && filter.category !== 'all') {
-          queryStr += ` AND category = $${pIndex++}`;
-          params.push(filter.category);
-        }
-        if (filter?.severity && filter.severity !== 'all') {
-          queryStr += ` AND severity = $${pIndex++}`;
-          params.push(filter.severity);
-        }
-        if (filter?.status && filter.status !== 'all') {
-          queryStr += ` AND status = $${pIndex++}`;
-          params.push(filter.status);
-        }
-        if (filter?.search) {
-          queryStr += ` AND (title ILIKE $${pIndex} OR code ILIKE $${pIndex} OR description ILIKE $${pIndex})`;
-          params.push(`%${filter.search}%`);
-          pIndex++;
-        }
-        queryStr += ` ORDER BY risk_score DESC, created_at DESC`;
-
-        if (limit !== undefined) {
-          queryStr += ` LIMIT $${pIndex++} OFFSET $${pIndex++}`;
-          params.push(limit, offset);
-        }
-
-        const res = await query(queryStr, params);
-        risks = res.rows;
-      } catch (err) {
-        console.warn('DB error in RiskRepository.findAll, fallback to memory:', err);
-        risks = Array.from(memoryRisks.values());
+      if (filter?.projectId) {
+        queryStr += ` AND project_id = $${pIndex++}`;
+        params.push(filter.projectId);
       }
+      if (filter?.productId) {
+        queryStr += ` AND product_id = $${pIndex++}`;
+        params.push(filter.productId);
+      }
+      if (filter?.portfolioId) {
+        queryStr += ` AND portfolio_id = $${pIndex++}`;
+        params.push(filter.portfolioId);
+      }
+      if (filter?.ownerId) {
+        queryStr += ` AND owner_id = $${pIndex++}`;
+        params.push(filter.ownerId);
+      }
+      if (filter?.category && filter.category !== 'all') {
+        queryStr += ` AND category = $${pIndex++}`;
+        params.push(filter.category);
+      }
+      if (filter?.severity && filter.severity !== 'all') {
+        queryStr += ` AND severity = $${pIndex++}`;
+        params.push(filter.severity);
+      }
+      if (filter?.status && filter.status !== 'all') {
+        queryStr += ` AND status = $${pIndex++}`;
+        params.push(filter.status);
+      }
+      if (filter?.search) {
+        queryStr += ` AND (title ILIKE $${pIndex} OR code ILIKE $${pIndex} OR description ILIKE $${pIndex})`;
+        params.push(`%${filter.search}%`);
+        pIndex++;
+      }
+      queryStr += ` ORDER BY risk_score DESC, created_at DESC`;
+
+      if (limit !== undefined) {
+        queryStr += ` LIMIT $${pIndex++} OFFSET $${pIndex++}`;
+        params.push(limit, offset);
+      }
+
+      const res = await query(queryStr, params);
+      risks = res.rows;
     } else {
       risks = Array.from(memoryRisks.values());
     }
@@ -309,50 +305,46 @@ export const RiskRepository = {
   }): Promise<number> {
     seedDefaultRisks();
     if (isDbConnected()) {
-      try {
-        let queryStr = `SELECT COUNT(*)::int as count FROM risks WHERE 1=1`;
-        const params: any[] = [];
-        let pIndex = 1;
+      let queryStr = `SELECT COUNT(*)::int as count FROM risks WHERE 1=1`;
+      const params: any[] = [];
+      let pIndex = 1;
 
-        if (filter?.projectId) {
-          queryStr += ` AND project_id = $${pIndex++}`;
-          params.push(filter.projectId);
-        }
-        if (filter?.productId) {
-          queryStr += ` AND product_id = $${pIndex++}`;
-          params.push(filter.productId);
-        }
-        if (filter?.portfolioId) {
-          queryStr += ` AND portfolio_id = $${pIndex++}`;
-          params.push(filter.portfolioId);
-        }
-        if (filter?.ownerId) {
-          queryStr += ` AND owner_id = $${pIndex++}`;
-          params.push(filter.ownerId);
-        }
-        if (filter?.category && filter.category !== 'all') {
-          queryStr += ` AND category = $${pIndex++}`;
-          params.push(filter.category);
-        }
-        if (filter?.severity && filter.severity !== 'all') {
-          queryStr += ` AND severity = $${pIndex++}`;
-          params.push(filter.severity);
-        }
-        if (filter?.status && filter.status !== 'all') {
-          queryStr += ` AND status = $${pIndex++}`;
-          params.push(filter.status);
-        }
-        if (filter?.search) {
-          queryStr += ` AND (title ILIKE $${pIndex} OR code ILIKE $${pIndex} OR description ILIKE $${pIndex})`;
-          params.push(`%${filter.search}%`);
-          pIndex++;
-        }
-
-        const res = await query(queryStr, params);
-        return res.rows[0]?.count || 0;
-      } catch (err) {
-        console.warn('DB error in RiskRepository.count:', err);
+      if (filter?.projectId) {
+        queryStr += ` AND project_id = $${pIndex++}`;
+        params.push(filter.projectId);
       }
+      if (filter?.productId) {
+        queryStr += ` AND product_id = $${pIndex++}`;
+        params.push(filter.productId);
+      }
+      if (filter?.portfolioId) {
+        queryStr += ` AND portfolio_id = $${pIndex++}`;
+        params.push(filter.portfolioId);
+      }
+      if (filter?.ownerId) {
+        queryStr += ` AND owner_id = $${pIndex++}`;
+        params.push(filter.ownerId);
+      }
+      if (filter?.category && filter.category !== 'all') {
+        queryStr += ` AND category = $${pIndex++}`;
+        params.push(filter.category);
+      }
+      if (filter?.severity && filter.severity !== 'all') {
+        queryStr += ` AND severity = $${pIndex++}`;
+        params.push(filter.severity);
+      }
+      if (filter?.status && filter.status !== 'all') {
+        queryStr += ` AND status = $${pIndex++}`;
+        params.push(filter.status);
+      }
+      if (filter?.search) {
+        queryStr += ` AND (title ILIKE $${pIndex} OR code ILIKE $${pIndex} OR description ILIKE $${pIndex})`;
+        params.push(`%${filter.search}%`);
+        pIndex++;
+      }
+
+      const res = await query(queryStr, params);
+      return res.rows[0]?.count || 0;
     }
 
     let risks = Array.from(memoryRisks.values());
@@ -381,26 +373,22 @@ export const RiskRepository = {
     seedDefaultRisks();
     let risk: Risk | null = null;
     if (isDbConnected()) {
-      try {
-        const res = await query(
-          `SELECT id, code, title, description, project_id as "projectId",
-                  product_id as "productId", portfolio_id as "portfolioId",
-                  owner_id as "ownerId", team_id as "teamId", category,
-                  probability, impact, risk_score as "riskScore", severity,
-                  status, mitigation, contingency_plan as "contingencyPlan",
-                  trigger, target_resolution_date as "targetResolutionDate",
-                  created_by as "createdBy", updated_by as "updatedBy",
-                  created_at as "createdAt", updated_at as "updatedAt"
-           FROM risks
-           WHERE id = $1`,
-          [id]
-        );
-        if (res.rows.length > 0) risk = res.rows[0];
-      } catch (err) {
-        console.warn('DB error in RiskRepository.findById:', err);
-      }
-    }
-    if (!risk) {
+      const res = await query(
+        `SELECT id, code, title, description, project_id as "projectId",
+                product_id as "productId", portfolio_id as "portfolioId",
+                owner_id as "ownerId", team_id as "teamId", category,
+                probability, impact, risk_score as "riskScore", severity,
+                status, mitigation, contingency_plan as "contingencyPlan",
+                trigger, target_resolution_date as "targetResolutionDate",
+                created_by as "createdBy", updated_by as "updatedBy",
+                created_at as "createdAt", updated_at as "updatedAt"
+         FROM risks
+         WHERE id = $1`,
+        [id]
+      );
+      if (res.rows.length > 0) risk = res.rows[0];
+    } else {
+      // Sprint 24: memory is the store only when PostgreSQL is not.
       risk = memoryRisks.get(id) || null;
     }
     if (risk) {
@@ -414,23 +402,22 @@ export const RiskRepository = {
     const id = data.id || `rsk_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
     // Sprint 23: never replace an existing record (findById reads PostgreSQL when connected).
     if (await this.findById(id)) throw duplicateRecordError('risk', id);
-    const count = memoryRisks.size + 101;
-    const code = data.code || `RSK-${count}`;
     const { riskScore, severity } = calculateRiskScoreAndSeverity(data.probability || 3, data.impact || 3);
 
+    // Sprint 24: no demo defaults — the service supplies the project and owner (the caller when none is chosen).
     const newRisk: Risk = {
       id,
-      code,
+      code: data.code || '',
       title: data.title || 'Untitled Risk',
       description: data.description || '',
-      projectId: data.projectId || 'PRJ-101',
+      projectId: data.projectId as string,
       projectName: data.projectName || '',
       productId: data.productId,
       productName: data.productName,
       portfolioId: data.portfolioId,
       portfolioName: data.portfolioName,
-      ownerId: data.ownerId || 'usr_admin_1',
-      ownerName: data.ownerName || 'Admin User',
+      ownerId: data.ownerId,
+      ownerName: data.ownerName || '',
       teamId: data.teamId,
       teamName: data.teamName,
       category: (data.category as RiskCategory) || 'Technical',
@@ -449,60 +436,59 @@ export const RiskRepository = {
       updatedBy: data.updatedBy || 'system',
     };
 
-    memoryRisks.set(id, newRisk);
-
-    if (isDbConnected()) {
-      try {
-        await query(
-          `INSERT INTO risks (
-            id, code, title, description, project_id, product_id, portfolio_id,
-            owner_id, team_id, category, probability, impact, risk_score,
-            severity, status, mitigation, contingency_plan, trigger,
-            target_resolution_date, created_by, updated_by, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
-          [
-            newRisk.id,
-            newRisk.code,
-            newRisk.title,
-            newRisk.description || null,
-            newRisk.projectId,
-            newRisk.productId || null,
-            newRisk.portfolioId || null,
-            newRisk.ownerId || null,
-            newRisk.teamId || null,
-            newRisk.category,
-            newRisk.probability,
-            newRisk.impact,
-            newRisk.riskScore,
-            newRisk.severity,
-            newRisk.status,
-            newRisk.mitigation || null,
-            newRisk.contingencyPlan || null,
-            newRisk.trigger || null,
-            newRisk.targetResolutionDate || null,
-            newRisk.createdBy || null,
-            newRisk.updatedBy || null,
-            newRisk.createdAt,
-            newRisk.updatedAt,
-          ]
-        );
-      } catch (err) {
-        console.warn('DB error inserting risk:', err);
-      }
-    }
-
-    if (data.linkedItems && data.linkedItems.length > 0) {
-      for (const item of data.linkedItems) {
-        await GovernanceLinkRepository.addLink(
-          'risk',
+    const insert = (code: string) =>
+      query(
+        `INSERT INTO risks (
+          id, code, title, description, project_id, product_id, portfolio_id,
+          owner_id, team_id, category, probability, impact, risk_score,
+          severity, status, mitigation, contingency_plan, trigger,
+          target_resolution_date, created_by, updated_by, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
+        [
           newRisk.id,
-          item.targetType,
-          item.targetId,
-          item.targetCode,
-          item.targetName
-        );
+          code,
+          newRisk.title,
+          newRisk.description || null,
+          newRisk.projectId,
+          newRisk.productId || null,
+          newRisk.portfolioId || null,
+          newRisk.ownerId || null,
+          newRisk.teamId || null,
+          newRisk.category,
+          newRisk.probability,
+          newRisk.impact,
+          newRisk.riskScore,
+          newRisk.severity,
+          newRisk.status,
+          newRisk.mitigation || null,
+          newRisk.contingencyPlan || null,
+          newRisk.trigger || null,
+          newRisk.targetResolutionDate || null,
+          newRisk.createdBy || null,
+          newRisk.updatedBy || null,
+          newRisk.createdAt,
+          newRisk.updatedAt,
+        ]
+      );
+    const addLinks = async () => {
+      if (data.linkedItems && data.linkedItems.length > 0) {
+        for (const item of data.linkedItems) {
+          await GovernanceLinkRepository.addLink('risk', newRisk.id, item.targetType, item.targetId, item.targetCode, item.targetName);
+        }
+        newRisk.linkedItems = await GovernanceLinkRepository.getLinksFor('risk', newRisk.id);
       }
-      newRisk.linkedItems = await GovernanceLinkRepository.getLinksFor('risk', newRisk.id);
+    };
+
+    // Sprint 24: PostgreSQL first — the risk and its links are one unit; any failure propagates and nothing is kept.
+    if (isDbConnected()) {
+      await withTransaction(async () => {
+        newRisk.code = await insertWithCode('risk', data.code, insert);
+        await addLinks();
+      });
+    } else {
+      newRisk.code = data.code || issueMemoryDeliveryCode('risk', Array.from(memoryRisks.values()).map((r) => r.code));
+      memoryRisks.set(id, newRisk);
+      await addLinks();
     }
 
     return newRisk;
@@ -527,65 +513,65 @@ export const RiskRepository = {
       updatedAt: new Date().toISOString(),
     };
 
-    memoryRisks.set(id, updated);
-
-    if (isDbConnected()) {
-      try {
-        await query(
-          `UPDATE risks SET
-            title = $1, description = $2, project_id = $3, product_id = $4,
-            portfolio_id = $5, owner_id = $6, team_id = $7, category = $8,
-            probability = $9, impact = $10, risk_score = $11, severity = $12,
-            status = $13, mitigation = $14, contingency_plan = $15, trigger = $16,
-            target_resolution_date = $17, updated_by = $18, updated_at = $19
-           WHERE id = $20`,
-          [
-            updated.title,
-            updated.description || null,
-            updated.projectId,
-            updated.productId || null,
-            updated.portfolioId || null,
-            updated.ownerId || null,
-            updated.teamId || null,
-            updated.category,
-            updated.probability,
-            updated.impact,
-            updated.riskScore,
-            updated.severity,
-            updated.status,
-            updated.mitigation || null,
-            updated.contingencyPlan || null,
-            updated.trigger || null,
-            updated.targetResolutionDate || null,
-            updated.updatedBy || null,
-            updated.updatedAt,
-            id,
-          ]
-        );
-      } catch (err) {
-        console.warn('DB error updating risk:', err);
+    const replaceLinks = async () => {
+      if (updates.linkedItems) {
+        await GovernanceLinkRepository.replaceLinks('risk', id, updates.linkedItems);
+        updated.linkedItems = await GovernanceLinkRepository.getLinksFor('risk', id);
       }
-    }
+    };
 
-    if (updates.linkedItems) {
-      await GovernanceLinkRepository.replaceLinks('risk', id, updates.linkedItems);
-      updated.linkedItems = await GovernanceLinkRepository.getLinksFor('risk', id);
+    // Sprint 24: PostgreSQL first, row count authoritative; memory only when it is the store.
+    if (!isDbConnected()) {
+      memoryRisks.set(id, updated);
+      await replaceLinks();
+      return updated;
     }
-
-    return updated;
+    return withTransaction(async () => {
+      const res = await query(
+        `UPDATE risks SET
+          title = $1, description = $2, project_id = $3, product_id = $4,
+          portfolio_id = $5, owner_id = $6, team_id = $7, category = $8,
+          probability = $9, impact = $10, risk_score = $11, severity = $12,
+          status = $13, mitigation = $14, contingency_plan = $15, trigger = $16,
+          target_resolution_date = $17, updated_by = $18, updated_at = $19
+         WHERE id = $20`,
+        [
+          updated.title,
+          updated.description || null,
+          updated.projectId,
+          updated.productId || null,
+          updated.portfolioId || null,
+          updated.ownerId || null,
+          updated.teamId || null,
+          updated.category,
+          updated.probability,
+          updated.impact,
+          updated.riskScore,
+          updated.severity,
+          updated.status,
+          updated.mitigation || null,
+          updated.contingencyPlan || null,
+          updated.trigger || null,
+          updated.targetResolutionDate || null,
+          updated.updatedBy || null,
+          updated.updatedAt,
+          id,
+        ]
+      );
+      if (!res.rowCount) return null;
+      await replaceLinks();
+      return updated;
+    });
   },
 
   async delete(id: string): Promise<boolean> {
     seedDefaultRisks();
-    const removed = memoryRisks.delete(id);
-    if (isDbConnected()) {
-      try {
-        await query(`DELETE FROM risks WHERE id = $1`, [id]);
-        await query(`DELETE FROM governance_links WHERE governance_type = 'risk' AND governance_id = $1`, [id]);
-      } catch (err) {
-        console.warn('DB error deleting risk:', err);
-      }
-    }
-    return removed;
+    // Sprint 24: the database's row count is the result in PostgreSQL mode.
+    if (!isDbConnected()) return memoryRisks.delete(id);
+    return withTransaction(async () => {
+      const res = await query(`DELETE FROM risks WHERE id = $1`, [id]);
+      await query(`DELETE FROM governance_links WHERE governance_type = 'risk' AND governance_id = $1`, [id]);
+      return !!res.rowCount;
+    });
   },
 };

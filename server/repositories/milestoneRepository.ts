@@ -1,8 +1,9 @@
 import { duplicateRecordError } from './recordConflict';
 import { Milestone, MilestoneHealth, MilestoneStatus, MilestoneType } from '../models/types';
-import { persistentMap, snapshotRestored } from '../config/persistence';
-import { isDbConnected, query } from '../config/database';
+import { persistentMap, skipDemoSeed } from '../config/persistence';
+import { isDbConnected, query, withTransaction } from '../config/database';
 import { GovernanceLinkRepository } from './governanceLinkRepository';
+import { insertWithCode, issueMemoryDeliveryCode } from './deliveryCodes';
 import { FeatureRepository } from './featureRepository';
 import { StoryRepository } from './storyRepository';
 
@@ -10,7 +11,7 @@ import { StoryRepository } from './storyRepository';
 const memoryMilestones = persistentMap<Milestone>('milestones');
 
 function seedDefaultMilestones() {
-  if (memoryMilestones.size > 0 || snapshotRestored()) return;
+  if (memoryMilestones.size > 0 || skipDemoSeed()) return;
   const defaults: Milestone[] = [
     {
       id: 'mls_1',
@@ -169,56 +170,51 @@ export const MilestoneRepository = {
     let milestones: Milestone[] = [];
 
     if (isDbConnected()) {
-      try {
-        let queryStr = `
-          SELECT id, code, name, description, project_id as "projectId",
-                 product_id as "productId", owner_id as "ownerId",
-                 status, target_date as "targetDate", actual_date as "actualDate",
-                 progress, health, type, created_by as "createdBy",
-                 updated_by as "updatedBy", created_at as "createdAt", updated_at as "updatedAt"
-          FROM milestones
-          WHERE 1=1
-        `;
-        const params: any[] = [];
-        let pIndex = 1;
+      let queryStr = `
+        SELECT id, code, name, description, project_id as "projectId",
+               product_id as "productId", owner_id as "ownerId",
+               status, target_date as "targetDate", actual_date as "actualDate",
+               progress, health, type, created_by as "createdBy",
+               updated_by as "updatedBy", created_at as "createdAt", updated_at as "updatedAt"
+        FROM milestones
+        WHERE 1=1
+      `;
+      const params: any[] = [];
+      let pIndex = 1;
 
-        if (filter?.projectId) {
-          queryStr += ` AND project_id = $${pIndex++}`;
-          params.push(filter.projectId);
-        }
-        if (filter?.productId) {
-          queryStr += ` AND product_id = $${pIndex++}`;
-          params.push(filter.productId);
-        }
-        if (filter?.ownerId) {
-          queryStr += ` AND owner_id = $${pIndex++}`;
-          params.push(filter.ownerId);
-        }
-        if (filter?.status && filter.status !== 'all') {
-          queryStr += ` AND status = $${pIndex++}`;
-          params.push(filter.status);
-        }
-        if (filter?.health && filter.health !== 'all') {
-          queryStr += ` AND health = $${pIndex++}`;
-          params.push(filter.health);
-        }
-        if (filter?.type && filter.type !== 'all') {
-          queryStr += ` AND type = $${pIndex++}`;
-          params.push(filter.type);
-        }
-        if (filter?.search) {
-          queryStr += ` AND (name ILIKE $${pIndex} OR code ILIKE $${pIndex} OR description ILIKE $${pIndex})`;
-          params.push(`%${filter.search}%`);
-          pIndex++;
-        }
-        queryStr += ` ORDER BY target_date ASC`;
-
-        const res = await query(queryStr, params);
-        milestones = res.rows;
-      } catch (err) {
-        console.warn('DB error in MilestoneRepository.findAll, fallback to memory:', err);
-        milestones = Array.from(memoryMilestones.values());
+      if (filter?.projectId) {
+        queryStr += ` AND project_id = $${pIndex++}`;
+        params.push(filter.projectId);
       }
+      if (filter?.productId) {
+        queryStr += ` AND product_id = $${pIndex++}`;
+        params.push(filter.productId);
+      }
+      if (filter?.ownerId) {
+        queryStr += ` AND owner_id = $${pIndex++}`;
+        params.push(filter.ownerId);
+      }
+      if (filter?.status && filter.status !== 'all') {
+        queryStr += ` AND status = $${pIndex++}`;
+        params.push(filter.status);
+      }
+      if (filter?.health && filter.health !== 'all') {
+        queryStr += ` AND health = $${pIndex++}`;
+        params.push(filter.health);
+      }
+      if (filter?.type && filter.type !== 'all') {
+        queryStr += ` AND type = $${pIndex++}`;
+        params.push(filter.type);
+      }
+      if (filter?.search) {
+        queryStr += ` AND (name ILIKE $${pIndex} OR code ILIKE $${pIndex} OR description ILIKE $${pIndex})`;
+        params.push(`%${filter.search}%`);
+        pIndex++;
+      }
+      queryStr += ` ORDER BY target_date ASC`;
+
+      const res = await query(queryStr, params);
+      milestones = res.rows;
     } else {
       milestones = Array.from(memoryMilestones.values());
     }
@@ -252,23 +248,19 @@ export const MilestoneRepository = {
     seedDefaultMilestones();
     let milestone: Milestone | null = null;
     if (isDbConnected()) {
-      try {
-        const res = await query(
-          `SELECT id, code, name, description, project_id as "projectId",
-                  product_id as "productId", owner_id as "ownerId",
-                  status, target_date as "targetDate", actual_date as "actualDate",
-                  progress, health, type, created_by as "createdBy",
-                  updated_by as "updatedBy", created_at as "createdAt", updated_at as "updatedAt"
-           FROM milestones
-           WHERE id = $1`,
-          [id]
-        );
-        if (res.rows.length > 0) milestone = res.rows[0];
-      } catch (err) {
-        console.warn('DB error in MilestoneRepository.findById:', err);
-      }
-    }
-    if (!milestone) {
+      const res = await query(
+        `SELECT id, code, name, description, project_id as "projectId",
+                product_id as "productId", owner_id as "ownerId",
+                status, target_date as "targetDate", actual_date as "actualDate",
+                progress, health, type, created_by as "createdBy",
+                updated_by as "updatedBy", created_at as "createdAt", updated_at as "updatedAt"
+         FROM milestones
+         WHERE id = $1`,
+        [id]
+      );
+      if (res.rows.length > 0) milestone = res.rows[0];
+    } else {
+      // Sprint 24: memory is the store only when PostgreSQL is not.
       milestone = memoryMilestones.get(id) || null;
     }
     if (milestone) {
@@ -282,20 +274,19 @@ export const MilestoneRepository = {
     const id = data.id || `mls_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
     // Sprint 23: never replace an existing record (findById reads PostgreSQL when connected).
     if (await this.findById(id)) throw duplicateRecordError('milestone', id);
-    const count = memoryMilestones.size + 101;
-    const code = data.code || `MLS-${count}`;
 
+    // Sprint 24: no demo defaults — the service supplies the project and owner (the caller when none is chosen).
     const newMilestone: Milestone = {
       id,
-      code,
+      code: data.code || '',
       name: data.name || 'Untitled Milestone',
       description: data.description || '',
-      projectId: data.projectId || 'PRJ-101',
+      projectId: data.projectId as string,
       projectName: data.projectName || '',
       productId: data.productId,
       productName: data.productName,
-      ownerId: data.ownerId || 'usr_admin_1',
-      ownerName: data.ownerName || 'Admin User',
+      ownerId: data.ownerId as string,
+      ownerName: data.ownerName || '',
       status: (data.status as MilestoneStatus) || 'Planned',
       targetDate: data.targetDate || new Date().toISOString().split('T')[0],
       actualDate: data.actualDate,
@@ -308,53 +299,52 @@ export const MilestoneRepository = {
       updatedBy: data.updatedBy || 'system',
     };
 
-    memoryMilestones.set(id, newMilestone);
-
-    if (isDbConnected()) {
-      try {
-        await query(
-          `INSERT INTO milestones (
-            id, code, name, description, project_id, product_id,
-            owner_id, status, target_date, actual_date, progress,
-            health, type, created_by, updated_by, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
-          [
-            newMilestone.id,
-            newMilestone.code,
-            newMilestone.name,
-            newMilestone.description || null,
-            newMilestone.projectId,
-            newMilestone.productId || null,
-            newMilestone.ownerId || null,
-            newMilestone.status,
-            newMilestone.targetDate,
-            newMilestone.actualDate || null,
-            newMilestone.progress,
-            newMilestone.health,
-            newMilestone.type,
-            newMilestone.createdBy || null,
-            newMilestone.updatedBy || null,
-            newMilestone.createdAt,
-            newMilestone.updatedAt,
-          ]
-        );
-      } catch (err) {
-        console.warn('DB error inserting milestone:', err);
-      }
-    }
-
-    if (data.linkedItems && data.linkedItems.length > 0) {
-      for (const item of data.linkedItems) {
-        await GovernanceLinkRepository.addLink(
-          'milestone',
+    const insert = (code: string) =>
+      query(
+        `INSERT INTO milestones (
+          id, code, name, description, project_id, product_id,
+          owner_id, status, target_date, actual_date, progress,
+          health, type, created_by, updated_by, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+        [
           newMilestone.id,
-          item.targetType,
-          item.targetId,
-          item.targetCode,
-          item.targetName
-        );
+          code,
+          newMilestone.name,
+          newMilestone.description || null,
+          newMilestone.projectId,
+          newMilestone.productId || null,
+          newMilestone.ownerId || null,
+          newMilestone.status,
+          newMilestone.targetDate,
+          newMilestone.actualDate || null,
+          newMilestone.progress,
+          newMilestone.health,
+          newMilestone.type,
+          newMilestone.createdBy || null,
+          newMilestone.updatedBy || null,
+          newMilestone.createdAt,
+          newMilestone.updatedAt,
+        ]
+      );
+    const addLinks = async () => {
+      if (data.linkedItems && data.linkedItems.length > 0) {
+        for (const item of data.linkedItems) {
+          await GovernanceLinkRepository.addLink('milestone', newMilestone.id, item.targetType, item.targetId, item.targetCode, item.targetName);
+        }
+        newMilestone.linkedItems = await GovernanceLinkRepository.getLinksFor('milestone', newMilestone.id);
       }
-      newMilestone.linkedItems = await GovernanceLinkRepository.getLinksFor('milestone', newMilestone.id);
+    };
+
+    // Sprint 24: PostgreSQL first — the milestone and its links are one unit; any failure propagates and nothing is kept.
+    if (isDbConnected()) {
+      await withTransaction(async () => {
+        newMilestone.code = await insertWithCode('milestone', data.code, insert);
+        await addLinks();
+      });
+    } else {
+      newMilestone.code = data.code || issueMemoryDeliveryCode('milestone', Array.from(memoryMilestones.values()).map((m) => m.code));
+      memoryMilestones.set(id, newMilestone);
+      await addLinks();
     }
 
     return newMilestone;
@@ -378,57 +368,57 @@ export const MilestoneRepository = {
       updatedAt: new Date().toISOString(),
     };
 
-    memoryMilestones.set(id, updated);
-
-    if (isDbConnected()) {
-      try {
-        await query(
-          `UPDATE milestones SET
-            name = $1, description = $2, project_id = $3, product_id = $4,
-            owner_id = $5, status = $6, target_date = $7, actual_date = $8,
-            progress = $9, health = $10, type = $11, updated_by = $12, updated_at = $13
-           WHERE id = $14`,
-          [
-            updated.name,
-            updated.description || null,
-            updated.projectId,
-            updated.productId || null,
-            updated.ownerId || null,
-            updated.status,
-            updated.targetDate,
-            updated.actualDate || null,
-            updated.progress,
-            updated.health,
-            updated.type,
-            updated.updatedBy || null,
-            updated.updatedAt,
-            id,
-          ]
-        );
-      } catch (err) {
-        console.warn('DB error updating milestone:', err);
+    const replaceLinks = async () => {
+      if (updates.linkedItems) {
+        await GovernanceLinkRepository.replaceLinks('milestone', id, updates.linkedItems);
+        updated.linkedItems = await GovernanceLinkRepository.getLinksFor('milestone', id);
       }
-    }
+    };
 
-    if (updates.linkedItems) {
-      await GovernanceLinkRepository.replaceLinks('milestone', id, updates.linkedItems);
-      updated.linkedItems = await GovernanceLinkRepository.getLinksFor('milestone', id);
+    // Sprint 24: PostgreSQL first, row count authoritative; memory only when it is the store.
+    if (!isDbConnected()) {
+      memoryMilestones.set(id, updated);
+      await replaceLinks();
+      return updated;
     }
-
-    return updated;
+    return withTransaction(async () => {
+      const res = await query(
+        `UPDATE milestones SET
+          name = $1, description = $2, project_id = $3, product_id = $4,
+          owner_id = $5, status = $6, target_date = $7, actual_date = $8,
+          progress = $9, health = $10, type = $11, updated_by = $12, updated_at = $13
+         WHERE id = $14`,
+        [
+          updated.name,
+          updated.description || null,
+          updated.projectId,
+          updated.productId || null,
+          updated.ownerId || null,
+          updated.status,
+          updated.targetDate,
+          updated.actualDate || null,
+          updated.progress,
+          updated.health,
+          updated.type,
+          updated.updatedBy || null,
+          updated.updatedAt,
+          id,
+        ]
+      );
+      if (!res.rowCount) return null;
+      await replaceLinks();
+      return updated;
+    });
   },
 
   async delete(id: string): Promise<boolean> {
     seedDefaultMilestones();
-    const removed = memoryMilestones.delete(id);
-    if (isDbConnected()) {
-      try {
-        await query(`DELETE FROM milestones WHERE id = $1`, [id]);
-        await query(`DELETE FROM governance_links WHERE governance_type = 'milestone' AND governance_id = $1`, [id]);
-      } catch (err) {
-        console.warn('DB error deleting milestone:', err);
-      }
-    }
-    return removed;
+    // Sprint 24: the database's row count is the result in PostgreSQL mode.
+    if (!isDbConnected()) return memoryMilestones.delete(id);
+    return withTransaction(async () => {
+      const res = await query(`DELETE FROM milestones WHERE id = $1`, [id]);
+      await query(`DELETE FROM governance_links WHERE governance_type = 'milestone' AND governance_id = $1`, [id]);
+      return !!res.rowCount;
+    });
   },
 };

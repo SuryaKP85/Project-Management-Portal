@@ -506,7 +506,8 @@ export const DeliveryService = {
     // Sprint 16: access, allowlisted fields and validated values; the id and code are always server-generated.
     data = (await DeliveryGuards.prepareCreate('task', data as Record<string, any>, actor)) as Partial<Task>;
     const id = `task_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
-    const code = `TSK-${Math.floor(100 + Math.random() * 900)}`;
+    // Sprint 24: the repository issues a collision-safe TSK code (no more random three-digit numbers).
+    const code = '';
 
     const task: Task = {
       id,

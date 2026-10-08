@@ -1,13 +1,14 @@
 import { duplicateRecordError } from './recordConflict';
 import { Sprint, SprintStatus } from '../models/types';
-import { persistentMap, snapshotRestored } from '../config/persistence';
-import { isDbConnected, query } from '../config/database';
+import { persistentMap, skipDemoSeed } from '../config/persistence';
+import { isDbConnected, query, trackMemoryWrite } from '../config/database';
+import { insertWithCode, issueMemoryDeliveryCode } from './deliveryCodes';
 
 // Sprint 20: restored from / saved to the embedded data file in persistent mode.
 const memorySprints = persistentMap<Sprint>('sprints');
 
 function seedDefaultSprints() {
-  if (memorySprints.size > 0 || snapshotRestored()) return;
+  if (memorySprints.size > 0 || skipDemoSeed()) return;
   const defaults: Sprint[] = [
     {
       id: 'sprint_3',
@@ -188,26 +189,28 @@ export const SprintRepository = {
     const id = data.id || `sprint_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     // Sprint 23: never replace an existing record (findById reads PostgreSQL when connected).
     if (await this.findById(id)) throw duplicateRecordError('sprint', id);
-    const code = data.code || `SPR-${Math.floor(100 + Math.random() * 900)}`;
     const now = new Date().toISOString();
 
     const sprint: Sprint = {
       ...data,
       id,
-      code,
+      // Sprint 24: a collision-safe SPR code (deliveryCodes.ts) when none is given; no random numbers.
+      code: data.code || '',
       capacityHours: Number(data.capacityHours || 160),
       capacityPoints: Number(data.capacityPoints || 40),
       createdAt: now,
       updatedAt: now,
     };
 
-    if (isDbConnected()) {
-      await query(
+    if (!isDbConnected()) {
+      if (!sprint.code) sprint.code = issueMemoryDeliveryCode('sprint', Array.from(memorySprints.values()).map((s) => s.code));
+    } else {
+      sprint.code = await insertWithCode('sprint', data.code || undefined, (code) => query(
         `INSERT INTO sprints (id, code, name, project_id, goal, start_date, end_date, status, capacity_hours, capacity_points, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
           sprint.id,
-          sprint.code,
+          code,
           sprint.name,
           sprint.projectId,
           sprint.goal || null,
@@ -219,7 +222,7 @@ export const SprintRepository = {
           sprint.createdAt,
           sprint.updatedAt,
         ]
-      );
+      ));
     }
 
     memorySprints.set(id, sprint);
@@ -272,6 +275,7 @@ export const SprintRepository = {
       );
     }
 
+    trackMemoryWrite(memorySprints, id); // Sprint 24: undone if the surrounding transaction fails (embedded mode)
     memorySprints.set(id, updated);
     return updated;
   },

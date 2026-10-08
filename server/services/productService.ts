@@ -1,3 +1,4 @@
+import { ownerOrCaller } from './followThroughSupport';
 import { withoutClientIdentity } from '../repositories/recordConflict';
 import { ProductRepository } from '../repositories/productRepository';
 import { ProjectRepository } from '../repositories/projectRepository';
@@ -59,8 +60,12 @@ export const ProductService = {
   },
 
   async createProduct(data: Partial<Product>, actorUser: SafeUser): Promise<Product> {
+    // Sprint 24: the owner is the chosen user or the caller — always an existing, active user.
+    const owner = await ownerOrCaller(data.ownerId, actorUser?.id);
     const newProduct: Partial<Product> = {
       ...withoutClientIdentity(data, ['code']),
+      ownerId: owner?.id,
+      ownerName: owner?.name, // Sprint 24: the owner's own name
       id: `prod_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
       code: data.code || `PROD-${Date.now().toString().slice(-4)}`,
     };

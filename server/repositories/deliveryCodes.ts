@@ -1,4 +1,4 @@
-import { query } from '../config/database';
+import { query, withSavepoint } from '../config/database';
 import { persistentMap } from '../config/persistence';
 
 /**
@@ -17,19 +17,28 @@ import { persistentMap } from '../config/persistence';
  * stored code (101 when there is none).
  */
 
-export type DeliveryCodeKind = 'epic' | 'feature' | 'story';
+// Sprint 24: the same scheme for governance records, tasks and sprints, which
+// used `memory.size + 101` or random three-digit numbers (both could repeat).
+export type DeliveryCodeKind = 'epic' | 'feature' | 'story' | 'task' | 'sprint' | 'risk' | 'issue' | 'milestone' | 'release' | 'dependency' | 'project';
 
 export const DELIVERY_CODE_SPECS: Readonly<Record<DeliveryCodeKind, { prefix: string; table: string; sequence: string }>> = {
   epic: { prefix: 'EPC', table: 'epics', sequence: 'epic_code_seq' },
   feature: { prefix: 'FEAT', table: 'features', sequence: 'feature_code_seq' },
   story: { prefix: 'STR', table: 'stories', sequence: 'story_code_seq' },
+  task: { prefix: 'TSK', table: 'tasks', sequence: 'task_code_seq' },
+  sprint: { prefix: 'SPR', table: 'sprints', sequence: 'sprint_code_seq' },
+  risk: { prefix: 'RSK', table: 'risks', sequence: 'risk_code_seq' },
+  issue: { prefix: 'ISS', table: 'issues', sequence: 'issue_code_seq' },
+  milestone: { prefix: 'MLS', table: 'milestones', sequence: 'milestone_code_seq' },
+  release: { prefix: 'REL', table: 'releases', sequence: 'release_code_seq' },
+  dependency: { prefix: 'DEP', table: 'dependencies', sequence: 'dependency_code_seq' },
+  // Sprint 24: generated project ids (a project's code may be client-proposed; its id never is).
+  project: { prefix: 'PRJ', table: 'projects', sequence: 'project_code_seq' },
 };
 
-const PATTERNS: Record<DeliveryCodeKind, RegExp> = {
-  epic: /^EPC-(\d+)$/,
-  feature: /^FEAT-(\d+)$/,
-  story: /^STR-(\d+)$/,
-};
+const PATTERNS = Object.fromEntries(
+  Object.entries(DELIVERY_CODE_SPECS).map(([kind, spec]) => [kind, new RegExp(`^${spec.prefix}-(\\d+)$`)])
+) as Record<DeliveryCodeKind, RegExp>;
 
 /** Highest valid code number of this kind + 1, or 101 when none matches. Pure. */
 export function nextDeliveryCodeNumber(kind: DeliveryCodeKind, codes: Iterable<string | null | undefined>): number {
@@ -58,11 +67,14 @@ export function issueMemoryDeliveryCode(kind: DeliveryCodeKind, existingCodes: I
   return `${DELIVERY_CODE_SPECS[kind].prefix}-${n}`;
 }
 
-/** PostgreSQL mode: raise the sequence above every stored code, then draw the next value. */
-export async function issueSequenceDeliveryCode(kind: DeliveryCodeKind): Promise<string> {
+/**
+ * PostgreSQL mode: raise the sequence above every stored code (and any extra
+ * values the caller knows are taken, such as project ids), then draw the next value.
+ */
+export async function issueSequenceDeliveryCode(kind: DeliveryCodeKind, extraCodes: Iterable<string> = []): Promise<string> {
   const spec = DELIVERY_CODE_SPECS[kind];
   const existing = await query(`SELECT code FROM ${spec.table}`);
-  const wantedNext = nextDeliveryCodeNumber(kind, existing.rows.map((r: any) => r.code));
+  const wantedNext = nextDeliveryCodeNumber(kind, [...existing.rows.map((r: any) => r.code), ...extraCodes]);
   const state = await query(`SELECT last_value, is_called FROM ${spec.sequence}`);
   const lastValue = Number(state.rows[0].last_value);
   const currentNext = state.rows[0].is_called ? lastValue + 1 : lastValue;
@@ -79,4 +91,24 @@ const PG_UNIQUE_VIOLATION = '23505';
 /** True for a unique violation on the code column (not, for example, on the id). */
 export function isCodeCollision(err: any): boolean {
   return err?.code === PG_UNIQUE_VIOLATION && /code/i.test(String(err?.constraint || err?.detail || ''));
+}
+
+/**
+ * Sprint 24 — PostgreSQL insert of a record whose code may be generated. A
+ * generated code comes from the kind's sequence; a collision on the code index
+ * draws a new one (bounded). Every other error — and a collision on an explicit
+ * code — propagates: the caller never reports success for a row that was not
+ * written. Returns the code the row was stored with.
+ */
+export async function insertWithCode(kind: DeliveryCodeKind, explicitCode: string | undefined, insert: (code: string) => Promise<unknown>): Promise<string> {
+  for (let attempt = 1; ; attempt += 1) {
+    const code = explicitCode || (await issueSequenceDeliveryCode(kind));
+    try {
+      await withSavepoint(() => insert(code));
+      return code;
+    } catch (err) {
+      if (!explicitCode && isCodeCollision(err) && attempt < MAX_CODE_ATTEMPTS) continue;
+      throw err;
+    }
+  }
 }

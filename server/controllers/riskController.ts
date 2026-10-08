@@ -1,3 +1,4 @@
+import { respondToDatabaseFailure } from '../middleware/errorHandler';
 import { Request, Response, NextFunction } from 'express';
 import { RiskService } from '../services/riskService';
 import { GovernanceLinkRepository } from '../repositories/governanceLinkRepository';
@@ -39,9 +40,7 @@ async function withResolvedLinks(req: Request) {
 }
 
 function getActor(req: Request) {
-  if (!req.user) {
-    return { id: 'usr_admin_1', name: 'Surya Prashanth' };
-  }
+  if (!req.user) return undefined; // Sprint 24: no placeholder user — the service answers 401
   return {
     id: req.user.userId,
     name: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || req.user.email,
@@ -50,6 +49,7 @@ function getActor(req: Request) {
 
 /** Sprint 22A: access errors keep their status (404 / 403); anything else stays a 400 as before. */
 function fail(res: Response, err: any, code = 'VALIDATION_ERROR') {
+  if (respondToDatabaseFailure(res, err)) return res; // Sprint 24: database failures are 409/503, never a validation error
   const status = Number(err?.status) >= 400 && Number(err?.status) < 500 ? Number(err.status) : 400;
   return res.status(status).json({ success: false, error: { code: status === 400 ? code : err.code, message: err.message } });
 }

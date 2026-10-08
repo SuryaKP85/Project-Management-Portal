@@ -3,6 +3,7 @@ import { Release, ReleaseItem } from '../models/types';
 import { ReleaseRepository } from '../repositories/releaseRepository';
 import { ActivityService } from './activityService';
 import { NotificationService } from './notificationService';
+import { notifiableUser, ownerOrCaller, requireActor } from './followThroughSupport';
 
 export const ReleaseService = {
   async getAllReleases(filter?: {
@@ -21,18 +22,23 @@ export const ReleaseService = {
   },
 
   async createRelease(data: Partial<Release>, actor?: { id: string; name: string }): Promise<Release> {
+    const who = requireActor(actor); // Sprint 24: the authenticated caller, never a demo user
+    // Sprint 24: the owner is the chosen user or the caller — always an existing, active user.
+    const owner = await ownerOrCaller(data.ownerId, who.id);
     const release = await ReleaseRepository.create({
       ...withoutClientIdentity(data),
-      createdBy: actor?.id || 'usr_admin_1',
-      updatedBy: actor?.id || 'usr_admin_1',
+      ownerId: owner?.id,
+      ownerName: owner?.name,
+      createdBy: who.id,
+      updatedBy: who.id,
     });
 
     await ActivityService.logActivity({
       entityType: 'release',
       entityId: release.id,
       action: 'create',
-      actorId: actor?.id || 'usr_admin_1',
-      actorName: actor?.name || 'Admin User',
+      actorId: who.id,
+      actorName: who.name,
       details: {
         code: release.code,
         name: release.name,
@@ -46,12 +52,13 @@ export const ReleaseService = {
   },
 
   async updateRelease(id: string, updates: Partial<Release>, actor?: { id: string; name: string }): Promise<Release | null> {
+    const who = requireActor(actor); // Sprint 24: the authenticated caller, never a demo user
     const current = await ReleaseRepository.findById(id);
     if (!current) return null;
 
     const updated = await ReleaseRepository.update(id, {
       ...updates,
-      updatedBy: actor?.id || 'usr_admin_1',
+      updatedBy: who.id,
     });
     if (!updated) return null;
 
@@ -63,8 +70,8 @@ export const ReleaseService = {
       entityType: 'release',
       entityId: updated.id,
       action,
-      actorId: actor?.id || 'usr_admin_1',
-      actorName: actor?.name || 'Admin User',
+      actorId: who.id,
+      actorName: who.name,
       details: {
         code: updated.code,
         previousDate: current.releaseDate,
@@ -75,9 +82,11 @@ export const ReleaseService = {
       },
     });
 
-    if (action === 'delayed' || updated.health === 'Off Track') {
+    // Sprint 24: only to an existing, active recipient.
+    const recipient = action === 'delayed' || updated.health === 'Off Track' ? await notifiableUser(updated.ownerId) : undefined;
+    if (recipient) {
       await NotificationService.sendNotification({
-        userId: updated.ownerId || 'usr_admin_1',
+        userId: recipient,
         title: `Release Milestone Shifted: [${updated.code}]`,
         message: `Release "${updated.name}" (${updated.version}) target scheduled for ${updated.releaseDate}.`,
         type: 'release_delayed',
@@ -90,6 +99,7 @@ export const ReleaseService = {
   },
 
   async deleteRelease(id: string, actor?: { id: string; name: string }): Promise<boolean> {
+    const who = requireActor(actor); // Sprint 24: the authenticated caller, never a demo user
     const current = await ReleaseRepository.findById(id);
     if (!current) return false;
 
@@ -99,8 +109,8 @@ export const ReleaseService = {
         entityType: 'release',
         entityId: id,
         action: 'delete',
-        actorId: actor?.id || 'usr_admin_1',
-        actorName: actor?.name || 'Admin User',
+        actorId: who.id,
+        actorName: who.name,
         details: { code: current.code, name: current.name, version: current.version },
       });
     }

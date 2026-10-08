@@ -5,6 +5,7 @@ export { calculateRiskScoreAndSeverity };
 import { GovernanceLinkRepository } from '../repositories/governanceLinkRepository';
 import { ActivityService } from './activityService';
 import { NotificationService } from './notificationService';
+import { notifiableUser, ownerOrCaller, requireActor } from './followThroughSupport';
 import { ProjectRepository } from '../repositories/projectRepository';
 import { StoryRepository } from '../repositories/storyRepository';
 
@@ -99,6 +100,7 @@ export const RiskService = {
   },
 
   async createRisk(data: Partial<Risk>, actor?: { id: string; name: string }): Promise<Risk> {
+    const who = requireActor(actor); // Sprint 24: the authenticated caller, never a demo user
     // 1. Validate title
     if (!data.title || typeof data.title !== 'string' || !data.title.trim()) {
       throw new Error('Risk title is required and cannot be empty.');
@@ -140,9 +142,14 @@ export const RiskService = {
     // 7. Calculate riskScore and severity strictly on server (ignore any client-provided score/severity)
     const { riskScore, severity } = calculateRiskScoreAndSeverity(prob, imp);
 
+    // Sprint 24: the owner is the chosen user or the caller — always an existing, active user.
+    const owner = await ownerOrCaller(data.ownerId, who.id);
+
     // Sanitize payload
     const sanitizedData: Partial<Risk> = {
       ...withoutClientIdentity(data),
+      ownerId: owner?.id,
+      ownerName: owner?.name,
       title: data.title.trim(),
       projectId: project.id,
       projectName: project.name,
@@ -154,8 +161,8 @@ export const RiskService = {
       severity,
       status,
       category,
-      createdBy: actor?.id || 'usr_admin_1',
-      updatedBy: actor?.id || 'usr_admin_1',
+      createdBy: who.id,
+      updatedBy: who.id,
     };
 
     const risk = await RiskRepository.create(sanitizedData);
@@ -165,8 +172,8 @@ export const RiskService = {
       entityType: 'risk',
       entityId: risk.id,
       action: 'create',
-      actorId: actor?.id || 'usr_admin_1',
-      actorName: actor?.name || 'Admin User',
+      actorId: who.id,
+      actorName: who.name,
       details: {
         code: risk.code,
         title: risk.title,
@@ -178,10 +185,11 @@ export const RiskService = {
       },
     });
 
-    // Notification rule 1: Critical risk created
-    if (risk.severity === 'Critical') {
+    // Notification rule 1: Critical risk created (Sprint 24: only to an existing, active recipient)
+    const criticalRecipient = risk.severity === 'Critical' ? await notifiableUser(risk.ownerId || who.id) : undefined;
+    if (criticalRecipient) {
       await NotificationService.sendNotification({
-        userId: risk.ownerId || actor?.id || 'usr_admin_1',
+        userId: criticalRecipient,
         title: `Critical Risk Identified: [${risk.code}]`,
         message: `Critical risk "${risk.title}" (Score: ${risk.riskScore}) requires immediate mitigation review.`,
         type: 'critical_risk',
@@ -191,7 +199,7 @@ export const RiskService = {
     }
 
     // Notification rule 3: Risk assigned to a user (on create)
-    if (risk.ownerId && risk.ownerId !== actor?.id) {
+    if (risk.ownerId && risk.ownerId !== who.id) {
       await NotificationService.sendNotification({
         userId: risk.ownerId,
         title: `Risk Assigned: [${risk.code}]`,
@@ -206,6 +214,7 @@ export const RiskService = {
   },
 
   async updateRisk(id: string, updates: Partial<Risk>, actor?: { id: string; name: string }): Promise<Risk | null> {
+    const who = requireActor(actor); // Sprint 24: the authenticated caller, never a demo user
     const current = await RiskRepository.findById(id);
     if (!current) return null;
 
@@ -261,7 +270,7 @@ export const RiskService = {
     const { riskScore, severity } = calculateRiskScoreAndSeverity(prob, imp);
     updates.riskScore = riskScore;
     updates.severity = severity;
-    updates.updatedBy = actor?.id || 'usr_admin_1';
+    updates.updatedBy = who.id;
 
     const updated = await RiskRepository.update(id, updates);
     if (!updated) return null;
@@ -275,8 +284,8 @@ export const RiskService = {
         entityType: 'risk',
         entityId: updated.id,
         action: 'status_change',
-        actorId: actor?.id || 'usr_admin_1',
-        actorName: actor?.name || 'Admin User',
+        actorId: who.id,
+        actorName: who.name,
         details: {
           code: updated.code,
           from: current.status,
@@ -290,8 +299,8 @@ export const RiskService = {
         entityType: 'risk',
         entityId: updated.id,
         action: 'severity_change',
-        actorId: actor?.id || 'usr_admin_1',
-        actorName: actor?.name || 'Admin User',
+        actorId: who.id,
+        actorName: who.name,
         details: {
           code: updated.code,
           from: current.severity,
@@ -307,8 +316,8 @@ export const RiskService = {
         entityType: 'risk',
         entityId: updated.id,
         action: 'update',
-        actorId: actor?.id || 'usr_admin_1',
-        actorName: actor?.name || 'Admin User',
+        actorId: who.id,
+        actorName: who.name,
         details: {
           code: updated.code,
           title: updated.title,
@@ -318,10 +327,11 @@ export const RiskService = {
       });
     }
 
-    // Notification rule 2: Existing risk becomes Critical
-    if (updated.severity === 'Critical' && current.severity !== 'Critical') {
+    // Notification rule 2: Existing risk becomes Critical (Sprint 24: only to an existing, active recipient)
+    const escalationRecipient = updated.severity === 'Critical' && current.severity !== 'Critical' ? await notifiableUser(updated.ownerId || who.id) : undefined;
+    if (escalationRecipient) {
       await NotificationService.sendNotification({
-        userId: updated.ownerId || actor?.id || 'usr_admin_1',
+        userId: escalationRecipient,
         title: `Risk Escalated to Critical: [${updated.code}]`,
         message: `Risk "${updated.title}" has escalated to Critical severity (Score: ${updated.riskScore}).`,
         type: 'risk_escalated',
@@ -346,6 +356,7 @@ export const RiskService = {
   },
 
   async deleteRisk(id: string, actor?: { id: string; name: string }): Promise<boolean> {
+    const who = requireActor(actor); // Sprint 24: the authenticated caller, never a demo user
     const current = await RiskRepository.findById(id);
     if (!current) return false;
 
@@ -356,8 +367,8 @@ export const RiskService = {
         entityType: 'risk',
         entityId: id,
         action: 'delete',
-        actorId: actor?.id || 'usr_admin_1',
-        actorName: actor?.name || 'Admin User',
+        actorId: who.id,
+        actorName: who.name,
         details: { code: current.code, title: current.title, projectId: current.projectId },
       });
     }

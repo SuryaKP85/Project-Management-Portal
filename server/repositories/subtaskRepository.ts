@@ -1,5 +1,5 @@
 import { Subtask } from '../models/types';
-import { persistentMap, snapshotRestored } from '../config/persistence';
+import { persistentMap, skipDemoSeed } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
 import { duplicateRecordError } from './recordConflict';
 
@@ -7,7 +7,7 @@ import { duplicateRecordError } from './recordConflict';
 const memorySubtasks = persistentMap<Subtask>('subtasks');
 
 function seedDefaultSubtasks() {
-  if (memorySubtasks.size > 0 || snapshotRestored()) return;
+  if (memorySubtasks.size > 0 || skipDemoSeed()) return;
   const defaults: Subtask[] = [
     {
       id: 'sub_1',

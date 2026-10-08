@@ -1,3 +1,4 @@
+import { respondToDatabaseFailure } from '../middleware/errorHandler';
 import { Request, Response, NextFunction } from 'express';
 import { RoadmapService } from '../services/roadmapService';
 import { RoadmapFilter } from '../repositories/roadmapRepository';
@@ -105,6 +106,7 @@ export const RoadmapController = {
       // Sprint 23: an identity conflict stays a 409 (the record was never replaced).
       if (err?.status === 409) return res.status(409).json({ success: false, error: { code: 'CONFLICT', message: err.message } });
       // Service validation failures are client errors, not server faults.
+      if (respondToDatabaseFailure(res, err)) return; // Sprint 24
       return validationError(res, err?.message || 'Could not create roadmap item.');
     }
   },
@@ -124,6 +126,7 @@ export const RoadmapController = {
 
       res.json({ success: true, data: { item: updated } });
     } catch (err: any) {
+      if (respondToDatabaseFailure(res, err)) return; // Sprint 24
       return validationError(res, err?.message || 'Could not update roadmap item.');
     }
   },
@@ -176,6 +179,7 @@ export const RoadmapController = {
 
       res.status(201).json({ success: true, data: { link } });
     } catch (err: any) {
+      if (respondToDatabaseFailure(res, err)) return; // Sprint 24
       return validationError(res, err?.message || 'Could not link the goal.');
     }
   },
@@ -242,6 +246,7 @@ export const RoadmapController = {
       const result = await RoadmapService.reorderItems(entries, actor);
       res.json({ success: true, data: result });
     } catch (err: any) {
+      if (respondToDatabaseFailure(res, err)) return; // Sprint 24
       return validationError(res, err?.message || 'Could not reorder roadmap items.');
     }
   },

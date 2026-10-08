@@ -197,6 +197,21 @@ export function snapshotRestored(): boolean {
   return snapshot !== null;
 }
 
+/** Sprint 24: set by the database module while PostgreSQL is the store. */
+let postgresStore = false;
+export function setPostgresStore(active: boolean): void {
+  postgresStore = active;
+}
+
+/**
+ * Sprint 24 — repositories load their demo records only into an embedded or
+ * temporary store that has nothing restored. In PostgreSQL mode the database is
+ * the source of truth, so no demo record is ever held in memory there.
+ */
+export function skipDemoSeed(): boolean {
+  return postgresStore || settings().mode === 'postgresql' || snapshotRestored();
+}
+
 /** The data file in persistent-embedded mode (not secret; shown at startup), otherwise null. */
 export function dataFilePath(): string | null {
   return settings().file;

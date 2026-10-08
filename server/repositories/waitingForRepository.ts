@@ -77,26 +77,19 @@ export const WaitingForRepository = {
   async findAll(filter?: WaitingForFilter): Promise<WaitingForItem[]> {
     if (filter?.projectIds && filter.projectIds.length === 0) return [];
     if (isDbConnected()) {
-      try {
-        const res = filter?.projectIds
-          ? await query(`SELECT * FROM waiting_for_items WHERE project_id = ANY($1::text[])`, [filter.projectIds])
-          : await query(`SELECT * FROM waiting_for_items`);
-        return applyFilter(res.rows.map(mapRow), filter).sort(byExpected);
-      } catch (err: any) {
-        console.warn('DB error in WaitingForRepository.findAll, falling back to memory:', err.message);
-      }
+      const res = filter?.projectIds
+        ? await query(`SELECT * FROM waiting_for_items WHERE project_id = ANY($1::text[])`, [filter.projectIds])
+        : await query(`SELECT * FROM waiting_for_items`);
+      return applyFilter(res.rows.map(mapRow), filter).sort(byExpected);
     }
     return applyFilter(Array.from(memoryWaitingFor.values()), filter).sort(byExpected);
   },
 
   async findById(id: string): Promise<WaitingForItem | null> {
     if (isDbConnected()) {
-      try {
-        const res = await query('SELECT * FROM waiting_for_items WHERE id = $1', [id]);
-        if (res.rows.length > 0) return mapRow(res.rows[0]);
-      } catch (err: any) {
-        console.warn('DB error in WaitingForRepository.findById, falling back to memory:', err.message);
-      }
+      const res = await query('SELECT * FROM waiting_for_items WHERE id = $1', [id]);
+      // Sprint 24: PostgreSQL is the source of truth; memory is never consulted in PG mode.
+      return res.rows.length > 0 ? mapRow(res.rows[0]) : null;
     }
     return memoryWaitingFor.get(id) || null;
   },
