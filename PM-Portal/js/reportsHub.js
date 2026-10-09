@@ -897,7 +897,7 @@ export const ReportsHubModule = {
         <div class="col-6 col-md-3">
           <div class="report-kpi-card">
             <div class="kpi-label">${escapeHtml(kpi.label)}</div>
-            <div class="kpi-val">${kpi.val}</div>
+            <div class="kpi-val">${escapeHtml(kpi.val)}</div>
           </div>
         </div>
       `;
@@ -907,7 +907,7 @@ export const ReportsHubModule = {
     // Build Headers Row
     let headersHtml = '<tr>';
     data.columns.forEach(col => {
-      headersHtml += `<th style="text-align: left;">${col}</th>`;
+      headersHtml += `<th style="text-align: left;">${escapeHtml(col)}</th>`;
     });
     headersHtml += '</tr>';
 
@@ -938,7 +938,8 @@ export const ReportsHubModule = {
             extraStyle = 'color: #a16207 !important; font-weight: 700;';
           }
 
-          rowsHtml += `<td style="${extraStyle}">${cellVal}</td>`;
+          // Sprint 25: cells carry stored text (project names, clients, managers) and are always escaped.
+          rowsHtml += `<td style="${extraStyle}">${escapeHtml(cellVal)}</td>`;
         });
         rowsHtml += '</tr>';
       });

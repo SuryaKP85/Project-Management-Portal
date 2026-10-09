@@ -1,4 +1,25 @@
 import { withoutClientIdentity } from '../repositories/recordConflict';
+
+/** Sprint 25: the planning fields stored with a dependency, validated (PostgreSQL now has columns for them). */
+export function dependencyExtras(input: Record<string, any>): Partial<Pick<Dependency, 'lagDays' | 'resolutionNotes' | 'isCriticalPath'>> {
+  const out: Partial<Pick<Dependency, 'lagDays' | 'resolutionNotes' | 'isCriticalPath'>> = {};
+  if (input.lagDays !== undefined) {
+    const days = input.lagDays === null || input.lagDays === '' ? 0 : Number(input.lagDays);
+    if (!Number.isInteger(days) || days < -3650 || days > 3650) throw new Error('lagDays must be a whole number of days from -3650 to 3650.');
+    out.lagDays = days;
+  }
+  if (input.isCriticalPath !== undefined) {
+    if (typeof input.isCriticalPath !== 'boolean') throw new Error('isCriticalPath must be true or false.');
+    out.isCriticalPath = input.isCriticalPath;
+  }
+  if (input.resolutionNotes !== undefined) {
+    if (input.resolutionNotes !== null && typeof input.resolutionNotes !== 'string') throw new Error('resolutionNotes must be text.');
+    const notes = String(input.resolutionNotes ?? '').trim();
+    if (notes.length > 5000) throw new Error('resolutionNotes must be at most 5000 characters.');
+    out.resolutionNotes = notes;
+  }
+  return out;
+}
 import {
   Dependency,
   DependencyEntityType,
@@ -513,6 +534,7 @@ export const DependencyService = {
 
     const payload: Partial<Dependency> = {
       ...withoutClientIdentity(data),
+      ...dependencyExtras(data as Record<string, any>),
       sourceEntityType: normSourceType,
       sourceEntityName: data.sourceEntityName || sourceInfo.name,
       sourceEntityCode: data.sourceEntityCode || sourceInfo.code,
@@ -683,6 +705,7 @@ export const DependencyService = {
 
     const res = await DependencyRepository.update(id, {
       ...updates,
+      ...dependencyExtras(updates as Record<string, any>),
       updatedBy: who.id,
     });
 

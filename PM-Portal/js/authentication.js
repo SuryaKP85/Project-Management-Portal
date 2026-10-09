@@ -2,6 +2,7 @@
 
 import { AuthService } from './services/authService.js';
 import { dataService } from './services/dataAdapter.js';
+import { Storage } from './storage.js';
 
 /**
  * The V2 server is the only authenticator and the only user directory. This
@@ -22,6 +23,28 @@ const V1_ROLE_LABELS = {
 
 /** Retired local-account storage, cleared on every visit so nothing lingers. */
 const LEGACY_KEYS = ['pm_portal_users', 'pm_portal_auth_token'];
+
+/**
+ * Sprint 25: the only browser data designed to outlive a sign-out — the theme and
+ * the "remember me" email. Everything else the portal keeps in this browser (the
+ * session record, cached and browser-only records, imported spreadsheets) is
+ * cleared, so the next person at a shared computer never sees it.
+ */
+const KEPT_AFTER_SIGN_OUT = ['pm_portal_theme', 'pm_portal_remembered_email'];
+const SESSION_KEYS = ['pm_v2_auth_token', 'pm_v2_bridge_failure'];
+
+/** Browser-only V1.1 records (non-empty lists) that sign-out would delete, as "name (count)". */
+function browserOnlyRecords() {
+  const found = [];
+  for (const key of Storage.appKeys()) {
+    if (KEPT_AFTER_SIGN_OUT.includes(key) || key === 'pm_portal_current_user' || key === 'projects' || key === 'pm_portal_projects') continue;
+    try {
+      const value = JSON.parse(localStorage.getItem(key));
+      if (Array.isArray(value) && value.length > 0) found.push(`${key.replace(/^pm_portal_/, '').replace(/_/g, ' ')} (${value.length})`);
+    } catch (e) { /* not a list */ }
+  }
+  return found;
+}
 
 export const Authentication = {
   CURRENT_USER_KEY: 'pm_portal_current_user',
@@ -180,11 +203,16 @@ export const Authentication = {
    * can clear the HttpOnly auth_token cookie; local state is cleared regardless
    * of the outcome before redirecting.
    */
-  async logout() {
+  async logout(confirmFn = (message) => window.confirm(message)) {
+    // Sprint 25: browser-only records are deleted at sign-out (shared computers), so
+    // the user decides first; cancelling keeps them and stays signed in.
+    const records = browserOnlyRecords();
+    if (records.length > 0 && !confirmFn(`Signing out deletes data saved only in this browser:\n- ${records.join('\n- ')}\n\nOK: delete it and sign out.\nCancel: stay signed in.`)) return;
+
     // Sprint 23: the V1.1 project cache is settled (browser-only projects offered
     // to the server) and cleared while the session can still reach the server.
     try {
-      if (!(await dataService.settleProjectCacheForLogout())) return;
+      if (!(await dataService.settleProjectCacheForLogout(confirmFn))) return;
     } catch (err) {
       window.alert(`Sign-out stopped: the projects saved only in this browser could not be sent to the server (${(err && err.message) || 'request failed'}). Nothing was discarded.`);
       return;
@@ -199,8 +227,12 @@ export const Authentication = {
     this.setCurrentUser(null);
 
     try {
-      sessionStorage.removeItem('pm_v2_auth_token');
-      sessionStorage.removeItem('pm_v2_bridge_failure');
+      Storage.clear(KEPT_AFTER_SIGN_OUT);
+    } catch (e) {
+      /* localStorage unavailable — nothing further to clear */
+    }
+    try {
+      for (const key of SESSION_KEYS) sessionStorage.removeItem(key);
     } catch (e) {
       /* sessionStorage unavailable — nothing further to clear */
     }

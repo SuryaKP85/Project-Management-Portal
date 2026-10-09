@@ -4265,7 +4265,7 @@ async function runTests() {
     const userRepoSrc41 = fs35.readFileSync('server/repositories/userRepository.ts', 'utf8');
     const schemaSrc41 = fs35.readFileSync('server/db/schema.sql', 'utf8');
     const connRepoSrc41 = fs35.readFileSync('server/repositories/microsoftConnectionRepository.ts', 'utf8');
-    assert(/UPDATE users SET ms_user_id = \$1, ms_tenant_id = \$2, updated_at = \$3 WHERE id = \$4/.test(userRepoSrc41) && /ms_user_id = \$9, ms_tenant_id = \$10 WHERE id = \$11/.test(userRepoSrc41) && /SELECT id FROM users WHERE ms_user_id = \$1/.test(userRepoSrc41) && /ms_user_id = NULL, ms_tenant_id = NULL/.test(userRepoSrc41), 'PostgreSQL writes, clears and looks up the Microsoft identity columns');
+    assert(/UPDATE users SET ms_user_id = \$1, ms_tenant_id = \$2, updated_at = \$3 WHERE id = \$4/.test(userRepoSrc41) && /msUserId: 'ms_user_id', msTenantId: 'ms_tenant_id'/.test(userRepoSrc41) && /Object\.keys\(updates\)\.filter\(\(k\) => k in UPDATABLE_COLUMNS/.test(userRepoSrc41) &&/SELECT id FROM users WHERE ms_user_id = \$1/.test(userRepoSrc41) && /ms_user_id = NULL, ms_tenant_id = NULL/.test(userRepoSrc41), 'PostgreSQL writes, clears and looks up the Microsoft identity columns');
     assert(/CREATE TABLE IF NOT EXISTS microsoft_connections \(/.test(schemaSrc41) && ['user_id VARCHAR(64) PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE', 'access_token_enc TEXT NOT NULL', 'refresh_token_enc TEXT', 'expires_at TIMESTAMP', 'scopes TEXT', 'account_email', 'ms_tenant_id', 'connected_at', 'updated_at'].every((c) => schemaSrc41.includes(c)) && /ON CONFLICT \(user_id\) DO UPDATE/.test(connRepoSrc41), 'Schema and repository define the microsoft_connections contract');
 
     // --- 17. status ---
@@ -5420,11 +5420,9 @@ async function runTests() {
     assert(JSON.stringify(projectFromRow45({ ...rowBase45, jira_links: '["PROJ-1","https://company.atlassian.net/browse/PROJ-1"]' }).jiraLinks) === JSON.stringify(['PROJ-1', 'https://company.atlassian.net/browse/PROJ-1']) && JSON.stringify(projectFromRow45({ ...rowBase45, jira_links: ['X-2'] }).jiraLinks) === '["X-2"]', 'A PostgreSQL row maps jira_links whether pg returns JSON text or an array');
     assert(JSON.stringify(projectFromRow45({ ...rowBase45, jira_links: null }).jiraLinks) === '[]' && JSON.stringify(projectFromRow45(rowBase45).jiraLinks) === '[]' && projectFromRow45(rowBase45).members.length === 1 && JSON.stringify(projectFromRow45({ ...rowBase45, jira_links: 'not json' }).jiraLinks) === '[]', 'NULL, missing or malformed jira_links read as no links, and members still map');
     const projRepoSrc45 = fs35.readFileSync('server/repositories/projectRepository.ts', 'utf8').replace(/\r/g, '');
-    const insert45 = /INSERT INTO projects \(([^)]*)\)\s*VALUES \(([^)]*)\)/.exec(projRepoSrc45)!;
-    const insertCols45 = insert45[1].split(',').map((c: string) => c.trim());
-    const insertParams45 = insert45[2].split(',').map((c: string) => c.trim());
-    assert(insertCols45[insertCols45.length - 1] === 'jira_links' && insertCols45.length === insertParams45.length && insertParams45[insertParams45.length - 1] === '$' + insertCols45.length && /newProject\.updatedAt,\n\s*JSON\.stringify\(newProject\.jiraLinks \|\| \[\]\),\n\s*\]/.test(projRepoSrc45), 'PostgreSQL insert writes jira_links as the last column with a matching placeholder and value');
-    assert(/updated_at = \$24,\s*jira_links = \$25\s*WHERE id = \$26/.test(projRepoSrc45) && /updated\.updatedAt,\n\s*JSON\.stringify\(updated\.jiraLinks \|\| \[\]\),\n\s*id,/.test(projRepoSrc45) && (projRepoSrc45.match(/projectFromRow\)|projectFromRow\(res\.rows\[0\]\)/g) || []).length === 2, 'PostgreSQL update writes jira_links, and both reads use the shared row mapper');
+    // Sprint 25: the mapped text columns (PROJECT_TEXT_COLUMNS) follow jira_links; §57 checks the round trip behaviourally.
+    assert(/created_at, updated_at, jira_links, \$\{PROJECT_TEXT_COLUMNS/.test(projRepoSrc45) && /\$26, \$27, \$28, \$\{PROJECT_TEXT_COLUMNS/.test(projRepoSrc45) && /newProject\.updatedAt,\n\s*JSON\.stringify\(newProject\.jiraLinks \|\| \[\]\),\n/.test(projRepoSrc45), 'PostgreSQL insert writes jira_links (placeholder 28) followed by the mapped text columns');
+    assert(/updated_at = \$24,\s*jira_links = \$25, \$\{PROJECT_TEXT_COLUMNS/.test(projRepoSrc45) &&/updated\.updatedAt,\n\s*JSON\.stringify\(updated\.jiraLinks \|\| \[\]\),\n\s*id,/.test(projRepoSrc45) && (projRepoSrc45.match(/projectFromRow\)|projectFromRow\(res\.rows\[0\]\)/g) || []).length === 2, 'PostgreSQL update writes jira_links, and both reads use the shared row mapper');
     const projTable45 = (/CREATE TABLE IF NOT EXISTS projects \(([\s\S]*?)\n\);/.exec(schema45.replace(/\r/g, '')) || [])[1] || '';
     assert(/jira_links JSONB NOT NULL DEFAULT '\[\]'::jsonb/.test(projTable45) && /ALTER TABLE projects ADD COLUMN IF NOT EXISTS jira_links JSONB NOT NULL DEFAULT '\[\]'::jsonb;/.test(schema45), 'Schema: projects.jira_links (JSONB, default empty) with an idempotent ALTER for existing databases');
 
@@ -6005,15 +6003,20 @@ async function runTests() {
     const values47: Record<string, any> = { title: 'S17 Status draft (revised)', description: 'New scope', type: 'business', priority: 'critical', rationale: 'Regulatory', source: 'Audit finding' };
     const reopened47: string[] = [];
     const reapproveFailures47: string[] = [];
+    const memberRefusals47: string[] = [];
     for (const field of SUBSTANTIVE47) {
-      const res = await patch47(member47, r2.id, { [field]: values47[field] });
+      // Sprint 25: an ordinary project member can no longer reopen an approved requirement by editing it.
+      const refused = await patch47(member47, r2.id, { [field]: values47[field] });
+      if (refused.statusCode === 403 && (await ReqRepo47.findById(r2.id))?.status === 'approved') memberRefusals47.push(field);
+      const res = await patch47(pmA47, r2.id, { [field]: values47[field] });
       if (res.statusCode === 200 && req47(res).status === 'in-review' && req47(res)[field] === values47[field]) reopened47.push(field);
       const again = await status47(prod47, r2.id, 'approved');
       if (again.statusCode !== 200) reapproveFailures47.push(`${field}: ${again.statusCode}`);
     }
-    assert(reopened47.length === 6 && reapproveFailures47.length === 0, `A substantive change to an approved requirement returns it to review, from where it is approved again (${reopened47.join(', ')}${reapproveFailures47.length ? `; re-approval failed: ${reapproveFailures47.join(', ')}` : ''})`);
+    assert(memberRefusals47.length === 6, `A project member cannot change the content of an approved requirement (403); it stays approved (${memberRefusals47.join(', ')})`);
+    assert(reopened47.length === 6 && reapproveFailures47.length === 0, `A substantive change by an approver on the project returns it to review, from where it is approved again (${reopened47.join(', ')}${reapproveFailures47.length ? `; re-approval failed: ${reapproveFailures47.join(', ')}` : ''})`);
     const reopenActs47 = (await acts47(r2.id)).filter((a: any) => a.action === 'status_change' && a.details.reason === 'content-changed');
-    assert(reopenActs47.length === 6 && reopenActs47.every((a: any) => a.details.from === 'approved' && a.details.to === 'in-review' && a.actorId === member47.id), 'Each automatic return to review is logged as an approved → in-review status change by the editor');
+    assert(reopenActs47.length === 6 && reopenActs47.every((a: any) => a.details.from === 'approved' && a.details.to === 'in-review' && a.actorId === pmA47.id), 'Each automatic return to review is logged as an approved → in-review status change by the editor');
 
     // --- I. Delete ---
     const approvedDelete47 = await call47(ReqCtl47.remove, pmA47, { params: { id: r2.id } });
@@ -7326,8 +7329,11 @@ if (step === 'fresh') {
   const missing = await B.ensureFirstAdmin({}).then(() => null, (e) => e.message);
   const created = await B.ensureFirstAdmin({ BOOTSTRAP_ADMIN_EMAIL: 'owner@example.com', BOOTSTRAP_ADMIN_PASSWORD: process.env.S20_PASSWORD });
   const admins = (await Users.findAll()).filter((u) => u.role === 'admin');
+  // Sprint 25 correction: every repository (so every seed) is loaded; only the bootstrapped account may be stored.
+  for (const repo of ${JSON.stringify(fs35.readdirSync(path50.join(root50, 'server', 'repositories')).filter((f: string) => f.endsWith('.ts')).map((f: string) => mod50(`server/repositories/${f}`)))}) await import(repo);
+  const stored = Array.from(P.registeredStores()).filter(([, st]) => (st.kind === 'map' ? st.ref.size : st.ref.length) > 0).map(([name]) => name);
   P.flushNow();
-  out({ before, missing, created, admins: admins.map((a) => a.email) });
+  out({ before, missing, created, admins: admins.map((a) => a.email), stores: P.registeredStores().size, stored });
 } else if (step === 'prodEmbeddedState') {
   const B = await import(${JSON.stringify(mod50('server/config/bootstrapAdmin.ts'))});
   out({ again: await B.ensureFirstAdmin({}), emails: (await Users.findAll()).map((u) => u.email) });
@@ -7441,7 +7447,22 @@ if (step === 'fresh') {
     const prodPassword50 = 'Kept!Secure#Vault2026';
     const prod50 = runChild50('prodEmbedded', { PM_PORTAL_DATA_FILE: prodFile50, NODE_ENV: 'production', S20_PASSWORD: prodPassword50 });
     const prodAgain50 = runChild50('prodEmbeddedState', { PM_PORTAL_DATA_FILE: prodFile50, NODE_ENV: 'production' });
-    assert(prod50.code === 0 && prod50.out.before.users === 0 && prod50.out.before.projects > 0 && /BOOTSTRAP_ADMIN_EMAIL/.test(prod50.out.missing), `In production a new embedded store has no demo accounts and needs the bootstrap variables (other demo data is unaffected)${prod50.code ? ` [${prod50.err.slice(-600)}]` : ""}`);
+    // Sprint 25: production seeds no demo business records either (DATA-09).
+    assert(prod50.code === 0 && prod50.out.before.users === 0 && prod50.out.before.projects === 0 && /BOOTSTRAP_ADMIN_EMAIL/.test(prod50.out.missing), `In production a new embedded store has no demo accounts or demo projects and needs the bootstrap variables${prod50.code ? ` [${prod50.err.slice(-600)}]` : ""}`);
+    assert(prod50.out.stores >= 20 && JSON.stringify(prod50.out.stored) === JSON.stringify(['users']),
+      `In production no repository seeds demo business records: with every store loaded, only the bootstrapped account is stored (${prod50.out.stores} stores; non-empty: ${(prod50.out.stored || []).join(', ')})`);
+    // Sprint 25 correction: a development data file (demo accounts still on their published passwords)
+    // restored into production stops startup before anything listens.
+    const restoredFile50 = path50.join(tmp50, 'restored', 'pm-portal-data.json');
+    const devStore50 = runChild50('demo', { PM_PORTAL_DATA_FILE: restoredFile50 });
+    const restoredStart50 = cp50.spawnSync(process.execPath, [tsx50, 'server.ts'], {
+      cwd: root50, encoding: 'utf8', timeout: 120000,
+      env: { ...process.env, DATABASE_URL: '', PM_PORTAL_DATA_MODE: '', PM_PORTAL_DATA_FILE: restoredFile50, NODE_ENV: 'production', JWT_SECRET: 'r5'.repeat(24), PM_PORTAL_HOST: '127.0.0.1', PORT: '3997', BOOTSTRAP_ADMIN_EMAIL: 'owner@example.com', BOOTSTRAP_ADMIN_PASSWORD: prodPassword50 },
+    });
+    const restoredOut50 = `${restoredStart50.stdout}${restoredStart50.stderr}`;
+    assert(devStore50.code === 0 && devStore50.out.emails.length > 1 && restoredStart50.status === 1 && /did not start: NODE_ENV=production refuses to start: demo account\(s\) with passwords published in the source are active/.test(restoredOut50)
+      && !/running on/.test(restoredOut50) && !/iRely@123|Admin@123|User@123/.test(restoredOut50) && !restoredOut50.includes(prodPassword50),
+      `A development data file restored into production stops startup while its demo accounts still accept their published passwords (nothing listens; no password printed)${restoredStart50.status === 1 ? '' : ` [${restoredOut50.slice(-600)}]`}`);
     assert(prod50.out.created === 'created' && JSON.stringify(prod50.out.admins) === JSON.stringify(['owner@example.com']) && prodAgain50.code === 0 && prodAgain50.out.again === 'exists' && JSON.stringify(prodAgain50.out.emails) === JSON.stringify(['owner@example.com']) && !(prod50.err + prodAgain50.err).includes(prodPassword50), 'Its only administrator is the bootstrapped one, kept across restarts; the password is never printed');
     const archDocDemo50 = fs35.readFileSync('V2_ARCHITECTURE.md', 'utf8');
     assert(/development and demonstration only/.test(archDocDemo50) && /Change their passwords or deactivate them before any real use/.test(archDocDemo50) && /With .NODE_ENV=production. no demo accounts are seeded/.test(archDocDemo50) && /PERSISTENCE_FAILED/.test(archDocDemo50), 'The documentation states the demo accounts are development-only, must be changed before real use, are not seeded in production, and describes the save guarantee');
@@ -8203,13 +8224,21 @@ if (step === 'fresh') {
     const demoted53 = await mk53('demoted', 'project-manager');
     const token53 = genToken53({ ...demoted53, role: 'project-manager' } as any);
     await UserRepo40.update(demoted53.id, { role: 'viewer' } as any);
-    const authReq53: any = { headers: { authorization: `Bearer ${token53}` }, cookies: {} };
+    // Sprint 25: the role change ends the sessions issued before it.
+    const oldReq53: any = { headers: { authorization: `Bearer ${token53}` }, cookies: {} };
+    const oldRes53: any = { statusCode: 200, body: null, status(c: number) { this.statusCode = c; return this; }, json(b: any) { this.body = b; return this; } };
+    let oldPassed53 = false;
+    await authToken53(oldReq53, oldRes53, () => { oldPassed53 = true; });
+    assert(!oldPassed53 && oldRes53.statusCode === 401 && oldRes53.body?.error?.code === 'SESSION_REVOKED', 'I. A token issued before a role change is refused (the change ends the session)');
+    // A token of the current session generation that still claims the old role gets the account's current role.
+    const stale53 = genToken53({ ...demoted53, role: 'project-manager' } as any, (await UserRepo40.findById(demoted53.id))!.tokenVersion);
+    const authReq53: any = { headers: { authorization: `Bearer ${stale53}` }, cookies: {} };
     const authRes53: any = { statusCode: 200, body: null, status(c: number) { this.statusCode = c; return this; }, json(b: any) { this.body = b; return this; } };
     let passed53 = false;
     await authToken53(authReq53, authRes53, () => { passed53 = true; });
     let elevated53 = false;
     requireRoles53(['project-manager'])(authReq53, authRes53, () => { elevated53 = true; });
-    assert(passed53 && authReq53.user.role === 'viewer' && !elevated53 && authRes53.statusCode === 403, 'I. A token issued while the user was a project manager carries their current role (viewer) and no longer passes a project-manager check');
+    assert(passed53 && authReq53.user.role === 'viewer' && !elevated53 && authRes53.statusCode === 403, 'I. A token claiming the old role (project manager) carries the current role (viewer) and no longer passes a project-manager check');
 
     // --- J. XSS: stored names render inert ---
     const hadDocument53 = 'document' in globalThis;
@@ -8259,7 +8288,8 @@ if (step === 'fresh') {
     const out53 = `${child53.stdout}${child53.stderr}`;
     assert(child53.status === 1 && /did not start/.test(out53) && /PM_PORTAL_HOST=0\.0\.0\.0/.test(out53) && !out53.includes(DEFAULT_SECRET53) && !/running on/.test(out53), 'K. The server refuses to start when exposed to the network without a private JWT secret (nothing listens, the secret is not printed)');
     const serverSrc53 = src53('server.ts');
-    assert(/const \{ host: HOST, loopbackOnly \} = resolveListenHost\(\);/.test(serverSrc53) && /app\.listen\(PORT, HOST,/.test(serverSrc53) && !/app\.listen\(PORT, '0\.0\.0\.0'/.test(serverSrc53) && serverSrc53.indexOf('resolveListenHost()') < serverSrc53.indexOf('await initDatabase()'), 'K. Startup resolves the address before loading any data and listens only there');
+    // Sprint 25: the requested address is checked first; the demo-account guard may then narrow it to loopback.
+    assert(/const requestedListen = resolveListenHost\(\);/.test(serverSrc53) && /applyDemoAccountGuard\(demoAccounts, requestedListen\)/.test(serverSrc53) && /app\.listen\(PORT, HOST,/.test(serverSrc53) && !/app\.listen\(PORT, '0\.0\.0\.0'/.test(serverSrc53) && serverSrc53.indexOf('resolveListenHost()') < serverSrc53.indexOf('await initDatabase()'), 'K. Startup resolves the address before loading any data and listens only there');
 
     // --- L. /ai/query: metered and audited ---
     const aiLayer53 = (aiRoutes53 as any).stack.find((l: any) => l.route?.path === '/ai/query').route.stack.map((s: any) => s.handle);
@@ -8933,7 +8963,7 @@ if (step === 'fresh') {
 
   // --- The stand-in pool: the repositories' own SQL against in-test tables ----
   type Row56 = Record<string, any>;
-  const mini56 = (opts: { tables?: Record<string, Row56[]>; seqs?: Record<string, { last: number; called: boolean }>; fail?: RegExp; beforeInsert?: (table: string, row: Row56, tables: Record<string, Row56[]>) => void } = {}) => {
+  const mini56 = (opts: { tables?: Record<string, Row56[]>; seqs?: Record<string, { last: number; called: boolean }>; fail?: RegExp; beforeInsert?: (table: string, row: Row56, tables: Record<string, Row56[]>) => void; beforeQuery?: (sql: string, params: any[]) => Promise<void> } = {}) => {
     const tables: Record<string, Row56[]> = opts.tables || {};
     const seqs: Record<string, { last: number; called: boolean }> = opts.seqs || {};
     const log: Array<{ sql: string; params: any[]; client: boolean }> = [];
@@ -8946,15 +8976,19 @@ if (step === 'fresh') {
       }
       return out;
     };
+    // Sprint 25: like pg, JSON/JSONB values come back parsed (the repositories send them as JSON text).
+    const jsonb56 = (v: any) => { if (typeof v !== 'string' || !/^[[{]/.test(v.trim())) return v; try { return JSON.parse(v); } catch { return v; } };
     const where = (rows: Row56[], clause: string | undefined, params: any[]) => {
       if (!clause) return rows;
       const conds = clause.split(/\s+AND\s+/i).filter((c) => !/^1\s*=\s*1$/.test(c.trim()));
-      const parsed = conds.map((c) => /^\s*(?:\w+\.)?(\w+)\s*=\s*\$(\d+)\s*$/.exec(c));
-      if (parsed.some((p) => !p)) return []; // a condition the stand-in does not evaluate matches nothing
-      return rows.filter((r) => parsed.every((p) => r[p![1]] === params[Number(p![2]) - 1]));
+      // Sprint 25: "a = $1 OR b = $1" (any alternative may match).
+      const parsed = conds.map((c) => c.split(/\s+OR\s+/i).map((alt) => /^\s*(?:\w+\.)?(\w+)\s*=\s*\$(\d+)\s*$/.exec(alt)));
+      if (parsed.some((alts) => alts.some((p) => !p))) return []; // a condition the stand-in does not evaluate matches nothing
+      return rows.filter((r) => parsed.every((alts) => alts.some((p) => r[p![1]] === params[Number(p![2]) - 1])));
     };
     const exec = (client: boolean) => async (text: string, params: any[] = []) => {
       const sql = String(text).replace(/\s+/g, ' ').trim();
+      if (opts.beforeQuery) await opts.beforeQuery(sql, params);
       log.push({ sql, params, client });
       if (opts.fail && opts.fail.test(sql)) throw dbError56('stand-in database failure', '08006');
       if (/^(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE SAVEPOINT)\b/i.test(sql)) return { rows: [], rowCount: 0 };
@@ -8966,7 +9000,7 @@ if (step === 'fresh') {
       if ((m = /^INSERT INTO (\w+) \(([^)]*)\) VALUES/i.exec(sql))) {
         const table = m[1];
         const row: Row56 = {};
-        m[2].split(',').map((c) => c.trim()).forEach((c, i) => { row[c] = params[i]; });
+        m[2].split(',').map((c) => c.trim()).forEach((c, i) => { row[c] = jsonb56(params[i]); });
         const t = (tables[table] ||= []);
         opts.beforeInsert?.(table, row, tables);
         if (/ON CONFLICT \(team_id, user_id\)/i.test(sql)) {
@@ -8986,6 +9020,12 @@ if (step === 'fresh') {
         });
         return { rows, rowCount: rows.length };
       }
+      // Sprint 25: a delivery read — "SELECT x.*, <joined names> FROM <table> x LEFT JOIN … WHERE x.id = $1" —
+      // returns the table's own row (the joined display names are not modelled).
+      if ((m = /^SELECT (\w+)\.\*,? .*? FROM (\w+) \1(?: .*)? WHERE \1\.id = \$1$/i.exec(sql))) {
+        const rows = (tables[m[2]] || []).filter((r) => r.id === params[0]).map((r) => ({ ...r }));
+        return { rows, rowCount: rows.length };
+      }
       if ((m = /^SELECT (.+?) FROM (\w+)(?: WHERE (.+?))?(?: ORDER BY .+)?$/i.exec(sql))) {
         const list = m[1];
         const rows = where(tables[m[2]] || [], m[3], params).map((r) => pick(r, list));
@@ -8993,8 +9033,10 @@ if (step === 'fresh') {
       }
       if ((m = /^UPDATE (\w+) SET (.+?) WHERE (.+)$/i.exec(sql))) {
         const sets = Array.from(m[2].matchAll(/(\w+) = \$(\d+)/g));
+        const increments = Array.from(m[2].matchAll(/(\w+) = \1 \+ (\d+)/g)); // Sprint 25: token_version = token_version + 1
         const hit = where(tables[m[1]] || [], m[3], params);
-        for (const r of hit) for (const s of sets) r[s[1]] = params[Number(s[2]) - 1];
+        for (const r of hit) for (const s of sets) r[s[1]] = jsonb56(params[Number(s[2]) - 1]);
+        for (const r of hit) for (const inc of increments) r[inc[1]] = Number(r[inc[1]] ?? 0) + Number(inc[2]);
         return { rows: [], rowCount: hit.length };
       }
       if ((m = /^DELETE FROM (\w+) WHERE (.+)$/i.exec(sql))) {
@@ -9013,6 +9055,7 @@ if (step === 'fresh') {
   };
 
   // --- A. Generic schema contract (every repository column exists) -----------
+  const { PROJECT_TEXT_COLUMNS: projectTextColumns56 } = await import('../server/repositories/projectRepository');
   const contract56 = (schemaSql: string) => {
     const clean = schemaSql.replace(/--[^\n]*/g, '').replace(/\r/g, '');
     const tables: Record<string, Set<string>> = {};
@@ -9022,7 +9065,10 @@ if (step === 'fresh') {
     for (const m of clean.matchAll(/ALTER TABLE (\w+) ADD COLUMN IF NOT EXISTS (\w+)/g)) (tables[m[1]] ||= new Set()).add(m[2]);
     const problems: string[] = [];
     for (const file of fs35.readdirSync('server/repositories').filter((f: string) => f.endsWith('.ts'))) {
-      const src = fs35.readFileSync(`server/repositories/${file}`, 'utf8');
+      // Sprint 25: the project text columns are generated from PROJECT_TEXT_COLUMNS; expand them so they are checked too.
+      const src = fs35.readFileSync(`server/repositories/${file}`, 'utf8')
+        .split("${PROJECT_TEXT_COLUMNS.map(([, c]) => c).join(', ')}").join(projectTextColumns56.map(([, c]) => c).join(', '))
+        .split("${PROJECT_TEXT_COLUMNS.map(([, c], i) => `${c} = $${27 + i}`).join(', ')}").join(projectTextColumns56.map(([, c], i) => `${c} = $${27 + i}`).join(', '));
       const columnsConst = /const COLUMNS = `([^`]*)`/.exec(src)?.[1] || '';
       const has = (table: string, col: string) => !!tables[table] && tables[table].has(col);
       for (const m of src.matchAll(/INSERT INTO (\w+)\s*\(([^)]*)\)/g)) {
@@ -9430,11 +9476,11 @@ if (step === 'fresh') {
       'R5. Retried, the completion succeeds once: one velocity record, the story carried to the backlog');
 
     // --- R8. Delivery text is validated to its limit (behaviour, not source text) ---
-    const lenOk56 = await rejects56(() => DelGuards56.prepareUpdate('story', storyR56, { sprint: 'x'.repeat(100), targetRelease: 'y'.repeat(100) }, owner56));
-    const lenBad56 = await rejects56(() => DelGuards56.prepareUpdate('story', storyR56, { sprint: 'x'.repeat(101) }, owner56));
+    // Sprint 25: a story's sprint is no longer free text (it must name a sprint of its project — §57 S25-09).
+    const lenOk56 = await rejects56(() => DelGuards56.prepareUpdate('story', storyR56, { targetRelease: 'y'.repeat(100) }, owner56));
     const lenBadRel56 = await rejects56(() => DelGuards56.prepareUpdate('story', storyR56, { targetRelease: 'y'.repeat(101) }, owner56));
-    assert(lenOk56 === null && lenBad56?.status === 400 && lenBadRel56?.status === 400 && columnLength56('stories', 'sprint') >= 100 && columnLength56('stories', 'target_release') >= 100,
-      'R8. Story sprint and target-release text is accepted up to 100 characters and refused at 101 (columns hold 255)');
+    assert(lenOk56 === null && lenBadRel56?.status === 400 && columnLength56('stories', 'sprint') >= 255 && columnLength56('stories', 'target_release') >= 100,
+      'R8. Story target-release text is accepted up to 100 characters and refused at 101 (the column holds 255); sprint names fit their 255-character column');
   } finally {
     for (const fn of cleanupR56.reverse()) { try { await fn(); } catch { /* already removed */ } }
   }
@@ -9526,6 +9572,929 @@ if (step === 'fresh') {
   const restartedPrj56 = await withPg56(mini56({ tables: pgPrj56.tables, seqs: pgPrj56.seqs }), () => ProjGuards56.prepareCreate({ name: 'S24F pg after restart' }, adminUser40));
   assert(pgPrjSeq56.first === 'PRJ-161' && pgPrjSeq56.second === 'PRJ-162' && new Set(pgPrjSeq56.burst).size === 3 && pgPrjSeq56.burst.every((id: string) => prjNum56(id) > 162) && prjNum56(restartedPrj56.id) > Math.max(...pgPrjSeq56.burst.map(prjNum56)),
     `F2. PostgreSQL: ids come from project_code_seq — above every stored PRJ id (PRJ-160 has a custom code), not re-issued after a delete, distinct under concurrency, still monotonic after a restart (${pgPrjSeq56.first}, ${pgPrjSeq56.second}, ${pgPrjSeq56.burst.join('/')}, ${restartedPrj56.id})`);
+
+  // 57. Sprint 25 Production Safety
+  // Behavioural checks for every Sprint 25 protection: stored XSS (browser modules run
+  // against a minimal fake DOM), cookie-only sessions and revocation, safe startup
+  // defaults, the authorization gaps, the PostgreSQL persistence contract (repositories'
+  // own SQL through the §56 stand-in), stale user updates, secondary writes, and the
+  // test-database guard.
+  console.log('\n--- 57. Sprint 25 Production Safety ---');
+  const url57 = await import('url');
+  const webMod57 = (name: string) => import(url57.pathToFileURL(path56.resolve(`PM-Portal/js/${name}.js`)).href);
+  const stamp57 = Date.now();
+  const evil57 = '<img src=x onerror=alert(57)>';
+  const breakout57 = 'x" onmouseover="alert(57)';
+  // Structural check: the markup's own start tags are read attribute by attribute (quoted values are
+  // skipped), so a payload counts only when it became an element or an attribute — not when it is text.
+  const attrRe57 = /\s+([^\s"'>/=]+)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?/g;
+  const unsafeHtml57 = (html: string) => {
+    const s = String(html);
+    if (s.includes('<img src=x onerror') || s.includes('" onmouseover="')) return true;
+    for (const tag of s.matchAll(/<([a-zA-Z][\w-]*)((?:\s+[^\s"'>/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?)*)\s*\/?>/g)) {
+      const attrs = Array.from(tag[2].matchAll(attrRe57)).map((a) => a[1].toLowerCase());
+      if (attrs.some((a) => a === 'onerror' || a === 'onmouseover') || (tag[1].toLowerCase() === 'img' && /\ssrc\s*=\s*x(\s|$)/i.test(tag[2]))) return true;
+    }
+    return false;
+  };
+  const escapedHtml57 = (html: string) => html.includes('&lt;img src=x onerror=alert(57)&gt;');
+
+  /** Runs browser code against a minimal DOM; returns every element's innerHTML, joined. */
+  const withDom57 = async (fn: (dom: { document: any; made: any[] }) => unknown, storage: Record<string, string> = {}) => {
+    const made: any[] = [];
+    const byId = new Map<string, any>();
+    const el = (tag = 'div', id = ''): any => {
+      const e: any = {
+        tagName: tag.toUpperCase(), id, innerHTML: '', textContent: '', value: '', src: '', alt: '', className: '', children: [] as any[], style: {}, attrs: {} as Record<string, string>,
+        classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+        addEventListener() {}, removeEventListener() {}, querySelectorAll: () => [], querySelector: () => el('button'),
+        appendChild(c: any) { e.children.push(c); return c; },
+        replaceChildren(...c: any[]) { e.children = c; e.innerHTML = ''; },
+        setAttribute(k: string, v: string) { e.attrs[k] = String(v); }, getAttribute(k: string) { return e.attrs[k] ?? null; },
+        remove() {}, focus() {}, click() {},
+        insertAdjacentHTML(_where: string, html: string) { e.innerHTML += html; },
+      };
+      made.push(e);
+      return e;
+    };
+    const document = {
+      body: el('body'),
+      getElementById: (id: string) => { if (!byId.has(id)) byId.set(id, el('div', id)); return byId.get(id); },
+      createElement: (tag: string) => el(tag),
+      querySelector: () => null, querySelectorAll: () => [], addEventListener() {},
+    };
+    const store = new Map(Object.entries(storage));
+    const localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, String(v)); }, removeItem: (k: string) => { store.delete(k); }, key: () => null, length: 0 };
+    const g = globalThis as any;
+    const saved = { document: g.document, bootstrap: g.bootstrap, localStorage: g.localStorage, confirm: g.confirm };
+    g.document = document;
+    g.bootstrap = { Modal: class { show() {} hide() {} static getInstance() { return null; } } };
+    g.localStorage = localStorage;
+    g.confirm = () => false;
+    try {
+      await fn({ document, made });
+      return made.map((e) => e.innerHTML).join('\n');
+    } finally {
+      Object.assign(g, saved);
+    }
+  };
+
+  // --- S25-XSS. Stored values render as text, never as markup ------------------------------
+  // Browser modules read window at load or render time (a minimal stand-in).
+  (globalThis as any).window = (globalThis as any).window || { addEventListener() {}, location: { href: '' } };
+  const { PortfoliosModule: Portfolios57 } = await webMod57('portfolios');
+  const goalsHtml57 = await withDom57(({ document }) => {
+    const self = {
+      goals: [{ id: 'goal_s25', objective: evil57, description: 'd', portfolioId: 'port_s25', currentValue: breakout57, targetValue: 10, unit: evil57, status: 'draft', ownerName: 'Owner' }],
+      portfolios: [{ id: 'port_s25', name: evil57 }], products: [], searchQuery: '', alignmentLoading: false,
+      initiativesForGoal: () => [], alignmentErrorMessage: () => '', openGoalModal() {}, render() {}, loadAlignment() {},
+    };
+    Portfolios57.renderGoals.call(self, document.getElementById('goals-container'));
+  });
+  const goalModalHtml57 = await withDom57(() => {
+    Portfolios57.openGoalModal.call({ users: [], portfolios: [], products: [], goals: [] }, { id: 'goal_s25', objective: breakout57, unit: breakout57, targetValue: breakout57, currentValue: 1, status: 'draft' });
+  });
+  assert(!unsafeHtml57(goalsHtml57) && escapedHtml57(goalsHtml57) && !unsafeHtml57(goalModalHtml57) && goalModalHtml57.includes('value="x&quot; onmouseover=&quot;alert(57)"'),
+    'S25-XSS. Portfolios → Strategic Goals: a goal objective, unit, values and portfolio name render as text in the table and the edit form');
+  const { ReportsHubModule: Reports57 } = await webMod57('reportsHub');
+  const reportHtml57 = await withDom57(() => {
+    Reports57.renderPreviewSheet.call({ compiledData: { title: 'Report', summaryText: 'Summary', kpis: [{ label: 'KPI', val: evil57 }], columns: ['Project', evil57], rows: [{ Project: evil57 + breakout57, [evil57]: 'x' }] } });
+  });
+  assert(!unsafeHtml57(reportHtml57) && escapedHtml57(reportHtml57), 'S25-XSS. Reports Hub: project names, column headings and KPI values render as text');
+  const { ExcelEngineModule: ExcelEngine57 } = await webMod57('excelEngine');
+  const { Excel: Excel57 } = await webMod57('excel');
+  const excelHtml57 = await withDom57(() => {
+    const row: Record<string, string> = {};
+    for (const col of Excel57.columns) row[col] = 'text';
+    Object.assign(row, { Status: evil57, SOW: evil57, Risk: evil57 });
+    ExcelEngine57.renderDatabase.call({ currentData: [row], updateOverviewStats() {}, deleteRow() {} });
+  });
+  assert(Excel57.columns.includes('Status') && !unsafeHtml57(excelHtml57) && escapedHtml57(excelHtml57), 'S25-XSS. Imported spreadsheet values (Status, SOW, Risk badges) render as text');
+  const { DashboardModule: Dashboard57 } = await webMod57('dashboard');
+  let drilldown57 = '';
+  await withDom57(() => {
+    Dashboard57.openMetricDrilldown.call({ app: { openModal: (_t: string, body: string) => { drilldown57 = body; }, projectsList: [], customersList: [] } }, 'metric-weekend-support');
+  }, { pm_portal_weekend_logs: JSON.stringify([{ employee: evil57, project: breakout57, date: '2026-10-10', task: 'On call' }]) });
+  assert(drilldown57.length > 0 && !unsafeHtml57(drilldown57) && escapedHtml57(drilldown57), 'S25-XSS. Spreadsheet-imported weekend support rows render as text in the PM Dashboard drilldown');
+  const { RiskEngineModule: RiskEngine57 } = await webMod57('riskEngine');
+  const riskHtml57 = await withDom57(() => {
+    RiskEngine57.renderTableReport.call({
+      evaluatedProjects: [{ id: 'PRJ-S25', name: 'Project', client: 'Client', manager: evil57, riskEval: { score: 80, severity: 'High', flags: [{ id: 'LEAVE_CONFLICT', label: evil57, desc: breakout57 }] } }],
+      searchQuery: '', severityFilter: 'all', escalations: [], stories: [], checked: {}, app: { showToast() {} }, saveData() {}, recalculateAndRender() {},
+    });
+  });
+  assert(!unsafeHtml57(riskHtml57) && escapedHtml57(riskHtml57), 'S25-XSS. Risk Engine: the project manager name and risk-flag text render as text (including inside title attributes)');
+  const { localAnswerHtml: localAnswer57 } = await webMod57('appIntegration');
+  const answerHtml57 = localAnswer57({ category: evil57, resultsCount: 1, summaryText: `Results for "${evil57}"`, results: [{ name: evil57, status: breakout57 }] });
+  assert(!unsafeHtml57(answerHtml57) && escapedHtml57(answerHtml57), 'S25-XSS. The local AI fallback answer renders the query, record names and details as text');
+  const { ProfileModule: Profile57 } = await webMod57('profile');
+  const { safeImageUrl: safeImage57 } = await webMod57('safeHtml');
+  let avatarUnsafe57: any = null;
+  let avatarSafe57: any = null;
+  await withDom57(({ document }) => {
+    Profile57.renderAvatarPreview.call({ user: { avatar: breakout57, firstName: 'Ann', lastName: 'Lee' } });
+    const preview = document.getElementById('profile-avatar-preview');
+    avatarUnsafe57 = { innerHTML: preview.innerHTML, children: preview.children.length }; // the unsafe value: initials, no image
+    preview.children = [];
+    Profile57.renderAvatarPreview.call({ user: { avatar: 'https://images.example.com/a.png', firstName: 'Ann', lastName: 'Lee' } });
+    avatarSafe57 = document.getElementById('profile-avatar-preview');
+  });
+  assert(!unsafeHtml57(avatarUnsafe57.innerHTML) && avatarUnsafe57.children === 0 && avatarUnsafe57.innerHTML.includes('AL') && avatarSafe57.children.length === 1 && avatarSafe57.children[0].src === 'https://images.example.com/a.png' && safeImage57('javascript:alert(1)') === '' && safeImage57(breakout57) === '' && safeImage57('data:image/png;base64,iVBORw0KGgo=') !== '' && safeImage57('data:image/svg+xml;base64,PHN2Zz4=') === '',
+    'S25-XSS. An avatar is shown only when it is an https URL or an uploaded PNG/JPEG/GIF/WebP image, and is set through the DOM');
+  const avatarUser57 = await Auth40.register({ email: `s25.avatar.${stamp57}@company.com`, password: 'Sprint25@Avatar1', firstName: 'Ava', lastName: 'Tar', role: 'team-member' }, login40.user);
+  const UserSvc57 = (await import('../server/services/userService')).UserService;
+  const avatarErrs57 = await Promise.all([breakout57, 'javascript:alert(1)', 'http://images.example.com/a.png', 'data:image/svg+xml;base64,PHN2Zz4='].map((v) => rejects56(() => UserSvc57.updateProfile(avatarUser57.id, { avatarUrl: v }, avatarUser57 as any))));
+  const avatarOk57 = await UserSvc57.updateProfile(avatarUser57.id, { avatarUrl: 'https://images.example.com/a.png' }, avatarUser57 as any);
+  assert(avatarErrs57.every((e) => e?.status === 400) && avatarOk57?.avatarUrl === 'https://images.example.com/a.png', 'S25-XSS. The server stores avatarUrl only as an https URL or an uploaded raster image (anything else is 400)');
+
+  // --- S25-AUTH. Cookie-only sessions, revocation, SESSION_EXPIRY ------------------------------
+  const { AuthController: AuthCtl57, sessionCookieOptions: cookieOptions57 } = await import('../server/controllers/authController');
+  const { authenticateToken: authToken57 } = await import('../server/middleware/authMiddleware');
+  const env57 = await import('../server/config/env');
+  const sessionUser57 = await Auth40.register({ email: `s25.session.${stamp57}@company.com`, password: 'Sprint25@Session1', firstName: 'Ses', lastName: 'Sion', role: 'team-member' }, login40.user);
+  const cookieRes57 = () => { const r: any = { statusCode: 200, body: null, cookies: [] as any[], cleared: [] as any[] }; r.status = (c: number) => { r.statusCode = c; return r; }; r.json = (b: any) => { r.body = b; return r; }; r.cookie = (n: string, v: string, o: any) => { r.cookies.push({ n, v, o }); return r; }; r.clearCookie = (n: string, o: any) => { r.cleared.push({ n, o }); return r; }; r.setHeader = () => r; return r; };
+  const loginRes57 = cookieRes57();
+  await AuthCtl57.login({ body: { email: sessionUser57.email, password: 'Sprint25@Session1' }, ip: '127.0.0.1', socket: { remoteAddress: '127.0.0.1' }, headers: {} } as any, loginRes57, (() => {}) as any);
+  const cookie57 = loginRes57.cookies.find((c: any) => c.n === 'auth_token');
+  assert(loginRes57.statusCode === 200 && loginRes57.body?.data?.user?.id === sessionUser57.id && !('token' in (loginRes57.body?.data || {})) && !JSON.stringify(loginRes57.body).includes(cookie57?.v) && cookie57?.o?.httpOnly === true && cookie57?.o?.sameSite === 'lax' && cookie57?.o?.maxAge === env57.sessionExpiryMs(),
+    'S25-AUTH. Login sets the HttpOnly session cookie (lifetime from SESSION_EXPIRY) and never returns the token to JavaScript');
+  const authed57 = async (token: string) => {
+    const req: any = { headers: {}, cookies: { auth_token: token } };
+    const res = cookieRes57();
+    let passed = false;
+    await authToken57(req, res, () => { passed = true; });
+    return { passed, code: res.body?.error?.code };
+  };
+  const loginToken57 = async (password = 'Sprint25@Session1') => (await Auth40.login(sessionUser57.email, password)).token;
+  // Logout ends the session (and every other session of the account).
+  const beforeLogout57 = await loginToken57();
+  const otherSession57 = await loginToken57();
+  const okBefore57 = await authed57(beforeLogout57);
+  const logoutRes57 = cookieRes57();
+  await AuthCtl57.logout({ user: { userId: sessionUser57.id } } as any, logoutRes57, ((e: any) => { throw e; }) as any);
+  const afterLogout57 = await authed57(beforeLogout57);
+  const otherAfterLogout57 = await authed57(otherSession57);
+  const freshLogin57 = await authed57(await loginToken57());
+  assert(okBefore57.passed && logoutRes57.statusCode === 200 && logoutRes57.cleared.some((c: any) => c.n === 'auth_token') && !afterLogout57.passed && afterLogout57.code === 'SESSION_REVOKED' && !otherAfterLogout57.passed && freshLogin57.passed,
+    'S25-AUTH. Sign-out revokes the token on the server (a copied token stops working) and clears the cookie; signing in again works');
+  const { authRoutes: authRoutes57 } = await import('../server/routes/authRoutes');
+  const logoutLayer57 = (authRoutes57 as any).stack.find((l: any) => l.route?.path === '/auth/logout');
+  assert(!!logoutLayer57 && logoutLayer57.route.stack.map((s: any) => s.handle).includes(authToken57), 'S25-AUTH. POST /auth/logout requires authentication');
+  // Password change: other sessions end, the caller continues in a new one.
+  const beforeChange57 = await loginToken57();
+  const changeRes57 = cookieRes57();
+  await AuthCtl57.changePassword({ user: { userId: sessionUser57.id, email: sessionUser57.email, role: 'team-member', firstName: 'Ses', lastName: 'Sion' }, body: { currentPassword: 'Sprint25@Session1', newPassword: 'Sprint25@Session2' } } as any, changeRes57, ((e: any) => { throw e; }) as any);
+  const changedCookie57 = changeRes57.cookies.find((c: any) => c.n === 'auth_token');
+  assert(changeRes57.statusCode === 200 && !(await authed57(beforeChange57)).passed && !!changedCookie57 && (await authed57(changedCookie57.v)).passed,
+    'S25-AUTH. A password change revokes earlier sessions and gives the caller a new session cookie');
+  // Admin reset, deactivation (still revoked after reactivation) and role change.
+  const beforeReset57 = await loginToken57('Sprint25@Session2');
+  await UserSvc57.setPassword(sessionUser57.id, 'Sprint25@Session3', login40.user as any);
+  const beforeDeactivate57 = await loginToken57('Sprint25@Session3');
+  await UserSvc57.setActiveStatus(sessionUser57.id, false, login40.user as any);
+  await UserSvc57.setActiveStatus(sessionUser57.id, true, login40.user as any);
+  const beforeRole57 = await loginToken57('Sprint25@Session3');
+  await UserSvc57.updateUserRole(sessionUser57.id, 'viewer', login40.user as any);
+  const resetCheck57 = await authed57(beforeReset57);
+  const deactivateCheck57 = await authed57(beforeDeactivate57);
+  const roleCheck57 = await authed57(beforeRole57);
+  assert([resetCheck57, deactivateCheck57, roleCheck57].every((c) => !c.passed && c.code === 'SESSION_REVOKED') && (await authed57(await loginToken57('Sprint25@Session3'))).passed,
+    'S25-AUTH. An admin password reset, a deactivation (even after reactivation) and a role change each revoke earlier sessions');
+  const expiryErr57 = (v: string) => { try { env57.sessionExpiryMs(v); return null; } catch (e: any) { return e; } };
+  assert(env57.sessionExpiryMs('7d') === 7 * 86_400_000 && env57.sessionExpiryMs('12h') === 43_200_000 && env57.sessionExpiryMs('3600') === 3_600_000 && ['abc', '0', '30s', '91d', '7 days', ''].every((v) => expiryErr57(v) instanceof env57.ConfigurationError) && cookieOptions57().maxAge === env57.sessionExpiryMs(),
+    'S25-AUTH. SESSION_EXPIRY is validated (1 minute to 90 days; unit s/m/h/d or seconds) and sets both the token and the cookie lifetime');
+  const { ApiClient: ApiClient57 } = await webMod57('services/apiClient');
+  const session57 = new Map<string, string>([['pm_v2_auth_token', 'legacy-token']]);
+  const g57 = globalThis as any;
+  const savedWeb57 = { sessionStorage: g57.sessionStorage, fetch: g57.fetch };
+  let sentHeaders57: any = null;
+  g57.sessionStorage = { getItem: (k: string) => session57.get(k) ?? null, setItem: (k: string, v: string) => { session57.set(k, v); }, removeItem: (k: string) => { session57.delete(k); } };
+  g57.fetch = async (_u: string, o: any) => { sentHeaders57 = o.headers; return { ok: true, status: 200, headers: { get: () => 'application/json' }, json: async () => ({ success: true, data: {} }) }; };
+  try {
+    const client57 = new ApiClient57('/api/v1', 1000);
+    client57.setAuthToken('new-token');
+    await client57.request('/ping');
+    assert(!session57.has('pm_v2_auth_token') && client57.getAuthToken() === null && sentHeaders57 && !('Authorization' in sentHeaders57),
+      'S25-AUTH. The browser never stores the token or sends it as a Bearer header (a token stored by an earlier version is removed)');
+  } finally {
+    Object.assign(g57, savedWeb57);
+  }
+
+  // --- S25-DEPLOY. Demo accounts, host allowlist, server bundle, test database ------------------
+  const demoDecision57 = (demo: string[], host: string, env: Record<string, string>) => { try { return env57.applyDemoAccountGuard(demo, { host, loopbackOnly: host === '127.0.0.1' }, env); } catch (e) { return e; } };
+  const prodDemo57: any = demoDecision57(['admin@company.com'], '0.0.0.0', { NODE_ENV: 'production' });
+  const explicitDemo57: any = demoDecision57(['admin@company.com'], '192.168.1.5', { PM_PORTAL_HOST: '192.168.1.5' });
+  const defaultDemo57: any = demoDecision57(['admin@company.com'], '0.0.0.0', {});
+  const noDemo57: any = demoDecision57([], '0.0.0.0', { NODE_ENV: 'production' });
+  assert(prodDemo57 instanceof env57.ConfigurationError && /admin@company\.com/.test(prodDemo57.message) && !/Admin@123|iRely@123|User@123/.test(prodDemo57.message) && explicitDemo57 instanceof env57.ConfigurationError && defaultDemo57.host === '127.0.0.1' && defaultDemo57.demoLoopback === true && noDemo57.host === '0.0.0.0',
+    'S25-DEPLOY. With demo accounts still on their published passwords: production refuses to start, a network PM_PORTAL_HOST is refused, the default falls back to this computer only');
+  const demoAdmin57 = (await UserRepo40.findByEmail('admin@company.com'))!;
+  const demoBefore57 = await UserRepo40.activeDemoAccounts();
+  await UserRepo40.updatePassword(demoAdmin57.id, await (await import('../server/auth/password')).hashPassword('Changed#Demo2026x'));
+  const demoAfter57 = await UserRepo40.activeDemoAccounts();
+  await UserRepo40.updatePassword(demoAdmin57.id, demoAdmin57.passwordHash!);
+  const userRepoSrc57 = fs35.readFileSync('server/repositories/userRepository.ts', 'utf8');
+  assert(demoBefore57.includes('admin@company.com') && !demoAfter57.includes('admin@company.com') && !/@gmail\.com/i.test(userRepoSrc57),
+    'S25-DEPLOY. A demo account counts as unsafe only while it accepts its published password; no personal address is seeded');
+  const hosts57 = await import('../server/middleware/hostAllowlist');
+  const allowed57 = hosts57.allowedHosts({ APP_URL: 'https://pm.example.com', PM_PORTAL_ALLOWED_HOSTS: 'pm-server.lan' } as any, '127.0.0.1');
+  const hostCheck57 = (host: string | undefined) => { const res = cookieRes57(); let passed = false; hosts57.hostAllowlist(allowed57)({ headers: { host } } as any, res, () => { passed = true; }); return passed ? 200 : res.statusCode; };
+  const lanHosts57 = hosts57.allowedHosts({} as any, '0.0.0.0');
+  assert(['localhost:3000', '127.0.0.1:3000', '[::1]:3000', 'pm.example.com', 'PM-SERVER.LAN:3000'].every((h) => hostCheck57(h) === 200) && ['evil.example', 'evil.example:3000', 'localhost.evil.example', '', undefined].every((h) => hostCheck57(h as any) === 421) && lanHosts57.has(os56.hostname().toLowerCase()),
+    'S25-DEPLOY. Requests must name a host the server answers for (localhost, configured hosts, and this computer when listening on the network); a rebinding domain gets 421');
+  const serverSrc57 = fs35.readFileSync('server.ts', 'utf8');
+  const pkg57 = JSON.parse(fs35.readFileSync('package.json', 'utf8'));
+  assert(serverSrc57.indexOf('app.use(hostAllowlist(') < serverSrc57.indexOf('app.use(securityHeaders)') && serverSrc57.indexOf('app.use(hostAllowlist(') > 0
+    && /--outfile=build\/server\.cjs/.test(pkg57.scripts.build) && !/--outfile=dist\//.test(pkg57.scripts.build) && pkg57.scripts.start === 'node build/server.cjs' && /--banner:js="process\.env\.NODE_ENV='production';"/.test(pkg57.scripts.build)
+    && /path\.join\(process\.cwd\(\), 'dist'\)/.test(serverSrc57) && /^build\/$/m.test(fs35.readFileSync('.gitignore', 'utf8')),
+    'S25-DEPLOY. The host check runs first; the server bundle (and its source map) is built outside the static root, and npm start always runs in production');
+  const { unsafeTestDatabase: unsafeDb57 } = await import('./testEnv');
+  const refusedDbRun57 = spawn56(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'tests/testEnv.ts'], { env: { ...process.env, DATABASE_URL: 'postgresql://pmuser:S25-Secret-pw@db.example.com:5432/pm_portal', PM_PORTAL_DATA_MODE: '' }, encoding: 'utf8', timeout: 60000 });
+  assert(!!unsafeDb57('postgresql://u:p@db/pm_portal') && !!unsafeDb57('postgresql://u:p@db/production') && !!unsafeDb57('not a url') && unsafeDb57('postgresql://u:p@localhost/pm_portal_test', '') === null && unsafeDb57('') === null && unsafeDb57(undefined) === null
+    && refusedDbRun57.status === 1 && /Refusing to run tests/.test(refusedDbRun57.stderr) && !/S25-Secret-pw|pmuser/.test(`${refusedDbRun57.stdout}${refusedDbRun57.stderr}`),
+    'S25-DEPLOY. npm test refuses a DATABASE_URL whose database name does not end in "_test" (nothing is written; the URL is not printed)');
+
+  // --- S25-AUTHZ. Project isolation gaps --------------------------------------------------------
+  const { RoadmapController: RoadmapCtl57 } = await import('../server/controllers/roadmapController');
+  const { DependencyController: DepCtl57 } = await import('../server/controllers/dependencyController');
+  const { IssueController: IssueCtl57 } = await import('../server/controllers/issueController');
+  const { MilestoneController: MlsCtl57 } = await import('../server/controllers/milestoneController');
+  const { RoadmapRepository: RoadmapRepo57 } = await import('../server/repositories/roadmapRepository');
+  const { ProjectScope: Scope57 } = await import('../server/services/projectScope');
+  const { ActionItemService: ActionSvc57 } = await import('../server/services/actionItemService');
+  const { MeetingService: MeetingSvc57 } = await import('../server/services/meetingService');
+  const { WaitingForService: WaitingSvc57 } = await import('../server/services/waitingForService');
+  const { FollowUpService: FollowSvc57 } = await import('../server/services/followUpService');
+  const { RequirementService: ReqSvc57 } = await import('../server/services/requirementService');
+  const { GovernanceLinkRepository: Links57 } = await import('../server/repositories/governanceLinkRepository');
+  const mk57 = (key: string, role: any) => Auth40.register({ email: `s25.${key}.${stamp57}@company.com`, password: 'Sprint25@Authz12', firstName: `S25${key}`, lastName: 'Authz', role }, login40.user);
+  const pmA57 = await mk57('pma', 'project-manager');
+  const pmB57 = await mk57('pmb', 'project-manager');
+  const member57 = await mk57('member', 'team-member');
+  const reader57 = await mk57('reader', 'product-manager');
+  const projA57 = (await call46(ProjCtl56.create, pmA57, { name: `S25 A ${stamp57}`, client: 'S25 client' })).body.data.project;
+  const projB57 = (await call46(ProjCtl56.create, pmB57, { name: `S25 B ${stamp57}`, client: 'S25 client' })).body.data.project;
+  await call46(ProjCtl56.update, pmA57, { members: [{ userId: member57.id, name: 'Member', role: 'Developer' }, { userId: reader57.id, name: 'Reader', role: 'Analyst' }] }, { id: projA57.id });
+  const storyA57 = (await call46(DelCtl56.createStory, pmA57, { title: 'S25 story A', projectId: projA57.id, assigneeId: reader57.id })).body.data.story;
+  // The reader keeps read access through the assigned story only (no longer a member, so no write access).
+  await call46(ProjCtl56.update, pmA57, { members: [{ userId: member57.id, name: 'Member', role: 'Developer' }] }, { id: projA57.id });
+  const storyB57 = (await call46(DelCtl56.createStory, pmB57, { title: 'S25 story B', projectId: projB57.id })).body.data.story;
+  assert(storyA57?.assigneeId === reader57.id && (await Scope57.canRead({ userId: reader57.id, role: reader57.role } as any, projA57.id)) && !(await Scope57.canRead({ userId: pmB57.id, role: pmB57.role } as any, projA57.id)),
+    'S25-AUTHZ. Fixture: the reader can read project A only through an assigned story; PM B cannot see project A');
+
+  // Roadmap (SEC-07).
+  const itemA57 = (await call46(RoadmapCtl57.create, pmA57, { name: `S25 roadmap A ${stamp57}`, projectId: projA57.id })).body.data.item;
+  const itemOrg57 = (await call46(RoadmapCtl57.create, pmB57, { name: `S25 roadmap org ${stamp57}` })).body.data.item;
+  const listB57 = (await call46(RoadmapCtl57.list, pmB57, {})).body.data.items as any[];
+  const readB57 = await call46(RoadmapCtl57.getById, pmB57, {}, { id: itemA57.id });
+  const editB57 = await call46(RoadmapCtl57.update, pmB57, { name: 'hijacked' }, { id: itemA57.id });
+  const moveB57 = await call46(RoadmapCtl57.update, pmB57, { projectId: projA57.id }, { id: itemOrg57.id });
+  const chartB57 = await call46(RoadmapCtl57.create, pmB57, { name: 'S25 charter A', projectId: projA57.id });
+  const reorderB57 = await call46(RoadmapCtl57.reorder, pmB57, { items: [{ id: itemA57.id, sequence: 1 }] });
+  const deleteB57 = await call46(RoadmapCtl57.delete, pmB57, {}, { id: itemA57.id });
+  const editA57 = await call46(RoadmapCtl57.update, pmA57, { name: `S25 roadmap A (edited) ${stamp57}` }, { id: itemA57.id });
+  assert(!!itemA57 && itemA57.projectId === projA57.id && !listB57.some((i) => i.id === itemA57.id) && listB57.some((i) => i.id === itemOrg57.id) && readB57.statusCode === 404 && editB57.statusCode === 404 && [403, 404].includes(moveB57.statusCode) && [403, 404].includes(chartB57.statusCode) && reorderB57.statusCode === 404 && deleteB57.statusCode === 404 && editA57.statusCode === 200 && (await RoadmapRepo57.findById(itemA57.id))?.name === `S25 roadmap A (edited) ${stamp57}`,
+    `S25-AUTHZ. Roadmap items chartered to a project are visible and changeable only within that project's access; org-level items are unchanged (${[readB57, editB57, moveB57, chartB57, reorderB57, deleteB57].map((r) => r.statusCode).join('/')})`);
+  assert((await Scope57.projectOfEntity('roadmap', itemA57.id)) === projA57.id && (await Scope57.projectOfEntity('roadmap', itemOrg57.id)) === 'org', 'S25-AUTHZ. A chartered roadmap item resolves to its project in traceability and link checks');
+
+  // Dependency with an org-level endpoint (SEC-08).
+  const productId57 = (await ProdSvc56.createProduct({ name: 'S25 product', code: `S25-PROD-${stamp57}` } as any, pmA57 as any)).id;
+  const depBody57 = { sourceEntityType: 'product', sourceEntityId: productId57, targetEntityType: 'story', targetEntityId: storyA57.id, dependencyType: 'Blocks', criticality: 'Critical' };
+  const depReader57 = await call46(DepCtl57.createDependency, reader57, depBody57);
+  const depWriter57 = await call46(DepCtl57.createDependency, pmA57, depBody57);
+  assert(depReader57.statusCode === 403 && depWriter57.statusCode === 201 && depWriter57.body.data.dependency.projectId === projA57.id,
+    `S25-AUTHZ. A dependency from an org-level record into a project needs write access to that project (reader ${depReader57.statusCode}, manager ${depWriter57.statusCode})`);
+
+  // Sprint membership (SEC-09).
+  const sprintA57 = (await call46(SprintCtl56.createSprint, pmA57, { name: `S25 sprint A ${stamp57}`, projectId: projA57.id, startDate: '2026-10-01', endDate: '2026-10-14' })).body.data;
+  const sprintB57 = (await call46(SprintCtl56.createSprint, pmB57, { name: `S25 sprint B ${stamp57}`, projectId: projB57.id, startDate: '2026-10-01', endDate: '2026-10-14' })).body.data;
+  const crossSprint57 = await call46(DelCtl56.updateStory, pmA57, { sprintId: sprintB57.id }, { id: storyA57.id });
+  const fakeName57 = await call46(DelCtl56.updateStory, pmA57, { sprint: 'Sprint 99 (not real)' }, { id: storyA57.id });
+  const ownSprint57 = await call46(DelCtl56.updateStory, pmA57, { sprintId: sprintA57.id, sprint: 'client text' }, { id: storyA57.id });
+  const createdIn57 = await call46(DelCtl56.createStory, pmA57, { title: 'S25 quick add', projectId: projA57.id, sprintId: sprintA57.id, sprint: 'client text' });
+  const createdCross57 = await call46(DelCtl56.createStory, pmA57, { title: 'S25 cross add', projectId: projA57.id, sprintId: sprintB57.id });
+  const itemsB57 = (await call46(SprintCtl56.getSprintItems, pmB57, {}, { id: sprintB57.id })).body?.data;
+  assert(crossSprint57.statusCode === 400 && fakeName57.statusCode === 400 && ownSprint57.statusCode === 200 && ownSprint57.body.data.story.sprintId === sprintA57.id && ownSprint57.body.data.story.sprint === sprintA57.name
+    && createdIn57.statusCode === 201 && createdIn57.body.data.story.sprintId === sprintA57.id && createdIn57.body.data.story.sprint === sprintA57.name && createdCross57.statusCode === 400
+    && !JSON.stringify(itemsB57 || {}).includes(storyA57.id),
+    'S25-AUTHZ. A story joins only a sprint of its own project (create and update); its sprint name is the sprint\'s own, never client text');
+
+  // Teams (SEC-10).
+  const victim57 = await TeamSvc56.createTeam({ name: `S25 victim ${stamp57}`, department: 'Eng', members: [{ userId: pmA57.id, roleInTeam: 'Lead', allocatedHrs: 10 }] } as any, pmA57 as any);
+  const attacker57 = await TeamSvc56.createTeam({ id: victim57.id, name: 'S25 attacker', department: 'Eng', memberCount: 99, allocatedHrs: 999, createdAt: '1999-01-01', evil: 'x' } as any, pmB57 as any);
+  const victimAfter57 = await TeamRepo56.findById(victim57.id);
+  const massUpdate57 = await TeamSvc56.updateTeam(attacker57.id, { id: 'team_other', memberCount: 50, createdAt: '1999-01-01', evil: 'y', name: 'S25 attacker renamed' } as any, pmB57 as any);
+  assert(attacker57.id !== victim57.id && victimAfter57?.name === `S25 victim ${stamp57}` && victimAfter57?.members?.length === 1 && attacker57.memberCount === 0 && !('evil' in attacker57) && attacker57.createdAt !== '1999-01-01'
+    && massUpdate57?.id === attacker57.id && massUpdate57?.name === 'S25 attacker renamed' && massUpdate57?.memberCount === 0 && !('evil' in (massUpdate57 as any)) && massUpdate57?.createdAt === attacker57.createdAt,
+    'S25-AUTHZ. Team ids are the server\'s (a chosen id cannot overwrite a team); only name, department, capacity, lead and members can be set');
+
+  // Follow-through (SEC-11).
+  const ftActor57 = (u: any) => ({ userId: u.id, role: u.role, name: `${u.firstName} ${u.lastName}` });
+  const readerFt57 = ftActor57(reader57);
+  const managerFt57 = ftActor57(pmA57);
+  const meeting57 = await MeetingSvc57.create(managerFt57 as any, { projectId: projA57.id, title: 'S25 meeting', scheduledAt: '2026-10-12T10:00:00.000Z' });
+  const action57 = await ActionSvc57.create(managerFt57 as any, { projectId: projA57.id, title: 'S25 action', dueDate: '2026-10-20', ownerId: member57.id });
+  const waiting57 = await WaitingSvc57.create(managerFt57 as any, { projectId: projA57.id, title: 'S25 waiting', waitingOnName: 'Vendor', expectedDate: '2026-10-20' });
+  const follow57 = await FollowSvc57.create(managerFt57 as any, { projectId: projA57.id, title: 'S25 follow-up', dueDate: '2026-10-20' });
+  const ftDenied57 = await Promise.all([
+    rejects56(() => MeetingSvc57.create(readerFt57 as any, { projectId: projA57.id, title: 'S25 reader meeting', scheduledAt: '2026-10-12T10:00:00.000Z' })),
+    rejects56(() => MeetingSvc57.update(readerFt57 as any, meeting57.id, { title: 'changed' })),
+    rejects56(() => MeetingSvc57.remove(readerFt57 as any, meeting57.id)),
+    rejects56(() => ActionSvc57.create(readerFt57 as any, { projectId: projA57.id, title: 'S25 reader action', dueDate: '2026-10-20' })),
+    rejects56(() => ActionSvc57.update(readerFt57 as any, action57.id, { title: 'changed' })),
+    rejects56(() => ActionSvc57.remove(readerFt57 as any, action57.id)),
+    rejects56(() => WaitingSvc57.create(readerFt57 as any, { projectId: projA57.id, title: 'S25 reader waiting', waitingOnName: 'V', expectedDate: '2026-10-20' })),
+    rejects56(() => WaitingSvc57.update(readerFt57 as any, waiting57.id, { title: 'changed' })),
+    rejects56(() => WaitingSvc57.remove(readerFt57 as any, waiting57.id)),
+    rejects56(() => FollowSvc57.create(readerFt57 as any, { projectId: projA57.id, title: 'S25 reader follow-up', dueDate: '2026-10-20' })),
+    rejects56(() => FollowSvc57.update(readerFt57 as any, follow57.id, { title: 'changed' })),
+    rejects56(() => FollowSvc57.remove(readerFt57 as any, follow57.id)),
+  ]);
+  const ownerStatus57: any = await ActionSvc57.updateStatus(ftActor57(member57) as any, action57.id, { status: 'In Progress' }).catch(() => null);
+  const readerCanRead57: any = await MeetingSvc57.get(readerFt57 as any, meeting57.id).catch(() => null);
+  assert(ftDenied57.every((e) => e?.status === 403) && (await MeetingSvc57.get(managerFt57 as any, meeting57.id).catch(() => null as any))?.title === 'S25 meeting' && ownerStatus57?.status === 'In Progress' && readerCanRead57?.id === meeting57.id,
+    `S25-AUTHZ. Meetings, action items, waiting-for and follow-ups: create, edit and delete need project write access (read access through assigned work is not enough); owners still update their item's status (${ftDenied57.map((e) => e?.status).join(',')})`);
+
+  // Requirements (SEC-12).
+  const req57 = await ReqSvc57.create(managerFt57 as any, { projectId: projA57.id, title: 'S25 requirement' });
+  await ReqSvc57.updateStatus(managerFt57 as any, req57.id, { status: 'in-review' });
+  const readerApprove57 = await rejects56(() => ReqSvc57.updateStatus(readerFt57 as any, req57.id, { status: 'approved' }));
+  const readerEdit57 = await rejects56(() => ReqSvc57.update(readerFt57 as any, req57.id, { title: 'reader edit' }));
+  const managerApprove57 = await ReqSvc57.updateStatus(managerFt57 as any, req57.id, { status: 'approved' });
+  const memberRevert57 = await rejects56(() => ReqSvc57.update(ftActor57(member57) as any, req57.id, { title: 'S25 requirement (member edit)' }));
+  assert(readerApprove57?.status === 403 && readerEdit57?.status === 403 && managerApprove57.status === 'approved' && memberRevert57?.status === 403 && (await ReqSvc57.get(managerFt57 as any, req57.id)).status === 'approved',
+    'S25-AUTHZ. Approving needs write access to the project (read access through an assigned story is not enough); an ordinary member cannot silently reopen an approved requirement');
+
+  // Issue and milestone links (SEC-18).
+  const issueRes57 = await call46(IssueCtl57.createIssue, pmA57, { projectId: projA57.id, title: 'S25 issue', severity: 'High', priority: 'High', linkedItems: [{ targetType: 'story', targetId: storyA57.id, targetName: 'FORGED NAME', targetCode: 'FORGED' }] });
+  const issue57 = issueRes57.body?.data?.issue;
+  const crossIssue57 = await call46(IssueCtl57.createIssue, pmA57, { projectId: projA57.id, title: 'S25 cross issue', severity: 'High', priority: 'High', linkedItems: [{ targetType: 'story', targetId: storyB57.id }] });
+  const crossLink57 = await call46(IssueCtl57.linkItem, pmA57, { targetType: 'story', targetId: storyB57.id, targetName: 'x' }, { id: issue57?.id });
+  const milestone57 = (await call46(MlsCtl57.createMilestone, pmA57, { projectId: projA57.id, name: 'S25 milestone', targetDate: '2026-12-01' })).body?.data?.milestone;
+  const mlsLink57 = await call46(MlsCtl57.linkItem, pmA57, { targetType: 'story', targetId: storyA57.id, targetName: '<b>FORGED</b>' }, { id: milestone57?.id });
+  const mlsCross57 = await call46(MlsCtl57.linkItem, pmA57, { targetType: 'story', targetId: storyB57.id }, { id: milestone57?.id });
+  const issueLinks57 = await Links57.getLinksFor('issue', issue57?.id);
+  assert(issueRes57.statusCode === 201 && issueLinks57.length === 1 && issueLinks57[0].targetName === 'S25 story A' && issueLinks57[0].targetCode !== 'FORGED' && crossIssue57.statusCode === 404 && crossLink57.statusCode === 404
+    && mlsLink57.statusCode === 201 && mlsLink57.body.data.link.targetName === 'S25 story A' && mlsCross57.statusCode === 404,
+    `S25-AUTHZ. Issue and milestone links are resolved by the server: the target must be visible, and its name and code come from the record (${crossIssue57.statusCode}/${crossLink57.statusCode}/${mlsCross57.statusCode})`);
+
+  // --- S25-DATA. PostgreSQL persistence contract (the repositories' own SQL, through the stand-in) ---
+  const { PROJECT_EDITABLE_FIELDS: projectFields57 } = await import('../server/services/projectGuards');
+  const { DELIVERY_EDITABLE_FIELDS: deliveryFields57 } = await import('../server/services/deliveryGuards');
+  const { EpicRepository: EpicRepo57 } = await import('../server/repositories/epicRepository');
+  const { FeatureRepository: FeatureRepo57 } = await import('../server/repositories/featureRepository');
+  const { StoryRepository: StoryRepo57 } = await import('../server/repositories/storyRepository');
+  const { SubtaskRepository: SubtaskRepo57 } = await import('../server/repositories/subtaskRepository');
+  const { GoalRepository: GoalRepo57 } = await import('../server/repositories/goalRepository');
+  // One value to create with and one to update to, per accepted field. A field that is accepted but has no
+  // sample here fails the contract, so a new field must be added (and is then checked end to end).
+  const samples57: Record<string, [any, any]> = {
+    name: ['S25 name', 'S25 name 2'], title: ['S25 title', 'S25 title 2'], description: ['S25 description', 'S25 description 2'], client: ['S25 client', 'S25 client 2'],
+    status: ['in-progress', 'blocked'], risk: ['High', 'Low'], progress: [40, 60], budget: [1234.5, 99], sprint: ['S25 sprint', 'S25 sprint 2'],
+    startDate: ['2026-10-01', '2026-10-02'], endDate: ['2026-12-01', '2026-12-02'], targetDate: ['2026-11-01', '2026-11-02'], dueDate: ['2026-11-03', '2026-11-04'], completionDate: ['2026-11-05', '2026-11-06'],
+    productId: ['prod_s25_a', 'prod_s25_b'], productName: ['S25 product', 'S25 product 2'], portfolioId: ['port_s25_a', 'port_s25_b'], portfolioName: ['S25 portfolio', 'S25 portfolio 2'],
+    teamId: ['team_s25_a', 'team_s25_b'], teamName: ['S25 team', 'S25 team 2'], sowStatus: ['Signed', 'Pending'], poc: ['S25 poc', 'S25 poc 2'], developer: ['S25 dev', 'S25 dev 2'], qa: ['S25 qa', 'S25 qa 2'], ba: ['S25 ba', 'S25 ba 2'],
+    remarks: ['S25 remarks', 'S25 remarks 2'], month: ['October', 'November'], quarter: ['Q4', 'Q1'], year: ['2026', '2027'], jiraLinks: [['S25-1'], ['S25-2']],
+    managerName: ['S25 Manager', 'S25 Manager 2'], managerId: ['usr_s25_m1', 'usr_s25_m2'], members: [[{ userId: 'usr_s25_x', name: 'X', role: 'Dev' }], [{ userId: 'usr_s25_y', name: 'Y', role: 'QA' }]],
+    manager: ['S25 V1 manager', 'S25 V1 manager 2'], productManager: ['S25 PM', 'S25 PM 2'], hd: ['HD-1', 'HD-2'], sow: ['SOW-1', 'SOW-2'], confluenceLink: ['https://wiki.example.com/a', 'https://wiki.example.com/b'],
+    estimatedStart: ['2026-10-01', '2026-10-03'], estimatedEnd: ['2026-12-01', '2026-12-03'], actualStart: ['2026-10-04', '2026-10-05'], actualEnd: ['2026-12-04', '2026-12-05'], lastUpdate: ['Weekly sync', 'Monthly sync'],
+    priority: ['high', 'low'], health: ['at-risk', 'critical'], ownerId: ['usr_s25_o1', 'usr_s25_o2'], isArchived: [false, true], targetRelease: ['R25.1', 'R25.2'], jiraKey: ['S25-11', 'S25-12'], jiraUrl: ['https://s25.atlassian.net/browse/S25-11', 'https://s25.atlassian.net/browse/S25-12'],
+    epicId: ['epic_s25_a', 'epic_s25_b'], featureId: ['feat_s25_a', 'feat_s25_b'], storyId: ['story_s25_a', 'story_s25_b'], taskId: ['task_s25_a', 'task_s25_b'], complexity: ['M', 'L'],
+    userStory: [{ asA: 'PM', iWant: 'a', soThat: 'b' }, { asA: 'PO', iWant: 'c', soThat: 'd' }], acceptanceCriteria: [[{ id: 'ac1', text: 'one', completed: false }], [{ id: 'ac2', text: 'two', completed: true }]],
+    storyPoints: [5, 8], assigneeId: ['usr_s25_a1', 'usr_s25_a2'], reporterId: ['usr_s25_r1', 'usr_s25_r2'], sprintId: ['spr_s25_a', 'spr_s25_b'],
+    estimatedEffortHrs: [8, 12], actualEffortHrs: [2, 3], estimateHrs: [4, 6],
+  };
+  // Accepted from clients but never stored as themselves (folded into userStory by the guards).
+  const transformed57 = new Set(['userPersona', 'userAction', 'userBenefit']);
+  const roundTrip57 = async (kind: string, fields: readonly string[], repo: any, base: Record<string, any>, override: Record<string, [any, any]> = {}) => {
+    const sample = (f: string) => override[f] || samples57[f];
+    const problems: string[] = [];
+    const pg = mini56({ tables: {} });
+    await withPg56(pg, async () => {
+      const record: Record<string, any> = { ...base };
+      for (const f of fields) {
+        if (transformed57.has(f)) continue;
+        if (!sample(f)) { problems.push(`${f}: no sample (add one)`); continue; }
+        record[f] = sample(f)[0];
+      }
+      const created = await repo.create(record);
+      const createdId = created?.id || base.id;
+      const back = await repo.findById(createdId);
+      const updates: Record<string, any> = {};
+      for (const f of fields) if (!transformed57.has(f) && sample(f)) updates[f] = sample(f)[1];
+      await repo.update(createdId, updates);
+      const again = await repo.findById(createdId);
+      for (const f of fields) {
+        if (transformed57.has(f) || !sample(f)) continue;
+        const same = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
+        if (!back || !same(back[f], sample(f)[0])) problems.push(`${kind}.${f} lost on create (${JSON.stringify(back?.[f])})`);
+        if (!again || !same(again[f], sample(f)[1])) problems.push(`${kind}.${f} lost on update (${JSON.stringify(again?.[f])})`);
+      }
+    });
+    return problems;
+  };
+  const contract57 = [
+    ...(await roundTrip57('project', projectFields57, ProjRepo24, { id: `PRJ-S25C-${stamp57}`, code: `PRJ-S25C-${stamp57}` })),
+    ...(await roundTrip57('epic', deliveryFields57.epic, EpicRepo57, { id: `epic_s25c_${stamp57}`, code: `EPC-S25C-${stamp57}`, projectId: 'PRJ-S25C' })),
+    ...(await roundTrip57('feature', deliveryFields57.feature, FeatureRepo57, { id: `feat_s25c_${stamp57}`, code: `FEAT-S25C-${stamp57}`, projectId: 'PRJ-S25C' })),
+    ...(await roundTrip57('story', deliveryFields57.story, StoryRepo57, { id: `story_s25c_${stamp57}`, code: `STR-S25C-${stamp57}`, projectId: 'PRJ-S25C' })),
+    // A task's completion date is kept only while it is done (repository rule), so the task samples stay done.
+    ...(await roundTrip57('task', deliveryFields57.task, TaskRepo56, { id: `task_s25c_${stamp57}`, code: `TSK-S25C-${stamp57}`, projectId: 'PRJ-S25C' }, { status: ['done', 'done'] })),
+    ...(await roundTrip57('subtask', deliveryFields57.subtask, SubtaskRepo57, { id: `sub_s25c_${stamp57}`, code: `SUB-S25C-${stamp57}` })),
+  ];
+  assert(contract57.length === 0 && projectFields57.length >= 30 && deliveryFields57.task.length >= 10,
+    `S25-DATA. Every field the API accepts for projects, epics, features, stories, tasks and subtasks is stored and read back by PostgreSQL on create and update (${contract57.slice(0, 8).join('; ') || 'all round-trip'})`);
+  assert(!deliveryFields57.task.includes('estimatedHours') && !deliveryFields57.task.includes('spentHours') && /estimatedEffortHrs: parseFloat\(document\.getElementById\('task-esthours'\)/.test(fs35.readFileSync('PM-Portal/js/delivery.js', 'utf8')),
+    'S25-DATA. Task hours use the stored names end to end (the dropped estimatedHours/spentHours aliases are gone; the form sends estimatedEffortHrs/actualEffortHrs)');
+  // The same contract one layer up: every plain field the API accepts survives the guarded create service
+  // (references, Jira references and folded persona fields have their own tests).
+  const { DeliveryService: DelSvc57 } = await import('../server/services/deliveryService');
+  const referential57 = new Set(['ownerId', 'assigneeId', 'reporterId', 'teamId', 'epicId', 'featureId', 'storyId', 'taskId', 'sprintId', 'sprint', 'jiraKey', 'jiraUrl', 'userStory', 'acceptanceCriteria']);
+  const epicA57 = (await call46(DelCtl56.createEpic, pmA57, { name: 'S25 epic A', projectId: projA57.id })).body.data.epic;
+  const featA57 = (await call46(DelCtl56.createFeature, pmA57, { name: 'S25 feature A', projectId: projA57.id, epicId: epicA57.id })).body.data.feature;
+  const taskA57 = (await call46(DelCtl56.createTask, pmA57, { title: 'S25 task A', projectId: projA57.id, storyId: storyA57.id })).body.data.task;
+  const serviceCreate57 = async (kind: string, create: (data: any, actor: any) => Promise<any>, base: Record<string, any>, override: Record<string, any> = {}) => {
+    const fields = (deliveryFields57 as any)[kind].filter((f: string) => !referential57.has(f) && !transformed57.has(f) && !(f in base));
+    const data: Record<string, any> = { ...base };
+    for (const f of fields) data[f] = f in override ? override[f] : samples57[f]?.[0];
+    const created = await create(data, pmA57);
+    return fields.filter((f: string) => JSON.stringify(created?.[f]) !== JSON.stringify(data[f])).map((f: string) => `${kind}.${f} (${JSON.stringify(created?.[f])})`);
+  };
+  const serviceGaps57 = [
+    ...(await serviceCreate57('epic', (d, a) => DelSvc57.createEpic(d, a), { projectId: projA57.id })),
+    ...(await serviceCreate57('feature', (d, a) => DelSvc57.createFeature(d, a), { projectId: projA57.id, epicId: epicA57.id })),
+    ...(await serviceCreate57('story', (d, a) => DelSvc57.createStory(d, a), { projectId: projA57.id, featureId: featA57.id })),
+    ...(await serviceCreate57('task', (d, a) => DelSvc57.createTask(d, a), { projectId: projA57.id, storyId: storyA57.id }, { status: 'done' })),
+    ...(await serviceCreate57('subtask', (d, a) => DelSvc57.createSubtask(d, a), { taskId: taskA57.id })),
+  ];
+  assert(serviceGaps57.length === 0, `S25-DATA. Every plain field the API accepts is kept by the delivery create services, not only by the repositories (${serviceGaps57.join('; ') || 'all kept'})`);
+  const goalPg57 = mini56({ tables: {} });
+  const goalTrip57 = await withPg56(goalPg57, async () => {
+    const goal = await GoalRepo57.create({ objective: 'S25 goal', ownerId: 'usr_s25_o1', status: 'draft', targetValue: 10, currentValue: 1 } as any);
+    await GoalRepo57.update(goal.id, { ownerId: 'usr_s25_o2' } as any);
+    return GoalRepo57.findById(goal.id);
+  });
+  const depPg57 = mini56({ tables: { dependencies: [], governance_links: [] } });
+  const depTrip57 = await withPg56(depPg57, async () => {
+    const { dependency } = await DepRepo56.create({ sourceEntityType: 'epic', sourceEntityId: 'epic_s25_x', targetEntityType: 'epic', targetEntityId: 'epic_s25_y', lagDays: 3, resolutionNotes: 'S25 notes', isCriticalPath: true } as any);
+    const first = await DepRepo56.findById(dependency!.id);
+    await DepRepo56.update(dependency!.id, { lagDays: -2, resolutionNotes: 'S25 notes 2', isCriticalPath: false } as any);
+    return { first, second: await DepRepo56.findById(dependency!.id) };
+  });
+  const { dependencyExtras: depExtras57 } = await import('../server/services/dependencyService');
+  const extraErr57 = (v: any) => { try { depExtras57(v); return null; } catch (e) { return e; } };
+  assert(goalTrip57?.ownerId === 'usr_s25_o2' && depTrip57.first?.lagDays === 3 && depTrip57.first?.resolutionNotes === 'S25 notes' && depTrip57.first?.isCriticalPath === true && depTrip57.second?.lagDays === -2 && depTrip57.second?.resolutionNotes === 'S25 notes 2' && depTrip57.second?.isCriticalPath === false
+    && !!extraErr57({ lagDays: 1.5 }) && !!extraErr57({ isCriticalPath: 'yes' }) && !!extraErr57({ resolutionNotes: 'x'.repeat(5001) }),
+    'S25-DATA. A goal owner change and a dependency\'s lag days, resolution notes and critical-path flag are stored and read back in PostgreSQL (and validated)');
+
+  // --- S25-USER. A stale profile save cannot undo a role or status change (DATA-02) -------------
+  const userRow57 = { id: 'usr_s25_race', email: 'race@s25.test', password_hash: 'x', first_name: 'Race', last_name: 'Condition', role: 'project-manager', is_active: true, token_version: 0, created_at: 'c', updated_at: 'u' };
+  let release57: () => void = () => {};
+  const gate57 = new Promise<void>((resolve) => { release57 = resolve; });
+  let gated57 = false; // only the profile save (the first UPDATE) is held back
+  const racePg57 = mini56({ tables: { users: [{ ...userRow57 }] }, beforeQuery: async (sql) => { if (!gated57 && /^UPDATE users SET first_name = \$1/.test(sql)) { gated57 = true; await gate57; } } });
+  const raceResult57 = await withPg56(racePg57, async () => {
+    const profileSave = UserRepo40.update('usr_s25_race', { firstName: 'Stale' });
+    await new Promise((r) => setTimeout(r, 5));
+    await UserRepo40.update('usr_s25_race', { role: 'viewer' });
+    await UserRepo40.update('usr_s25_race', { isActive: false });
+    release57();
+    await profileSave;
+    return { ...racePg57.tables.users[0] };
+  });
+  assert(raceResult57.first_name === 'Stale' && raceResult57.role === 'viewer' && raceResult57.is_active === false && raceResult57.token_version === 2,
+    `S25-USER. A profile save that started before a role change and a deactivation cannot write them back (role ${raceResult57.role}, active ${raceResult57.is_active}, session generation ${raceResult57.token_version})`);
+
+  // --- S25-AUDIT. Secondary writes never fail a committed change (DATA-03) -----------------------
+  const nameMax57 = Math.max(...Array.from(fs35.readFileSync('server/routes/authRoutes.ts', 'utf8').matchAll(/field: '(?:firstName|lastName)', required: true, type: 'string', maxLength: (\d+)/g)).map((m: any) => Number(m[1])));
+  assert(Number.isFinite(nameMax57) && columnLength56('activity_logs', 'actor_name') >= nameMax57 * 2 + 1 && /field: 'firstName', type: 'string', maxLength: 100/.test(fs35.readFileSync('server/routes/userRoutes.ts', 'utf8')),
+    `S25-AUDIT. The activity actor column holds the longest name a user can have (first + last, ${nameMax57 * 2 + 1} characters; column ${columnLength56('activity_logs', 'actor_name')})`);
+  const { secondaryWriteFailures: secondaryFailures57, withTransaction: withTx57 } = await import('../server/config/database');
+  const { ActivityRepository: ActivityRepo57 } = await import('../server/repositories/activityRepository');
+  const auditPg57 = mini56({ tables: { roadmap_items: [], governance_links: [] }, fail: /^INSERT INTO (activity_logs|notifications) / });
+  const failuresBefore57 = secondaryFailures57();
+  const realError57 = console.error;
+  const auditLog57: string[] = [];
+  console.error = (...args: any[]) => { auditLog57.push(args.join(' ')); };
+  let auditRes57: any;
+  let inTxErr57: any;
+  try {
+    auditRes57 = await withPg56(auditPg57, () => call46(RoadmapCtl57.create, pmB57, { name: `S25 audit-fail item ${stamp57}` }));
+    inTxErr57 = await withPg56(mini56({ fail: /^INSERT INTO activity_logs / }), () => rejects56(() => withTx57(() => ActivityRepo57.create({ id: `act_s25_${stamp57}`, entityType: 'project', entityId: 'x', action: 'update', actorId: 'u', actorName: 'U', createdAt: new Date().toISOString() } as any))));
+  } finally {
+    console.error = realError57;
+  }
+  assert(auditRes57.statusCode === 201 && auditPg57.tables.roadmap_items.length === 1 && secondaryFailures57() > failuresBefore57 && auditPg57.log.some((l) => /^INSERT INTO activity_logs/.test(l.sql)) && !!inTxErr57
+    && auditLog57.some((l) => /^\[secondary-write-failed\] activity log: 08006 /.test(l)) && !auditLog57.some((l) => /postgres(ql)?:\/\//i.test(l)),
+    'S25-AUDIT. When the activity log write fails after the change is stored, the request still succeeds (201, exactly one record, nothing to retry), the failure is counted and logged ([secondary-write-failed], no connection details); inside a transaction it fails with the unit');
+
+  // --- S25-FIX. Final correction pass --------------------------------------------------------------
+  // A. Sign-out clears the portal's browser data (shared computers); only the theme and a remembered email stay.
+  const fakeStorage57 = (entries: Record<string, string>) => {
+    const map = new Map(Object.entries(entries));
+    return { map, getItem: (k: string) => map.get(k) ?? null, setItem: (k: string, v: string) => { map.set(k, String(v)); }, removeItem: (k: string) => { map.delete(k); }, key: (i: number) => Array.from(map.keys())[i] ?? null, get length() { return map.size; } };
+  };
+  const { Authentication: WebAuth57 } = await webMod57('authentication');
+  const signOut57 = async (answer: boolean) => {
+    const initial: Record<string, string> = {
+      pm_portal_current_user: JSON.stringify({ id: 'usr_s25', name: 'Shared PC' }), pm_portal_theme: 'dark', pm_portal_remembered_email: 'me@company.com',
+      pm_portal_time_logs: JSON.stringify([{ hours: 4 }]), pm_portal_customers: JSON.stringify([{ name: 'Client' }]), pm_portal_resource_allocations: JSON.stringify([{ r: 1 }]),
+      pm_portal_projects: '[]', projects: '[]', excel_imported_data: JSON.stringify([{ SOW: 'confidential' }]), leaves: JSON.stringify([{ d: 1 }]), weekend_logs: '[]',
+      pm_portal_v2_projects_migrated_at: '"2026-10-01"', other_site_key: 'not ours',
+    };
+    const local = fakeStorage57(initial);
+    const session = fakeStorage57({ pm_v2_auth_token: 'legacy', pm_v2_bridge_failure: '1', other_session_key: 'not ours' });
+    const calls: string[] = [];
+    const asked: string[] = [];
+    const g = globalThis as any;
+    const saved = { localStorage: g.localStorage, sessionStorage: g.sessionStorage, fetch: g.fetch, location: g.window.location };
+    g.localStorage = local;
+    g.sessionStorage = session;
+    g.fetch = async (u: string, o: any) => { calls.push(`${o?.method || 'GET'} ${u}`); return { ok: true, status: 200, headers: { get: () => 'application/json' }, json: async () => ({ success: true, data: {} }) }; };
+    g.window.location = { href: 'index.html' };
+    try {
+      await WebAuth57.logout((m: string) => { asked.push(m); return answer; });
+      return { before: Object.keys(initial).length, local: Array.from(local.map.keys()).sort(), session: Array.from(session.map.keys()).sort(), calls, asked, href: g.window.location.href };
+    } finally {
+      Object.assign(g, { localStorage: saved.localStorage, sessionStorage: saved.sessionStorage, fetch: saved.fetch });
+      g.window.location = saved.location;
+    }
+  };
+  const stayed57 = await signOut57(false);
+  const signedOut57 = await signOut57(true);
+  assert(stayed57.asked.length === 1 && ['time logs (1)', 'customers (1)', 'resource allocations (1)', 'excel imported data (1)', 'leaves (1)'].every((t) => stayed57.asked[0].includes(t)) && !stayed57.asked[0].includes('weekend')
+    && stayed57.local.length === stayed57.before && stayed57.session.length === 3 && stayed57.calls.length === 0 && stayed57.href === 'index.html',
+    'S25-FIX A. Before sign-out deletes data saved only in this browser, the user is told what (non-empty lists); cancelling keeps everything and stays signed in');
+  assert(JSON.stringify(signedOut57.local) === JSON.stringify(['other_site_key', 'pm_portal_remembered_email', 'pm_portal_theme']) && JSON.stringify(signedOut57.session) === JSON.stringify(['other_session_key'])
+    && signedOut57.calls.some((c) => /^POST \/api\/v1\/auth\/logout$/.test(c)) && signedOut57.href === 'login.html',
+    `S25-FIX A. Sign-out ends the server session and clears every portal key (session record, caches, browser-only records, imported spreadsheets, session keys); only the theme and remembered email stay (left: ${signedOut57.local.join(', ')})`);
+
+  // B. Avatar sinks outside the profile preview: header/sidebar images and the initials badge.
+  const { SettingsModule: Settings57 } = await webMod57('settings');
+  let syncHeader57 = '';
+  let syncBadge57 = '';
+  await withDom57(({ document }) => {
+    Profile57.syncAvatarAcrossUI.call({});
+    syncHeader57 = document.getElementById('header-user-avatar').src;
+    syncBadge57 = document.getElementById('top-user-avatar').innerHTML;
+  }, { pm_portal_current_user: JSON.stringify({ id: 'usr_s25', avatar: breakout57, firstName: '<', lastName: 'img', name: evil57 }) });
+  const settingsSrc57 = (avatarUrl: string) => Settings57.resolveProfile.call({ v2User: { avatarUrl, firstName: 'Ann', lastName: 'Lee', role: 'viewer' }, currentUser: {}, buildInitialsAvatar: Settings57.buildInitialsAvatar }).avatarSrc;
+  assert(syncHeader57 === 'assets/baby_feet.jpg' && syncBadge57.includes('&lt;i') && !syncBadge57.includes('<i<') && !unsafeHtml57(syncBadge57)
+    && /^data:image\/svg\+xml/.test(settingsSrc57(breakout57)) && /^data:image\/svg\+xml/.test(settingsSrc57('javascript:alert(1)')) && settingsSrc57('https://images.example.com/a.png') === 'https://images.example.com/a.png',
+    'S25-FIX B. Header, sidebar and settings avatars use only a safe image source (else the default or initials); the initials badge renders its letters as text');
+
+  // C. Session revocation: legacy tokens, the account as stored, atomic generation bumps, matching lifetimes.
+  const jwt57 = (await import('jsonwebtoken')).default;
+  const secret57 = env57.config.jwtSecret;
+  const liveVersion57 = (await UserRepo40.findById(sessionUser57.id))?.tokenVersion ?? 0;
+  const claims57 = { userId: sessionUser57.id, email: sessionUser57.email, role: 'admin', firstName: 'Ses', lastName: 'Sion' };
+  // Right after deployment every account is still at generation 0, so a missing generation must not count as 0.
+  const freshUser57 = await Auth40.register({ email: `s25.legacy.${stamp57}@company.com`, password: 'Sprint25@Legacy1', firstName: 'Leg', lastName: 'Acy', role: 'team-member' }, login40.user);
+  const freshVersion57 = (await UserRepo40.findById(freshUser57.id))?.tokenVersion ?? 0;
+  const legacy57 = await authed57(jwt57.sign({ ...claims57, userId: freshUser57.id, email: freshUser57.email }, secret57, { expiresIn: 3600 }));
+  const freshCurrent57 = await authed57(jwt57.sign({ ...claims57, userId: freshUser57.id, email: freshUser57.email, tv: 0 }, secret57, { expiresIn: 3600 }));
+  const textTv57 = await authed57(jwt57.sign({ ...claims57, tv: String(liveVersion57) }, secret57, { expiresIn: 3600 }));
+  const currentTv57 = await authed57(jwt57.sign({ ...claims57, tv: liveVersion57 }, secret57, { expiresIn: 3600 }));
+  assert(freshVersion57 === 0 && freshCurrent57.passed && !legacy57.passed && legacy57.code === 'SESSION_REVOKED' && !textTv57.passed && textTv57.code === 'SESSION_REVOKED' && currentTv57.passed,
+    'S25-FIX C. A token from before Sprint 25 (no session generation) is refused at once after deployment, not when it expires; a current-generation token works');
+  const authRow57 = { id: 'usr_s25_auth', email: 'auth@s25.test', password_hash: 'x', first_name: 'Auth', last_name: 'Row', role: 'viewer', is_active: true, token_version: 3, created_at: 'c', updated_at: 'u' };
+  const authPg57 = mini56({ tables: { users: [{ ...authRow57 }] } });
+  const forged57 = jwt57.sign({ userId: authRow57.id, email: authRow57.email, role: 'admin', firstName: 'Auth', lastName: 'Row', tv: 3 }, secret57, { expiresIn: 3600 });
+  const authority57 = await withPg56(authPg57, async () => {
+    const req: any = { headers: {}, cookies: { auth_token: forged57 } };
+    let passed = false;
+    await authToken57(req, cookieRes57(), () => { passed = true; });
+    authPg57.tables.users[0].is_active = false; // changed in the database, generation unchanged
+    return { passed, role: req.user?.role, inactive: await authed57(forged57) };
+  });
+  assert(authority57.passed && authority57.role === 'viewer' && !authority57.inactive.passed && authority57.inactive.code === 'ACCOUNT_INACTIVE',
+    'S25-FIX C. Every request uses the account as stored now: the stored role (not the token\'s) and the stored active status');
+  const atomicPg57 = mini56({ tables: { users: [{ ...authRow57, token_version: 0 }] } });
+  await withPg56(atomicPg57, async () => {
+    await UserRepo40.update(authRow57.id, { role: 'project-manager' });
+    await UserRepo40.update(authRow57.id, { isActive: false });
+    await UserRepo40.updatePassword(authRow57.id, 'hash-2');
+    await UserRepo40.bumpTokenVersion(authRow57.id);
+  });
+  const userWrites57 = atomicPg57.log.filter((l) => /^UPDATE users /.test(l.sql));
+  assert(userWrites57.length === 4 && userWrites57.every((l) => /token_version = token_version \+ 1/.test(l.sql)) && /SET role = \$1/.test(userWrites57[0].sql) && /SET is_active = \$1/.test(userWrites57[1].sql) && /SET password_hash = \$1/.test(userWrites57[2].sql) && atomicPg57.tables.users[0].token_version === 4,
+    `S25-FIX C. A role change, deactivation and password change bump the session generation in the same UPDATE as the change itself (one statement each; sign-out bumps alone) (${userWrites57.map((l) => l.sql.slice(17, 40)).join(' | ')})`);
+  const issued57 = jwt57.decode(cookie57.v) as any;
+  assert(issued57 && typeof issued57.tv === 'number' && (issued57.exp - issued57.iat) * 1000 === env57.sessionExpiryMs() && cookie57.o.maxAge === env57.sessionExpiryMs(),
+    'S25-FIX C. The token and its cookie expire together (both from the validated SESSION_EXPIRY), and the token carries its session generation');
+
+  // E. DATA-01 end to end: request → route validation → service → repository SQL → stored row → read back,
+  // through each route's own middleware chain against the PostgreSQL stand-in.
+  const routerOf57 = {
+    project: (await import('../server/routes/projectRoutes')).projectRoutes,
+    delivery: (await import('../server/routes/deliveryRoutes')).deliveryRoutes,
+    goal: (await import('../server/routes/goalRoutes')).goalRoutes,
+    dependency: (await import('../server/routes/dependencyRoutes')).dependencyRoutes,
+  };
+  const viaRoute57 = async (router: any, method: string, routePath: string, user: any, body: any = {}, params: any = {}) => {
+    const layer = router.stack.find((l: any) => l.route?.path === routePath && l.route.methods[method]);
+    if (!layer) throw new Error(`no route ${method.toUpperCase()} ${routePath}`);
+    const req: any = reqAs40(user, { url: routePath, method: method.toUpperCase(), body, params });
+    const res = res41();
+    for (const handle of layer.route.stack.map((s: any) => s.handle)) {
+      if (handle === authToken57) continue; // the caller is already signed in (req.user)
+      let advanced = false;
+      let forwarded: any = null;
+      await handle(req, res, (e?: any) => { if (e) forwarded = e; else advanced = true; });
+      if (forwarded) { errorHandler40(forwarded, req, res, next27 as any); break; }
+      if (!advanced) break;
+    }
+    return res;
+  };
+  const userRowOf57 = (u: any) => ({ id: u.id, email: u.email, password_hash: 'x', first_name: u.firstName, last_name: u.lastName, role: u.role, is_active: true, token_version: 0, created_at: 'c', updated_at: 'u' });
+  const chainPg57 = mini56({ tables: { users: [userRowOf57(adminUser40), userRowOf57(pmA57)] } });
+  const chain57 = await withPg56(chainPg57, async () => {
+    const out: Record<string, any> = {};
+    const step = async (label: string, r: Promise<any>) => { const res = await r; out[label] = res.statusCode; return res.body?.data; };
+    const v1 = (n: 0 | 1) => ({ sow: `SOW-C${n}`, hd: `HD-C${n}`, confluenceLink: `https://wiki.example.com/c${n}`, productManager: `PM C${n}`, manager: `Manager C${n}`, estimatedStart: `2026-10-0${n + 1}`, estimatedEnd: `2026-12-0${n + 1}`, actualStart: `2026-10-1${n}`, actualEnd: `2026-12-1${n}`, lastUpdate: `Update C${n}` });
+    const project = (await step('projectCreate', viaRoute57(routerOf57.project, 'post', '/projects', adminUser40, { name: `S25 chain ${stamp57}`, client: 'Chain client', ...v1(0) })))?.project;
+    out.projectCreated = project && Object.entries(v1(0)).every(([k, v]) => project[k] === v);
+    await step('projectUpdate', viaRoute57(routerOf57.project, 'patch', '/projects/:id', adminUser40, v1(1), { id: project?.id }));
+    const projectRow = chainPg57.tables.projects?.find((r) => r.id === project?.id) || {};
+    const { PROJECT_TEXT_COLUMNS: textColumns57 } = await import('../server/repositories/projectRepository');
+    const projectBack = await ProjRepo24.findById(project?.id);
+    out.project = Object.entries(v1(1)).filter(([k, v]) => (projectBack as any)?.[k] !== v || projectRow[textColumns57.find(([f]) => f === k)![1]] !== v).map(([k]) => k);
+    const pid = project?.id;
+    const epic = (await step('epicCreate', viaRoute57(routerOf57.delivery, 'post', '/epics', adminUser40, { projectId: pid, name: 'Chain epic', targetRelease: 'R-C0' })))?.epic;
+    await step('epicUpdate', viaRoute57(routerOf57.delivery, 'patch', '/epics/:id', adminUser40, { targetRelease: 'R-C1' }, { id: epic?.id }));
+    out.epic = [epic?.targetRelease, chainPg57.tables.epics?.find((r) => r.id === epic?.id)?.target_release, (await EpicRepo57.findById(epic?.id))?.targetRelease];
+    const feature = (await step('featureCreate', viaRoute57(routerOf57.delivery, 'post', '/features', adminUser40, { projectId: pid, epicId: epic?.id, name: 'Chain feature', complexity: 'M' })))?.feature;
+    await step('featureUpdate', viaRoute57(routerOf57.delivery, 'patch', '/features/:id', adminUser40, { complexity: 'L' }, { id: feature?.id }));
+    out.feature = [feature?.complexity, chainPg57.tables.features?.find((r) => r.id === feature?.id)?.complexity, (await FeatureRepo57.findById(feature?.id))?.complexity];
+    const story = (await step('storyCreate', viaRoute57(routerOf57.delivery, 'post', '/stories', adminUser40, { projectId: pid, title: 'Chain story' })))?.story;
+    const task = (await step('taskCreate', viaRoute57(routerOf57.delivery, 'post', '/tasks', adminUser40, { projectId: pid, storyId: story?.id, title: 'Chain task', estimatedEffortHrs: 8, actualEffortHrs: 2 })))?.task;
+    const task2 = (await step('task2Create', viaRoute57(routerOf57.delivery, 'post', '/tasks', adminUser40, { projectId: pid, storyId: story?.id, title: 'Chain task 2' })))?.task;
+    await step('taskUpdate', viaRoute57(routerOf57.delivery, 'patch', '/tasks/:id', adminUser40, { estimatedEffortHrs: 12, actualEffortHrs: 5 }, { id: task?.id }));
+    const taskRow = chainPg57.tables.tasks?.find((r) => r.id === task?.id) || {};
+    const taskBack = await TaskRepo56.findById(task?.id);
+    out.task = [task?.estimatedEffortHrs, task?.actualEffortHrs, Number(taskRow.estimated_effort_hrs), Number(taskRow.actual_effort_hrs), taskBack?.estimatedEffortHrs, taskBack?.actualEffortHrs];
+    const subtask = (await step('subtaskCreate', viaRoute57(routerOf57.delivery, 'post', '/subtasks', adminUser40, { taskId: task?.id, title: 'Chain subtask' })))?.subtask;
+    await step('subtaskMove', viaRoute57(routerOf57.delivery, 'patch', '/subtasks/:id', adminUser40, { taskId: task2?.id }, { id: subtask?.id }));
+    out.subtask = [subtask?.taskId === task?.id, chainPg57.tables.subtasks?.find((r) => r.id === subtask?.id)?.task_id === task2?.id, (await SubtaskRepo57.findById(subtask?.id))?.taskId === task2?.id];
+    const goal = (await step('goalCreate', viaRoute57(routerOf57.goal, 'post', '/goals', adminUser40, { objective: `S25 chain goal ${stamp57}`, ownerId: adminUser40.id })))?.goal;
+    await step('goalUpdate', viaRoute57(routerOf57.goal, 'patch', '/goals/:id', adminUser40, { ownerId: pmA57.id }, { id: goal?.id }));
+    const goalBack = await GoalRepo57.findById(goal?.id);
+    out.goal = [goal?.ownerId === adminUser40.id, chainPg57.tables.goals?.find((r) => r.id === goal?.id)?.owner_id === pmA57.id, goalBack?.ownerId === pmA57.id];
+    const dep = (await step('dependencyCreate', viaRoute57(routerOf57.dependency, 'post', '/dependencies', adminUser40, { sourceEntityType: 'epic', sourceEntityId: epic?.id, targetEntityType: 'feature', targetEntityId: feature?.id, dependencyType: 'Blocks', lagDays: 3, isCriticalPath: true, resolutionNotes: 'Chain notes' })))?.dependency;
+    await step('dependencyUpdate', viaRoute57(routerOf57.dependency, 'patch', '/dependencies/:id', adminUser40, { lagDays: -2, isCriticalPath: false, resolutionNotes: 'Chain notes 2' }, { id: dep?.id }));
+    const depRow = chainPg57.tables.dependencies?.find((r) => r.id === dep?.id) || {};
+    const depBack = await DepRepo56.findById(dep?.id);
+    out.dependency = [dep?.lagDays === 3 && dep?.isCriticalPath === true && dep?.resolutionNotes === 'Chain notes', depRow.lag_days === -2 && depRow.is_critical_path === false && depRow.resolution_notes === 'Chain notes 2', depBack?.lagDays === -2 && depBack?.isCriticalPath === false && depBack?.resolutionNotes === 'Chain notes 2'];
+    const badLag = await viaRoute57(routerOf57.dependency, 'patch', '/dependencies/:id', adminUser40, { lagDays: 'soon' }, { id: dep?.id });
+    out.badLag = [badLag.statusCode, (await DepRepo56.findById(dep?.id))?.lagDays];
+    return out;
+  });
+  const statuses57 = Object.entries(chain57).filter(([k]) => /Create$|Update$|Move$/.test(k));
+  assert(statuses57.length === 16 && statuses57.every(([k, v]) => v === (/Create$/.test(k) ? 201 : 200)) && chain57.projectCreated === true && chain57.project.length === 0
+    && JSON.stringify(chain57.epic) === JSON.stringify(['R-C0', 'R-C1', 'R-C1']) && JSON.stringify(chain57.feature) === JSON.stringify(['M', 'L', 'L'])
+    && JSON.stringify(chain57.task) === JSON.stringify([8, 2, 12, 5, 12, 5]) && chain57.subtask.every(Boolean) && chain57.goal.every(Boolean) && chain57.dependency.every(Boolean)
+    && chain57.badLag[0] === 400 && chain57.badLag[1] === -2,
+    `S25-FIX E. End to end through each route (validation → service → repository SQL → stored column → read): project V1.1 fields, epic target release, feature complexity, task hours, a subtask move, a goal owner change and dependency lag/critical-path/notes are stored on create and update; an invalid value is 400 and changes nothing (${JSON.stringify(chain57).slice(0, 600)})`);
+
+  // F. Inside a transaction a failing secondary write rolls the whole unit back (the stand-in restores its
+  // tables on ROLLBACK, as PostgreSQL does); nothing is committed.
+  let txSnapshot57: any = null;
+  const txPg57: any = mini56({
+    tables: { roadmap_items: [], governance_links: [] },
+    fail: /^INSERT INTO activity_logs /,
+    beforeQuery: async (sql) => {
+      if (sql === 'BEGIN') txSnapshot57 = JSON.parse(JSON.stringify(txPg57.tables));
+      if (sql === 'ROLLBACK' && txSnapshot57) { for (const k of Object.keys(txPg57.tables)) delete txPg57.tables[k]; Object.assign(txPg57.tables, txSnapshot57); }
+    },
+  });
+  const txErr57 = await withPg56(txPg57, () => rejects56(() => withTx57(async () => {
+    await RoadmapRepo57.create({ name: `S25 tx item ${stamp57}` } as any);
+    await ActivityRepo57.create({ id: `act_s25_tx_${stamp57}`, entityType: 'roadmap', entityId: 'x', action: 'create', actorId: 'u', actorName: 'U', createdAt: new Date().toISOString() } as any);
+  })));
+  const txSql57 = txPg57.log.filter((l: any) => l.client).map((l: any) => l.sql.split(' ')[0]);
+  assert(!!txErr57 && txSql57[0] === 'BEGIN' && txSql57.includes('INSERT') && txSql57[txSql57.length - 1] === 'ROLLBACK' && !txSql57.includes('COMMIT') && txPg57.tables.roadmap_items.length === 0,
+    `S25-FIX F. A secondary write that fails inside a transaction fails the unit: ROLLBACK, no COMMIT, and the primary record is not kept (${txSql57.join(' > ')})`);
+
+  // G. Issue and milestone links: create, update and link — server-resolved, visibility-checked, nothing changed on rejection.
+  const issueTitles57 = async () => (await IssueRepository.findAll()).map((i: any) => i.title);
+  const mlsNames57 = async () => (await MilestoneRepo.findAll()).map((m: any) => m.name);
+  const issueOk57 = await call46(IssueCtl57.linkItem, pmA57, { targetType: 'epic', targetId: epicA57.id, targetName: 'FORGED' }, { id: issue57.id });
+  const linkKeys57 = (links: any[]) => JSON.stringify(links.map((l: any) => `${l.targetType}:${l.targetId}:${l.targetName}`).sort());
+  const issueLinksBefore57 = linkKeys57(await Links57.getLinksFor('issue', issue57.id));
+  const issueUpdBad57 = await call46(IssueCtl57.updateIssue, pmA57, { title: 'S25 issue (renamed by a rejected update)', linkedItems: [{ targetType: 'story', targetId: storyB57.id }] }, { id: issue57.id });
+  const issueAfterBad57 = await IssueRepository.findById(issue57.id);
+  const issueLinksAfterBad57 = await Links57.getLinksFor('issue', issue57.id);
+  const issueUpdOk57 = await call46(IssueCtl57.updateIssue, pmA57, { linkedItems: [{ targetType: 'story', targetId: storyA57.id, targetName: 'FORGED AGAIN' }] }, { id: issue57.id });
+  const mlsCreateBad57 = await call46(MlsCtl57.createMilestone, pmA57, { projectId: projA57.id, name: `S25 rejected milestone ${stamp57}`, targetDate: '2026-12-01', linkedItems: [{ targetType: 'story', targetId: storyB57.id }] });
+  const mlsCreateOk57 = await call46(MlsCtl57.createMilestone, pmA57, { projectId: projA57.id, name: `S25 linked milestone ${stamp57}`, targetDate: '2026-12-01', linkedItems: [{ targetType: 'story', targetId: storyA57.id, targetName: 'FORGED', targetCode: 'FORGED' }] });
+  const mlsOk57 = mlsCreateOk57.body?.data?.milestone;
+  const mlsUpdBad57 = await call46(MlsCtl57.updateMilestone, pmA57, { name: 'renamed by a rejected update', linkedItems: [{ targetType: 'story', targetId: storyB57.id }] }, { id: mlsOk57?.id });
+  const mlsLinksAfter57 = await Links57.getLinksFor('milestone', mlsOk57?.id);
+  const mlsUpdOk57 = await call46(MlsCtl57.updateMilestone, pmA57, { linkedItems: [{ targetType: 'story', targetId: storyA57.id, targetName: 'FORGED' }] }, { id: mlsOk57?.id });
+  const issueLinksFinal57 = await Links57.getLinksFor('issue', issue57.id);
+  const mlsLinksFinal57 = await Links57.getLinksFor('milestone', mlsOk57?.id);
+  assert(issueOk57.statusCode === 201 && issueOk57.body?.data?.link?.targetName === 'S25 epic A'
+    && issueUpdBad57.statusCode === 404 && issueAfterBad57?.title === 'S25 issue' && linkKeys57(issueLinksAfterBad57) === issueLinksBefore57
+    && issueUpdOk57.statusCode === 200 && issueLinksFinal57.some((l: any) => l.targetId === storyA57.id && l.targetName === 'S25 story A') && !issueLinksFinal57.some((l: any) => l.targetId === storyB57.id || /FORGED/.test(String(l.targetName)))
+    && !(await issueTitles57()).includes('S25 cross issue')
+    && mlsCreateBad57.statusCode === 404 && !(await mlsNames57()).includes(`S25 rejected milestone ${stamp57}`)
+    && mlsCreateOk57.statusCode === 201 && mlsUpdBad57.statusCode === 404 && (await MilestoneRepo.findById(mlsOk57?.id))?.name === `S25 linked milestone ${stamp57}` && mlsLinksAfter57.length === 1 && mlsLinksAfter57[0].targetName === 'S25 story A' && mlsLinksAfter57[0].targetCode !== 'FORGED'
+    && mlsUpdOk57.statusCode === 200 && mlsLinksFinal57.some((l: any) => l.targetId === storyA57.id && l.targetName === 'S25 story A') && !mlsLinksFinal57.some((l: any) => l.targetId === storyB57.id || /FORGED/.test(String(l.targetName))),
+    `S25-FIX G. Issue and milestone links on create, update and link: a visible target is stored with its own name (client names ignored); a target outside the caller's projects is refused and the record, its fields and its links are unchanged (${[issueOk57, issueUpdBad57, issueUpdOk57, mlsCreateBad57, mlsCreateOk57, mlsUpdBad57, mlsUpdOk57].map((r) => r.statusCode).join('/')})`);
+
+  // H. Sprint membership for stories and tasks: create and update, reload, and nothing changed on rejection.
+  const { StoryRepository: StoryRepoH57 } = await import('../server/repositories/storyRepository');
+  const storyCrossAgain57 = await call46(DelCtl56.updateStory, pmA57, { sprintId: sprintB57.id, title: 'renamed by a rejected update' }, { id: storyA57.id });
+  const storyFakeAgain57 = await call46(DelCtl56.updateStory, pmA57, { sprint: sprintB57.name }, { id: storyA57.id });
+  const storyKept57 = await StoryRepoH57.findById(storyA57.id);
+  const taskIn57 = await call46(DelCtl56.createTask, pmA57, { title: 'S25 sprint task', projectId: projA57.id, storyId: storyA57.id, sprintId: sprintA57.id, sprint: 'client text' });
+  const taskInId57 = taskIn57.body?.data?.task?.id;
+  const taskCross57 = await call46(DelCtl56.createTask, pmA57, { title: `S25 cross task ${stamp57}`, projectId: projA57.id, storyId: storyA57.id, sprintId: sprintB57.id });
+  const taskByName57 = await call46(DelCtl56.createTask, pmA57, { title: 'S25 named task', projectId: projA57.id, storyId: storyA57.id, sprint: sprintA57.name });
+  const taskFake57 = await call46(DelCtl56.createTask, pmA57, { title: `S25 fake sprint task ${stamp57}`, projectId: projA57.id, storyId: storyA57.id, sprint: 'Sprint 99 (not real)' });
+  const taskUpdCross57 = await call46(DelCtl56.updateTask, pmA57, { sprintId: sprintB57.id, title: 'renamed by a rejected update' }, { id: taskInId57 });
+  const taskKept57 = await TaskRepo56.findById(taskInId57);
+  const taskOut57 = await call46(DelCtl56.updateTask, pmA57, { sprintId: '' }, { id: taskInId57 });
+  const taskOutBack57 = await TaskRepo56.findById(taskInId57);
+  const taskTitles57 = (await TaskRepo56.findAll()).filter((t: any) => t.projectId === projA57.id).map((t: any) => t.title);
+  assert(storyCrossAgain57.statusCode === 400 && storyFakeAgain57.statusCode === 400 && storyKept57?.sprintId === sprintA57.id && storyKept57?.sprint === sprintA57.name && storyKept57?.title === 'S25 story A'
+    && taskIn57.statusCode === 201 && taskIn57.body.data.task.sprintId === sprintA57.id && taskIn57.body.data.task.sprint === sprintA57.name
+    && taskByName57.statusCode === 201 && taskByName57.body.data.task.sprintId === sprintA57.id
+    && taskCross57.statusCode === 400 && taskFake57.statusCode === 400 && !taskTitles57.includes(`S25 cross task ${stamp57}`) && !taskTitles57.includes(`S25 fake sprint task ${stamp57}`)
+    && taskUpdCross57.statusCode === 400 && taskKept57?.sprintId === sprintA57.id && taskKept57?.sprint === sprintA57.name && taskKept57?.title === 'S25 sprint task'
+    && taskOut57.statusCode === 200 && !taskOutBack57?.sprintId && !taskOutBack57?.sprint,
+    `S25-FIX H. A story or task joins only a sprint of its own project (by id or by the sprint's name), stored and reloaded with the sprint's own name; a foreign or unknown sprint is 400 and the record is unchanged (or not created); a blank sprint takes it out (${[storyCrossAgain57, storyFakeAgain57, taskIn57, taskByName57, taskCross57, taskFake57, taskUpdCross57, taskOut57].map((r) => r.statusCode).join('/')})`);
+
+  // I. Test database safety: name AND location (or an explicit confirmation), before anything loads.
+  const guardRun57 = (env: Record<string, string>, script = 'tests/testEnv.ts') => spawn56(process.execPath, ['node_modules/tsx/dist/cli.mjs', script], { env: { ...process.env, PM_PORTAL_DATA_MODE: '', PM_PORTAL_TEST_DATABASE: '', ...env }, encoding: 'utf8', timeout: 60000 });
+  const remoteTest57 = guardRun57({ DATABASE_URL: 'postgresql://pmuser:S25-Secret-pw@shared-db.example.com:5432/pm_portal_test' });
+  const suiteRefused57 = guardRun57({ DATABASE_URL: 'postgresql://pmuser:S25-Secret-pw@db.example.com:5432/pm_portal' }, 'tests/run-tests.ts');
+  const modeProbe57 = path56.join(os56.tmpdir(), `pm-s25-mode-${stamp57}.mts`);
+  fs35.writeFileSync(modeProbe57, `await import(${JSON.stringify(url57.pathToFileURL(path56.resolve('tests/testEnv.ts')).href)});\nconsole.log('MODE=' + process.env.PM_PORTAL_DATA_MODE);\n`);
+  const embeddedAsked57 = guardRun57({ DATABASE_URL: '', PM_PORTAL_DATA_MODE: 'embedded', PM_PORTAL_DATA_FILE: path56.join(os56.tmpdir(), 'never-written.json') }, modeProbe57);
+  fs35.rmSync(modeProbe57, { force: true });
+  const entryFirst57 = ['tests/run-tests.ts', 'tests/issue-management.test.ts', 'tests/roadmap-postgres.test.ts'].every((f) => (/^import\s.*$/m.exec(fs35.readFileSync(f, 'utf8'))?.[0] || '').startsWith("import './testEnv'"));
+  const leaked57 = `${remoteTest57.stdout}${remoteTest57.stderr}${suiteRefused57.stdout}${suiteRefused57.stderr}`;
+  assert(remoteTest57.status === 1 && /not on this computer/.test(remoteTest57.stderr) && suiteRefused57.status === 1 && /Refusing to run tests/.test(suiteRefused57.stderr) && !/--- 1\./.test(suiteRefused57.stdout) && !/S25-Secret-pw|pmuser|example\.com/.test(leaked57)
+    && unsafeDb57('postgresql://u:p@localhost:5432/pm_portal_test', '') === null && unsafeDb57('postgresql://u:p@127.0.0.1/pm_portal_test', '') === null && unsafeDb57('postgresql:///pm_portal_test?host=/var/run/postgresql', '') === null
+    && !!unsafeDb57('postgresql://u:p@ci-db.internal/pm_portal_test', '') && unsafeDb57('postgresql://u:p@ci-db.internal/pm_portal_test', 'pm_portal_test') === null && !!unsafeDb57('postgresql://u:p@ci-db.internal/pm_portal', 'pm_portal')
+    && /MODE=memory/.test(embeddedAsked57.stdout) && entryFirst57,
+    'S25-FIX I. Tests use a database only if its name ends in "_test" AND it is on this computer (or PM_PORTAL_TEST_DATABASE names it); the guard is the first import of every suite and stops a run before any test (credentials and host never printed); without DATABASE_URL the run is always temporary-memory, never the embedded data file');
+
+  // J. CSRF: cookie-authenticated changes come only from the portal's own (or an allowed) origin.
+  const { sameOriginWrites: sameOrigin57 } = await import('../server/middleware/corsPolicy');
+  const csrf57 = sameOrigin57(new Set(['https://partner.example.com']), 'https://pm.example.com');
+  const csrfCheck57 = (method: string, headers: Record<string, string>) => {
+    const res = cookieRes57();
+    let passed = false;
+    const lower: Record<string, string> = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
+    csrf57({ method, headers: lower, get: (k: string) => lower[k.toLowerCase()] } as any, res, () => { passed = true; });
+    return passed ? 'ok' : `${res.statusCode} ${res.body?.error?.code}`;
+  };
+  // Every unsafe request is judged by Origin, else by Sec-Fetch-Site, else by whether it carries the session
+  // cookie: browser metadata missing never waves a cookie-authenticated change through.
+  const sessionCookie57 = { cookie: 'theme=dark; auth_token=eyJ.session.cookie' };
+  const csrfCases57: Array<[string, Record<string, string>, string]> = [
+    // Origin present: approved (own origin, allowed origin, APP_URL) or not ("null", other port, sibling host).
+    ['POST', { host: 'localhost:3000', origin: 'http://localhost:3000', ...sessionCookie57 }, 'ok'],
+    ['PATCH', { host: 'pm-server.lan:3000', origin: 'http://pm-server.lan:3000', 'sec-fetch-site': 'same-origin', ...sessionCookie57 }, 'ok'],
+    ['POST', { host: 'pm.example.com', origin: 'https://partner.example.com', ...sessionCookie57 }, 'ok'],
+    ['DELETE', { host: 'localhost:3000', origin: 'https://pm.example.com', ...sessionCookie57 }, 'ok'],
+    ['POST', { host: 'localhost:3000', origin: 'http://localhost:8080', ...sessionCookie57 }, '403 CROSS_ORIGIN_REQUEST'],
+    ['POST', { host: 'localhost:3000', origin: 'http://localhost:8080', 'sec-fetch-site': 'same-origin', ...sessionCookie57 }, '403 CROSS_ORIGIN_REQUEST'],
+    ['POST', { host: 'pm-server.lan:3000', origin: 'http://other.lan:3000', ...sessionCookie57 }, '403 CROSS_ORIGIN_REQUEST'],
+    ['DELETE', { host: 'localhost:3000', origin: 'null', ...sessionCookie57 }, '403 CROSS_ORIGIN_REQUEST'],
+    ['POST', { host: 'localhost:3000', origin: 'null' }, '403 CROSS_ORIGIN_REQUEST'],
+    ['POST', { host: 'localhost:3000', origin: 'http://localhost:8080' }, '403 CROSS_ORIGIN_REQUEST'],
+    // No Origin: only Sec-Fetch-Site "same-origin" passes ("same-site", "cross-site" and "none" do not).
+    ['POST', { host: 'localhost:3000', 'sec-fetch-site': 'same-origin', ...sessionCookie57 }, 'ok'],
+    ['PUT', { host: 'localhost:3000', 'sec-fetch-site': 'same-site', ...sessionCookie57 }, '403 CROSS_ORIGIN_REQUEST'],
+    ['POST', { host: 'localhost:3000', 'sec-fetch-site': 'cross-site', ...sessionCookie57 }, '403 CROSS_ORIGIN_REQUEST'],
+    ['POST', { host: 'localhost:3000', 'sec-fetch-site': 'none', ...sessionCookie57 }, '403 CROSS_ORIGIN_REQUEST'],
+    ['PUT', { host: 'localhost:3000', 'sec-fetch-site': 'same-site' }, '403 CROSS_ORIGIN_REQUEST'],
+    // Neither header: refused with the session cookie; without it the API-client contract (Bearer) applies.
+    ['POST', { host: 'localhost:3000', ...sessionCookie57 }, '403 CROSS_ORIGIN_REQUEST'],
+    ['DELETE', { host: 'localhost:3000', cookie: 'auth_token=x' }, '403 CROSS_ORIGIN_REQUEST'],
+    ['POST', { host: 'localhost:3000', authorization: 'Bearer eyJ.api.client', ...sessionCookie57 }, '403 CROSS_ORIGIN_REQUEST'],
+    ['POST', { host: 'localhost:3000', authorization: 'Bearer eyJ.api.client' }, 'ok'],
+    ['POST', { host: 'localhost:3000' }, 'ok'],
+    ['POST', { host: 'localhost:3000', cookie: 'theme=dark; my_auth_token=x; auth_token=' }, 'ok'],
+    // Safe methods are never checked (the Microsoft OAuth callback is a cross-site GET navigation).
+    ['GET', { host: 'localhost:3000', origin: 'http://localhost:8080', 'sec-fetch-site': 'same-site', ...sessionCookie57 }, 'ok'],
+    ['GET', { host: 'localhost:3000', 'sec-fetch-site': 'cross-site', ...sessionCookie57 }, 'ok'],
+    ['HEAD', { host: 'localhost:3000', ...sessionCookie57 }, 'ok'],
+  ];
+  const csrfWrong57 = csrfCases57.map(([m, h, want]) => [m, h, want, csrfCheck57(m, h)]).filter((c) => c[2] !== c[3]);
+  const msLayer57 = ((await import('../server/routes/microsoftRoutes')).microsoftRoutes as any).stack.find((l: any) => l.route?.path === '/auth/microsoft/callback');
+  const serverSrcJ57 = fs35.readFileSync('server.ts', 'utf8');
+  assert(csrfWrong57.length === 0 && !!msLayer57?.route?.methods?.get && !msLayer57.route.methods.post
+    && serverSrcJ57.indexOf('app.use(sameOriginWrites())') > serverSrcJ57.indexOf('app.use(hostAllowlist(') && serverSrcJ57.indexOf('app.use(sameOriginWrites())') < serverSrcJ57.indexOf("app.use('/api/v1', v1ApiRouter)") && serverSrcJ57.indexOf('app.use(sameOriginWrites())') < serverSrcJ57.indexOf('express.urlencoded'),
+    `S25-FIX J. A state-changing request from another origin (another localhost port, a sibling LAN host, a sandboxed page, a same-site or cross-site form) is refused before any route or body parser runs, and so is one carrying the session cookie with no origin metadata (or Sec-Fetch-Site same-site/none); the portal's own origin, allowed origins, cookie-less (Bearer) API clients and every GET (including the Microsoft OAuth callback) are unaffected${csrfWrong57.length ? ` — wrong: ${JSON.stringify(csrfWrong57)}` : ''}`);
+
+  // The same contract over real HTTP: the middleware in server.ts's order, the real API router, a real
+  // session from POST /auth/login, and the stored goals counted to show a refused request changes nothing.
+  const http57 = await import('http');
+  const express57 = (await import('express')).default;
+  const cookieParser57 = (await import('cookie-parser')).default;
+  const { v1ApiRouter: apiRouter57 } = await import('../server/routes');
+  const { GoalRepository: GoalRepoJ57 } = await import('../server/repositories/goalRepository');
+  const csrfApp57 = express57();
+  csrfApp57.use(sameOrigin57(new Set(['https://partner.example.com']), 'https://pm.example.com'));
+  csrfApp57.use(cookieParser57());
+  csrfApp57.use(express57.json());
+  csrfApp57.use(express57.urlencoded({ extended: true }));
+  csrfApp57.use('/api/v1', apiRouter57);
+  csrfApp57.use(errorHandler40);
+  const csrfServer57 = await new Promise<any>((resolve) => { const s = csrfApp57.listen(0, '127.0.0.1', () => resolve(s)); });
+  const csrfPort57 = csrfServer57.address().port;
+  const own57 = `http://127.0.0.1:${csrfPort57}`;
+  const send57 = (method: string, urlPath: string, headers: Record<string, string>, body?: string) => new Promise<{ status: number; code: string; setCookie: string[]; text: string }>((resolve, reject) => {
+    const r = http57.request({ host: '127.0.0.1', port: csrfPort57, method, path: urlPath, headers: { ...headers, ...(body ? { 'content-length': String(Buffer.byteLength(body)) } : {}) } }, (res) => {
+      let data = '';
+      res.on('data', (c) => { data += c; });
+      res.on('end', () => { let code = ''; try { code = JSON.parse(data)?.error?.code || ''; } catch { /* html */ } resolve({ status: res.statusCode || 0, code, setCookie: (res.headers['set-cookie'] as string[]) || [], text: data }); });
+    });
+    r.on('error', reject);
+    if (body) r.write(body);
+    r.end();
+  });
+  const json57 = { 'content-type': 'application/json' };
+  const goalBody57 = (n: string) => JSON.stringify({ objective: `S25 CSRF ${n} ${stamp57}` });
+  const csrfUser57 = await Auth40.register({ email: `s25.csrf.${stamp57}@company.com`, password: 'Sprint25@Csrf001', firstName: 'Cross', lastName: 'Origin', role: 'project-manager' }, login40.user);
+  let csrfHttp57: Record<string, string> = {};
+  let bearer57: Record<string, any> = {};
+  try {
+    resetLimits53();
+    // A script (no browser metadata, no cookie) may still sign in; a page on another origin may not (login CSRF).
+    const scriptLogin = await send57('POST', '/api/v1/auth/login', json57, JSON.stringify({ email: csrfUser57.email, password: 'Sprint25@Csrf001' }));
+    const foreignLogin = await send57('POST', '/api/v1/auth/login', { ...json57, origin: 'http://localhost:8080' }, JSON.stringify({ email: csrfUser57.email, password: 'Sprint25@Csrf001' }));
+    const token = /auth_token=([^;]+)/.exec(scriptLogin.setCookie.join(';'))?.[1] || '';
+    const cookie = { cookie: `auth_token=${token}` };
+    const bearer = { authorization: `Bearer ${token}` };
+    const cases: Array<[string, string, string, Record<string, string>, string?]> = [
+      ['cookie, no Origin, no Sec-Fetch-Site', 'POST', '/api/v1/goals', { ...json57, ...cookie }, goalBody57('a')],
+      ['cookie, Sec-Fetch-Site same-site', 'POST', '/api/v1/goals', { ...json57, ...cookie, 'sec-fetch-site': 'same-site' }, goalBody57('b')],
+      ['cookie, Sec-Fetch-Site none', 'POST', '/api/v1/goals', { ...json57, ...cookie, 'sec-fetch-site': 'none' }, goalBody57('c')],
+      ['cookie, Origin null', 'POST', '/api/v1/goals', { ...json57, ...cookie, origin: 'null' }, goalBody57('d')],
+      ['cookie, unapproved Origin (form post)', 'POST', '/api/v1/goals', { 'content-type': 'application/x-www-form-urlencoded', ...cookie, origin: 'http://localhost:8080' }, `objective=S25+CSRF+e+${stamp57}`],
+      ['cookie and Bearer, no metadata', 'POST', '/api/v1/goals', { ...json57, ...cookie, ...bearer }, goalBody57('f')],
+      ['cookie, no metadata, sign-out', 'POST', '/api/v1/auth/logout', { ...cookie }],
+      ['cookie, Sec-Fetch-Site same-origin', 'POST', '/api/v1/goals', { ...json57, ...cookie, 'sec-fetch-site': 'same-origin' }, goalBody57('ok1')],
+      ['cookie, own Origin', 'POST', '/api/v1/goals', { ...json57, ...cookie, origin: own57, 'sec-fetch-site': 'same-origin' }, goalBody57('ok2')],
+      ['cookie, approved Origin', 'POST', '/api/v1/goals', { ...json57, ...cookie, origin: 'https://partner.example.com', 'sec-fetch-site': 'cross-site' }, goalBody57('ok3')],
+      ['Bearer only, no metadata (API client)', 'POST', '/api/v1/goals', { ...json57, ...bearer }, goalBody57('ok4')],
+      ['nothing (no cookie, no Bearer)', 'POST', '/api/v1/goals', { ...json57 }, goalBody57('g')],
+      ['GET, cookie, cross-site', 'GET', '/api/v1/auth/me', { ...cookie, 'sec-fetch-site': 'cross-site', origin: 'http://localhost:8080' }],
+      ['Microsoft OAuth callback GET, cross-site', 'GET', '/api/v1/auth/microsoft/callback?code=x&state=y', { ...cookie, 'sec-fetch-site': 'cross-site' }],
+    ];
+    csrfHttp57 = { 'script login': `${scriptLogin.status}`, 'foreign-origin login': `${foreignLogin.status} ${foreignLogin.code}` };
+    for (const [label, method, urlPath, headers, body] of cases) {
+      const r = await send57(method, urlPath, headers, body);
+      csrfHttp57[label] = `${r.status}${r.code ? ` ${r.code}` : ''}`;
+    }
+
+    // K. The Bearer API-client contract, end to end: the bearerToken is the auth_token value from the Set-Cookie of
+    // POST /auth/login (never in the body), sent as "Authorization: Bearer"; it follows the session's rules.
+    resetLimits53();
+    const st = (r: { status: number; code: string }) => `${r.status}${r.code ? ` ${r.code}` : ''}`;
+    const login = await send57('POST', '/api/v1/auth/login', json57, JSON.stringify({ email: csrfUser57.email, password: 'Sprint25@Csrf001' }));
+    const setCookie = login.setCookie.find((c) => c.startsWith('auth_token=')) || '';
+    const bearerToken = /^auth_token=([^;]+)/.exec(setCookie)?.[1] || '';
+    const auth = (t: string) => ({ authorization: `Bearer ${t}` });
+    const me = st(await send57('GET', '/api/v1/auth/me', auth(bearerToken)));
+    const write = await send57('POST', '/api/v1/goals', { ...json57, ...auth(bearerToken) }, JSON.stringify({ objective: `S25 BEARER client ${stamp57}` }));
+    const change = await send57('POST', '/api/v1/auth/change-password', { ...json57, ...auth(bearerToken) }, JSON.stringify({ currentPassword: 'Sprint25@Csrf001', newPassword: 'Sprint25@Csrf002' }));
+    const replacement = /auth_token=([^;]+)/.exec(change.setCookie.join(';'))?.[1] || '';
+    bearer57 = {
+      login: login.status, tokenInBody: !!bearerToken && login.text.includes(bearerToken), httpOnly: /;\s*HttpOnly/i.test(setCookie), token: !!bearerToken,
+      me,
+      write: st(write),
+      lowercaseScheme: st(await send57('GET', '/api/v1/auth/me', { authorization: `bearer ${bearerToken}` })),
+      badToken: st(await send57('GET', '/api/v1/auth/me', auth('not-a-bearerToken'))),
+      change: st(change), replaced: !!replacement && replacement !== bearerToken,
+      oldAfterChange: st(await send57('GET', '/api/v1/auth/me', auth(bearerToken))),
+      newAfterChange: st(await send57('GET', '/api/v1/auth/me', auth(replacement))),
+      logout: st(await send57('POST', '/api/v1/auth/logout', auth(replacement))),
+      afterLogout: st(await send57('GET', '/api/v1/auth/me', auth(replacement))),
+    };
+  } finally {
+    await new Promise((resolve) => csrfServer57.close(resolve));
+  }
+  const csrfGoals57 = (await GoalRepoJ57.findAll()).map((g: any) => g.objective).filter((o: string) => o.startsWith('S25 CSRF') && o.endsWith(String(stamp57))).map((o: string) => o.split(' ')[2]).sort();
+  const refused57 = ['cookie, no Origin, no Sec-Fetch-Site', 'cookie, Sec-Fetch-Site same-site', 'cookie, Sec-Fetch-Site none', 'cookie, Origin null', 'cookie, unapproved Origin (form post)', 'cookie and Bearer, no metadata', 'cookie, no metadata, sign-out'];
+  assert(csrfHttp57['script login'] === '200' && csrfHttp57['foreign-origin login'] === '403 CROSS_ORIGIN_REQUEST'
+    && refused57.every((k) => csrfHttp57[k] === '403 CROSS_ORIGIN_REQUEST')
+    && ['cookie, Sec-Fetch-Site same-origin', 'cookie, own Origin', 'cookie, approved Origin', 'Bearer only, no metadata (API client)'].every((k) => csrfHttp57[k] === '201')
+    && csrfHttp57['nothing (no cookie, no Bearer)'] === '401 UNAUTHORIZED' && csrfHttp57['GET, cookie, cross-site'] === '200'
+    && !/^403/.test(csrfHttp57['Microsoft OAuth callback GET, cross-site'] || '403')
+    && JSON.stringify(csrfGoals57) === JSON.stringify(['ok1', 'ok2', 'ok3', 'ok4']),
+    `S25-FIX J. Over HTTP: a cookie-authenticated change without proof of origin (no metadata, same-site, "none", "null", another origin, a form post, or Bearer alongside the cookie) is 403 and stores nothing; same-origin browsers, approved origins and Bearer-only API clients work; the session survives a refused sign-out; GETs and the Microsoft callback are unaffected (${JSON.stringify(csrfHttp57)}; stored: ${csrfGoals57.join(',')})`);
+  const bearerGoal57 = (await GoalRepoJ57.findAll()).filter((g: any) => g.objective === `S25 BEARER client ${stamp57}`).length;
+  assert(bearer57.login === 200 && bearer57.token && bearer57.httpOnly && !bearer57.tokenInBody && bearer57.me === '200' && bearer57.write === '201' && bearerGoal57 === 1
+    && bearer57.lowercaseScheme === '401 UNAUTHORIZED' && bearer57.badToken === '401 INVALID_TOKEN'
+    && bearer57.change === '200' && bearer57.replaced && bearer57.oldAfterChange === '401 SESSION_REVOKED' && bearer57.newAfterChange === '200'
+    && bearer57.logout === '200' && bearer57.afterLogout === '401 SESSION_REVOKED',
+    `S25-FIX K. Bearer API clients: the token is the auth_token value of POST /auth/login's Set-Cookie (HttpOnly; never in the body); "Authorization: Bearer <token>" reads and writes with no browser headers; a password change returns the replacement in Set-Cookie and revokes the old token; sign-out revokes it; the scheme is exactly "Bearer" (${JSON.stringify(bearer57)})`);
 
   console.log('\n========================================');
   console.log(`📊 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

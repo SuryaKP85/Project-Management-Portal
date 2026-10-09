@@ -1,3 +1,4 @@
+import { resolvedLinks, withResolvedLinks } from './linkTargets';
 import { respondToDatabaseFailure } from '../middleware/errorHandler';
 import { Request, Response, NextFunction } from 'express';
 import { IssueService } from '../services/issueService';
@@ -70,7 +71,7 @@ export const IssueController = {
     try {
       await ProjectScope.assertWrite(scopeActor(req), req.body?.projectId, 'Project');
       const actor = getActor(req);
-      const issue = await IssueService.createIssue(req.body, actor);
+      const issue = await IssueService.createIssue(await withResolvedLinks(req), actor); // Sprint 25
       res.status(201).json({ success: true, data: { issue } });
     } catch (err: any) {
       fail(res, err);
@@ -83,7 +84,7 @@ export const IssueController = {
       if (!existing) return notFound(res);
       await ProjectScope.assertMove(scopeActor(req), existing.projectId, req.body?.projectId, 'Issue');
       const actor = getActor(req);
-      const issue = await IssueService.updateIssue(req.params.id, req.body, actor);
+      const issue = await IssueService.updateIssue(req.params.id, await withResolvedLinks(req), actor); // Sprint 25
       if (!issue) return notFound(res);
       res.json({ success: true, data: { issue } });
     } catch (err: any) {
@@ -120,9 +121,9 @@ export const IssueController = {
       const issue = await visibleIssue(req, req.params.id);
       if (!issue) return notFound(res);
       await ProjectScope.assertWrite(actor, issue.projectId, 'Issue');
-      const { targetType, targetId, targetCode, targetName } = req.body;
-      await ProjectScope.assertLinkTarget(actor, targetType, targetId);
-      const link = await GovernanceLinkRepository.addLink('issue', issue.id, targetType, targetId, targetCode, targetName);
+      // Sprint 25: the server checks the target and takes its code and name from the record.
+      const [target] = await resolvedLinks(req, [req.body]);
+      const link = await GovernanceLinkRepository.addLink('issue', issue.id, target.targetType, target.targetId, target.targetCode, target.targetName);
       res.status(201).json({ success: true, data: { link } });
     } catch (err) {
       next(err);

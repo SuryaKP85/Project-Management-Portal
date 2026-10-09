@@ -15,9 +15,11 @@ export interface User {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  /** Sprint 25: session generation; bumping it revokes every token issued before. Never sent to clients. */
+  tokenVersion?: number;
 }
 
-export type SafeUser = Omit<User, 'passwordHash'>;
+export type SafeUser = Omit<User, 'passwordHash' | 'tokenVersion'>;
 
 export interface TeamMember {
   userId: string;
@@ -288,6 +290,8 @@ export interface JiraReferenceFields {
 
 export interface Epic extends JiraReferenceFields {
   id: string;
+  /** Sprint 25: stored (it was accepted but dropped in PostgreSQL). */
+  targetRelease?: string;
   code: string;
   name: string;
   description: string;
@@ -318,6 +322,8 @@ export interface Epic extends JiraReferenceFields {
 
 export interface Feature extends JiraReferenceFields {
   id: string;
+  /** Sprint 25: stored (it was accepted but dropped in PostgreSQL). */
+  complexity?: string;
   code: string;
   name: string;
   description: string;

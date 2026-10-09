@@ -31,7 +31,8 @@ export const AuthService = {
     }
 
     const safeUser = sanitizeUser(user);
-    const token = generateToken(safeUser);
+    // Sprint 25: the token carries the account's session generation (see authenticateToken).
+    const token = generateToken(safeUser, user.tokenVersion ?? 0);
 
     // Log Activity
     await ActivityRepository.create({
@@ -104,7 +105,7 @@ export const AuthService = {
    * password must verify; the new one is hashed with the same infrastructure
    * as registration. Throws typed errors the global handler maps to 400/404.
    */
-  async changePassword(payload: JwtPayload, currentPassword: string, newPassword: string): Promise<void> {
+  async changePassword(payload: JwtPayload, currentPassword: string, newPassword: string): Promise<{ token: string }> {
     const user = await UserRepository.findById(payload.userId);
     if (!user || !user.passwordHash) {
       throw Object.assign(new Error('User not found'), { status: 404, code: 'NOT_FOUND' });
@@ -116,6 +117,7 @@ export const AuthService = {
     if (currentPassword === newPassword) {
       throw Object.assign(new Error('New password must differ from the current password.'), { status: 400, code: 'VALIDATION_ERROR' });
     }
+    // Sprint 25: the new password ends every existing session (other browsers included).
     await UserRepository.updatePassword(user.id, await hashPassword(newPassword));
     await ActivityRepository.create({
       id: `act_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`,
@@ -127,5 +129,13 @@ export const AuthService = {
       details: { fields: ['password'], self: true },
       createdAt: new Date().toISOString(),
     });
+    // ...and the caller continues in a fresh session of the new generation.
+    const fresh = await UserRepository.findById(user.id);
+    return { token: generateToken(sanitizeUser(fresh || user), fresh?.tokenVersion ?? 0) };
+  },
+
+  /** Sprint 25: sign-out ends this session and every other session of the account. */
+  async logout(payload: JwtPayload): Promise<void> {
+    await UserRepository.bumpTokenVersion(payload.userId);
   },
 };

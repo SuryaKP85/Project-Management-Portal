@@ -3,7 +3,7 @@ import { WaitingForRepository } from '../repositories/waitingForRepository';
 import { FollowUpRepository } from '../repositories/followUpRepository';
 import { TeamRepository } from '../repositories/teamRepository';
 import {
-  FollowThroughActor, ProjectAccessService, assertCanChangeStatus, assertCanDelete, assertCanWrite,
+  FollowThroughActor, ProjectAccessService, assertProjectWrite, assertCanChangeStatus, assertCanDelete, assertCanWrite,
   assertSameProject, cleanEnum, cleanOptionalDate, cleanOptionalText, cleanRelated, cleanRequiredText,
   listingScope, logFollowThroughActivity, notAvailable, notifyUser, paginate, parsePaging, queryFlag, queryText,
   requireProjectUser, validationError,
@@ -88,6 +88,7 @@ export const WaitingForService = {
     assertCanWrite(actor);
     const project = await ProjectAccessService.resolveAccessibleProject(actor, body.projectId);
     if (!project) throw notAvailable('Project');
+    assertProjectWrite(actor, project); // Sprint 25
 
     const ownerId = body.ownerId === undefined || body.ownerId === '' ? actor.userId : body.ownerId;
     await requireProjectUser(ownerId, project, 'ownerId');
@@ -131,6 +132,7 @@ export const WaitingForService = {
   async update(actor: FollowThroughActor, id: string, body: Record<string, unknown>): Promise<WaitingForItem> {
     assertCanWrite(actor);
     const { item: current, project } = await loadAccessible(actor, id);
+    assertProjectWrite(actor, project); // Sprint 25
     assertSameProject(body, current.projectId);
 
     const updates: Partial<WaitingForItem> = { updatedBy: actor.userId };
@@ -193,7 +195,8 @@ export const WaitingForService = {
 
   async remove(actor: FollowThroughActor, id: string): Promise<void> {
     assertCanDelete(actor);
-    const { item } = await loadAccessible(actor, id);
+    const { item, project } = await loadAccessible(actor, id);
+    assertProjectWrite(actor, project); // Sprint 25
     await FollowUpRepository.clearRelated('waiting_for', id);
     await WaitingForRepository.delete(id);
     await logFollowThroughActivity(actor, 'waiting_for', id, 'delete', { projectId: item.projectId, title: item.title });

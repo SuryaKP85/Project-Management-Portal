@@ -202,6 +202,7 @@ export const EpicRepository = {
         progress: parseInt(r.progress, 10) || 0,
         startDate: r.start_date,
         targetDate: r.target_date,
+        targetRelease: r.target_release ?? undefined, // Sprint 25
         isArchived: r.is_archived,
         featureCount: parseInt(r.feature_count, 10) || 0,
         storyCount: parseInt(r.story_count, 10) || 0,
@@ -284,6 +285,7 @@ export const EpicRepository = {
         progress: parseInt(r.progress, 10) || 0,
         startDate: r.start_date,
         targetDate: r.target_date,
+        targetRelease: r.target_release ?? undefined, // Sprint 25
         isArchived: r.is_archived,
         featureCount: parseInt(r.feature_count, 10) || 0,
         storyCount: parseInt(r.story_count, 10) || 0,
@@ -306,11 +308,11 @@ export const EpicRepository = {
         INSERT INTO epics (
           id, code, name, description, project_id, product_id, portfolio_id,
           owner_id, team_id, status, priority, health, progress, start_date,
-          target_date, is_archived, created_at, updated_at, jira_key, jira_url, backlog_order
+          target_date, is_archived, created_at, updated_at, jira_key, jira_url, backlog_order, target_release
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7,
           $8, $9, $10, $11, $12, $13,
-          $14, $15, $16, $17, $18, $19, $20, $21
+          $14, $15, $16, $17, $18, $19, $20, $21, $22
         ) RETURNING *
       `;
       for (let attempt = 1; ; attempt += 1) {
@@ -338,6 +340,7 @@ export const EpicRepository = {
             epic.jiraKey || null,
             epic.jiraUrl || null,
             epic.backlogOrder ?? null,
+            epic.targetRelease || null,
           ]));
           break;
         } catch (err) {
@@ -374,7 +377,7 @@ export const EpicRepository = {
           portfolio_id = $5, owner_id = $6, team_id = $7, status = $8,
           priority = $9, health = $10, progress = $11, start_date = $12,
           target_date = $13, is_archived = $14, updated_at = $15,
-          jira_key = $16, jira_url = $17, backlog_order = $18
+          jira_key = $16, jira_url = $17, backlog_order = $18, target_release = $20
         WHERE id = $19
       `;
       await query(q, [
@@ -397,6 +400,7 @@ export const EpicRepository = {
         merged.jiraUrl || null,
         merged.backlogOrder ?? null,
         id,
+        merged.targetRelease || null,
       ]);
     }
     memoryEpics.set(id, merged);

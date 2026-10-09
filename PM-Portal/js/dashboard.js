@@ -852,8 +852,8 @@ export const DashboardModule = {
       title = 'Weekend Standby Roster Drilldown';
       const rowsHtml = (weekendLogs || []).map(w => `
         <tr>
-          <td class="font-bold">${w.employee || w.name || 'Team Member'}</td>
-          <td>${w.project || w.projectName || 'General Support'}</td>
+          <td class="font-bold">${escapeHtml(w.employee || w.name || 'Team Member')}</td>
+          <td>${escapeHtml(w.project || w.projectName || 'General Support')}</td>
           <td>${escapeHtml(w.date || 'Upcoming Weekend')}</td>
           <td>${escapeHtml(w.task || 'On-call Standby')}</td>
           <td><span class="badge bg-success-subtle text-success">${escapeHtml(w.status || 'Approved')}</span></td>

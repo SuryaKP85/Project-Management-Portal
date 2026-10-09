@@ -2,11 +2,8 @@ import { apiClient } from './apiClient.js';
 
 export class AuthService {
   static async login(email, password) {
-    const data = await apiClient.post('/auth/login', { email, password });
-    if (data.token) {
-      apiClient.setAuthToken(data.token);
-    }
-    return data;
+    // Sprint 25: the server sets the HttpOnly session cookie; no token reaches JavaScript.
+    return apiClient.post('/auth/login', { email, password });
   }
 
   static async getCurrentUser() {

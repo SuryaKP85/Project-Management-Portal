@@ -82,6 +82,19 @@ export async function authenticateToken(req: Request, res: Response, next: NextF
     });
   }
 
+  // Sprint 25: a token issued before the account's last logout, password change,
+  // password reset, deactivation or role change is no longer accepted — nor is a
+  // token from before Sprint 25, which carries no session generation at all.
+  if (typeof payload.tv !== 'number' || payload.tv !== (account.tokenVersion ?? 0)) {
+    return res.status(401).json({
+      success: false,
+      error: {
+        code: 'SESSION_REVOKED',
+        message: 'This session has ended. Please log in again.',
+      },
+    });
+  }
+
   // Sprint 22A: authorization uses the account as it is now, not the role (or name)
   // captured in the token at sign-in; a demoted user loses the old rights on their next request.
   req.user = { ...payload, role: account.role, email: account.email, firstName: account.firstName, lastName: account.lastName };

@@ -38,10 +38,11 @@ async function assertDependencyWrite(actor: ScopeActor, body: any, current: any 
     const projectId = await ProjectScope.projectOfEntity(type, id);
     if (projectId && projectId !== 'org' && !(await ProjectScope.canRead(actor, projectId))) throw notAvailable('Dependency endpoint');
   }
-  const derived = body?.projectId
-    || (await ProjectScope.projectOfEntity(sourceType, sourceId))
-    || (await ProjectScope.projectOfEntity(targetType, targetId));
-  await ProjectScope.assertWriteOptional(actor, derived && derived !== 'org' ? String(derived) : undefined, 'Project');
+  // Sprint 25: the first real project wins — an org-level endpoint ('org') never stands in for the
+  // other endpoint's project, so a dependency written into a project always needs write access to it.
+  const candidates = [body?.projectId, await ProjectScope.projectOfEntity(sourceType, sourceId), await ProjectScope.projectOfEntity(targetType, targetId)];
+  const derived = candidates.find((p) => typeof p === 'string' && p !== '' && p !== 'org');
+  await ProjectScope.assertWriteOptional(actor, derived ? String(derived) : undefined, 'Project');
 }
 
 const notFound = (res: Response) => res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Dependency not found' } });

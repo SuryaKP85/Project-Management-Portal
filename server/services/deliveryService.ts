@@ -87,6 +87,7 @@ export const DeliveryService = {
       progress: data.progress || 0,
       startDate: data.startDate,
       targetDate: data.targetDate,
+      targetRelease: data.targetRelease, // Sprint 25: accepted, now kept
       isArchived: false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -218,6 +219,7 @@ export const DeliveryService = {
       status: data.status || 'backlog',
       priority: data.priority || 'medium',
       targetRelease: data.targetRelease,
+      complexity: data.complexity, // Sprint 25: accepted, now kept
       startDate: data.startDate,
       targetDate: data.targetDate,
       progress: data.progress || 0,
@@ -367,6 +369,7 @@ export const DeliveryService = {
       teamId: data.teamId,
       reporterId: data.reporterId || actor.id,
       sprint: data.sprint,
+      sprintId: data.sprintId || undefined, // Sprint 25: validated to a sprint of this project
       targetRelease: data.targetRelease,
       dueDate: data.dueDate,
       progress: data.progress || 0,
@@ -528,6 +531,7 @@ export const DeliveryService = {
       startDate: data.startDate,
       completionDate: data.completionDate,
       sprint: data.sprint,
+      sprintId: data.sprintId || undefined, // Sprint 25: validated to a sprint of this project
       progress: data.progress || 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

@@ -9,6 +9,25 @@ export const PROFILE_FIELDS = ['firstName', 'lastName', 'department', 'title', '
 export type ProfileField = (typeof PROFILE_FIELDS)[number];
 export type ProfileUpdates = Partial<Record<ProfileField, string>>;
 
+/**
+ * Sprint 25 — an avatar is stored only as an https URL (no credentials) or a base64
+ * PNG/JPEG/GIF/WebP data URL (an upload of up to about 5 MB), so it can never carry
+ * script or break out of an HTML attribute; '' removes it.
+ */
+export const AVATAR_MAX_LENGTH = 7_000_000;
+export function validAvatarUrl(value: string): boolean {
+  const raw = value.trim();
+  if (raw === '') return true;
+  if (raw.length > AVATAR_MAX_LENGTH) return false;
+  if (/^data:image\/(png|jpe?g|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/i.test(raw)) return true;
+  try {
+    const url = new URL(raw);
+    return url.protocol === 'https:' && !url.username && !url.password && raw.length <= 2048;
+  } catch {
+    return false;
+  }
+}
+
 /** Typed error the global errorHandler maps to its status and code. */
 function httpError(status: number, code: string, message: string): Error & { status: number; code: string } {
   return Object.assign(new Error(message), { status, code });
@@ -73,7 +92,10 @@ export const UserService = {
       if ((field === 'firstName' || field === 'lastName') && trimmed === '') {
         throw httpError(400, 'VALIDATION_ERROR', `Field '${field}' cannot be blank.`);
       }
-      clean[field] = field === 'avatarUrl' ? value : trimmed;
+      if (field === 'avatarUrl' && !validAvatarUrl(value)) {
+        throw httpError(400, 'VALIDATION_ERROR', "Field 'avatarUrl' must be an https URL or an uploaded PNG, JPEG, GIF or WebP image.");
+      }
+      clean[field] = field === 'avatarUrl' ? value.trim() : trimmed;
     }
     const changed = Object.keys(clean) as ProfileField[];
     if (changed.length === 0) {

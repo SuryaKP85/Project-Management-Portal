@@ -748,7 +748,7 @@ export const DeliveryModule = {
                     <td><span class="small">${assignee ? `${escapeHtml(assignee.firstName)} ${escapeHtml(assignee.lastName)}` : 'Unassigned'}</span></td>
                     <td>${this.getStatusBadge(task.status)}</td>
                     <td>${this.getPriorityBadge(task.priority)}</td>
-                    <td><span class="small">${escapeHtml(task.estimatedHours || 0)}h / ${escapeHtml(task.spentHours || 0)}h</span></td>
+                    <td><span class="small">${escapeHtml(task.estimatedEffortHrs || 0)}h / ${escapeHtml(task.actualEffortHrs || 0)}h</span></td>
                     <td>
                       <div class="d-flex align-items-center gap-2" style="width: 100px;">
                         <div class="progress flex-grow-1" style="height: 6px;">
@@ -1659,8 +1659,9 @@ ${this.jiraFieldsHtml('story', story)}
         status: document.getElementById('task-status')?.value || 'in-progress',
         priority: document.getElementById('task-priority')?.value || 'medium',
         assigneeId: document.getElementById('task-assignee')?.value || null,
-        estimatedHours: parseFloat(document.getElementById('task-esthours')?.value) || 0,
-        spentHours: parseFloat(document.getElementById('task-spent')?.value) || 0,
+        // Sprint 25: the field names the server stores (the old names were silently dropped).
+        estimatedEffortHrs: parseFloat(document.getElementById('task-esthours')?.value) || 0,
+        actualEffortHrs: parseFloat(document.getElementById('task-spent')?.value) || 0,
         description: document.getElementById('task-desc')?.value.trim() || '',
       };
 
@@ -1681,8 +1682,8 @@ ${this.jiraFieldsHtml('story', story)}
     // Sprint 16: stored values are set as properties, never interpolated into markup.
     this.fillFormValues({
       'task-title': task ? task.title : '',
-      'task-esthours': task?.estimatedHours || 8,
-      'task-spent': task?.spentHours || 0,
+      'task-esthours': task?.estimatedEffortHrs || 8,
+      'task-spent': task?.actualEffortHrs || 0,
       'task-desc': task?.description || '',
     });
   },

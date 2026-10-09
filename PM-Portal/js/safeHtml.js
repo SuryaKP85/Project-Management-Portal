@@ -35,6 +35,18 @@ export function safeHttpsUrl(value) {
 }
 
 /** A value reduced to a safe CSS class token (letters, digits, dashes); '' when nothing is left. */
+/**
+ * Sprint 25 — an image source that cannot carry script or break out of an attribute:
+ * an https URL, or a base64 PNG/JPEG/GIF/WebP data URL (an uploaded avatar). Anything
+ * else is '' (callers then show initials). The server stores avatars by the same rule.
+ */
+export function safeImageUrl(value) {
+  if (typeof value !== 'string') return '';
+  const raw = value.trim();
+  if (/^data:image\/(png|jpe?g|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/i.test(raw)) return raw;
+  return safeHttpsUrl(raw) || '';
+}
+
 export function cssToken(value) {
   return String(value ?? '').toLowerCase().replace(/[^a-z0-9-]/g, '').slice(0, 40);
 }

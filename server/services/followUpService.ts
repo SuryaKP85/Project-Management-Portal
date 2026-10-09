@@ -1,7 +1,7 @@
 import { FollowThroughRelatedType, FollowUp, FollowUpStatus, Project } from '../models/types';
 import { FollowUpRepository } from '../repositories/followUpRepository';
 import {
-  FollowThroughActor, ProjectAccessService, assertCanChangeStatus, assertCanDelete, assertCanWrite,
+  FollowThroughActor, ProjectAccessService, assertProjectWrite, assertCanChangeStatus, assertCanDelete, assertCanWrite,
   assertSameProject, cleanEnum, cleanOptionalDate, cleanOptionalText, cleanRelated, cleanRequiredText,
   listingScope, logFollowThroughActivity, notAvailable, notifyUser, paginate, parsePaging, queryFlag, queryText,
   requireProjectUser,
@@ -66,6 +66,7 @@ export const FollowUpService = {
     assertCanWrite(actor);
     const project = await ProjectAccessService.resolveAccessibleProject(actor, body.projectId);
     if (!project) throw notAvailable('Project');
+    assertProjectWrite(actor, project); // Sprint 25
 
     const ownerId = body.ownerId === undefined || body.ownerId === '' ? actor.userId : body.ownerId;
     await requireProjectUser(ownerId, project, 'ownerId');
@@ -99,6 +100,7 @@ export const FollowUpService = {
   async update(actor: FollowThroughActor, id: string, body: Record<string, unknown>): Promise<FollowUp> {
     assertCanWrite(actor);
     const { item: current, project } = await loadAccessible(actor, id);
+    assertProjectWrite(actor, project); // Sprint 25
     assertSameProject(body, current.projectId);
 
     const updates: Partial<FollowUp> = { updatedBy: actor.userId };
@@ -153,7 +155,8 @@ export const FollowUpService = {
 
   async remove(actor: FollowThroughActor, id: string): Promise<void> {
     assertCanDelete(actor);
-    const { item } = await loadAccessible(actor, id);
+    const { item, project } = await loadAccessible(actor, id);
+    assertProjectWrite(actor, project); // Sprint 25
     await FollowUpRepository.delete(id);
     await logFollowThroughActivity(actor, 'follow_up', id, 'delete', { projectId: item.projectId, title: item.title });
   },

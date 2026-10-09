@@ -1,6 +1,6 @@
 import { ActivityLog } from '../models/types';
 import { markDirty, persistentArray } from '../config/persistence';
-import { isDbConnected, query } from '../config/database';
+import { isDbConnected, query, secondaryWrite } from '../config/database';
 
 // Sprint 20: restored from / saved to the embedded data file in persistent mode.
 const memoryActivities = persistentArray<ActivityLog>('activityLogs');
@@ -8,7 +8,8 @@ const memoryActivities = persistentArray<ActivityLog>('activityLogs');
 export const ActivityRepository = {
   async create(log: ActivityLog): Promise<ActivityLog> {
     if (isDbConnected()) {
-      await query(
+      // Sprint 25: a secondary write (see secondaryWrite); never fails a committed primary change.
+      await secondaryWrite('activity log', () => query(
         `INSERT INTO activity_logs (id, entity_type, entity_id, action, actor_id, actor_name, details, ip_address, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
@@ -22,7 +23,7 @@ export const ActivityRepository = {
           log.ipAddress || null,
           log.createdAt,
         ]
-      );
+      ));
     }
     memoryActivities.unshift(log);
     markDirty();

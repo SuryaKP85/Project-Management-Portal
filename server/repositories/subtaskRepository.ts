@@ -185,7 +185,7 @@ export const SubtaskRepository = {
     if (isDbConnected()) {
       const q = `
         UPDATE subtasks
-        SET title = $1, assignee_id = $2, status = $3, priority = $4, estimate_hrs = $5, due_date = $6, completed_at = $7, updated_at = $8
+        SET title = $1, assignee_id = $2, status = $3, priority = $4, estimate_hrs = $5, due_date = $6, completed_at = $7, updated_at = $8, task_id = $10
         WHERE id = $9
       `;
       await query(q, [
@@ -198,6 +198,7 @@ export const SubtaskRepository = {
         merged.completedAt || null,
         merged.updatedAt,
         id,
+        merged.taskId, // Sprint 25: a move to another task is stored
       ]);
     }
     memorySubtasks.set(id, merged);

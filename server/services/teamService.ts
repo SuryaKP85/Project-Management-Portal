@@ -18,6 +18,31 @@ async function validMembers(list: unknown): Promise<TeamMember[] | undefined> {
   return out;
 }
 
+/**
+ * Sprint 25 — the team fields a client may set. The id, timestamps, member count and
+ * allocated hours are the server's, and anything else in a request body is ignored
+ * (a client can neither choose a team's id nor overwrite another team by it).
+ */
+function teamFields(input: Record<string, any>): Partial<Team> {
+  const out: Partial<Team> = {};
+  if (input.name !== undefined) {
+    if (typeof input.name !== 'string' || !input.name.trim()) throw validationError("Field 'name' cannot be empty.");
+    if (input.name.trim().length > 150) throw validationError("Field 'name' must be at most 150 characters.");
+    out.name = input.name.trim();
+  }
+  if (input.department !== undefined) {
+    if (typeof input.department !== 'string' || !input.department.trim()) throw validationError("Field 'department' cannot be empty.");
+    if (input.department.trim().length > 100) throw validationError("Field 'department' must be at most 100 characters.");
+    out.department = input.department.trim();
+  }
+  if (input.capacityHrs !== undefined) {
+    const hours = Number(input.capacityHrs);
+    if (!Number.isFinite(hours) || hours < 0 || hours > 100000) throw validationError("Field 'capacityHrs' must be a number from 0 to 100000.");
+    out.capacityHrs = hours;
+  }
+  return out;
+}
+
 export const TeamService = {
   async getAllTeams(): Promise<Team[]> {
     return TeamRepository.findAll();
@@ -32,10 +57,10 @@ export const TeamService = {
     const lead = await ownerOrCaller(data.leadId, actorUser?.id, 'leadId');
     const members = await validMembers(data.members);
     const newTeam: Partial<Team> = {
-      ...data,
+      ...teamFields(data || {}),
       ...(members ? { members } : {}),
       leadId: lead?.id,
-      id: data.id || `team_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`,
+      id: `team_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`, // Sprint 25: always the server's
     };
 
     const created = await TeamRepository.create(newTeam);
@@ -61,7 +86,7 @@ export const TeamService = {
     if (!existing) return null;
 
     // Sprint 24: a new lead or member list refers to existing, active users.
-    const clean: Partial<Team> = { ...updates };
+    const clean: Partial<Team> = teamFields(updates || {}); // Sprint 25: allowlisted fields only
     if (updates.leadId !== undefined && updates.leadId !== null && updates.leadId !== '') clean.leadId = (await ownerOrCaller(updates.leadId, undefined, 'leadId'))?.id;
     if (updates.members !== undefined) clean.members = await validMembers(updates.members);
     const updated = await TeamRepository.update(id, clean);
@@ -73,7 +98,7 @@ export const TeamService = {
         action: 'update',
         actorId: actorUser.id,
         actorName: `${actorUser.firstName} ${actorUser.lastName}`,
-        details: updates,
+        details: clean,
         createdAt: new Date().toISOString(),
       });
     }

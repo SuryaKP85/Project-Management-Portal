@@ -176,9 +176,25 @@ function jsonArray(value: unknown): any[] {
   return [];
 }
 
+/**
+ * Sprint 25 — project text fields the API accepts (V1.1 display fields and display names)
+ * and their columns. One list drives create, update and row mapping, so a field accepted
+ * here is always stored and read back in PostgreSQL as in the embedded store.
+ */
+export const PROJECT_TEXT_COLUMNS: ReadonlyArray<readonly [string, string]> = [
+  ['manager', 'manager'], ['managerName', 'manager_name'], ['productManager', 'product_manager'],
+  ['productName', 'product_name'], ['portfolioName', 'portfolio_name'], ['teamName', 'team_name'],
+  ['hd', 'hd'], ['sow', 'sow'], ['confluenceLink', 'confluence_link'],
+  ['estimatedStart', 'estimated_start'], ['estimatedEnd', 'estimated_end'],
+  ['actualStart', 'actual_start'], ['actualEnd', 'actual_end'], ['lastUpdate', 'last_update'],
+];
+
 /** Maps a projects row to a Project (shared by findAll and findById). */
 export function projectFromRow(r: any): Project {
+  const text: Record<string, string | undefined> = {};
+  for (const [field, column] of PROJECT_TEXT_COLUMNS) text[field] = r[column] ?? undefined;
   return {
+    ...(text as any),
     id: r.id,
     code: r.code,
     name: r.name,
@@ -243,6 +259,7 @@ export const ProjectRepository = {
       code,
       name: project.name || 'Untitled Project',
       client: project.client || 'Enterprise Client',
+      ...Object.fromEntries(PROJECT_TEXT_COLUMNS.map(([field]) => [field, (project as any)[field]])),
       managerId: project.managerId, // Sprint 24: no demo manager (ProjectGuards supplies the caller)
       managerName: project.managerName || '',
       teamId: project.teamId,
@@ -276,8 +293,8 @@ export const ProjectRepository = {
 
     if (isDbConnected()) {
       await query(
-        `INSERT INTO projects (id, code, name, client, manager_id, team_id, members, status, risk, progress, budget, sprint, start_date, end_date, product_id, portfolio_id, sow_status, poc, developer, qa, ba, remarks, month, quarter, year, created_at, updated_at, jira_links)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)`,
+        `INSERT INTO projects (id, code, name, client, manager_id, team_id, members, status, risk, progress, budget, sprint, start_date, end_date, product_id, portfolio_id, sow_status, poc, developer, qa, ba, remarks, month, quarter, year, created_at, updated_at, jira_links, ${PROJECT_TEXT_COLUMNS.map(([, c]) => c).join(', ')})
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, ${PROJECT_TEXT_COLUMNS.map((_, i) => `$${29 + i}`).join(', ')})`,
         [
           newProject.id,
           newProject.code,
@@ -307,6 +324,7 @@ export const ProjectRepository = {
           newProject.createdAt,
           newProject.updatedAt,
           JSON.stringify(newProject.jiraLinks || []),
+          ...PROJECT_TEXT_COLUMNS.map(([field]) => (newProject as any)[field] || null),
         ]
       );
     }
@@ -344,7 +362,7 @@ export const ProjectRepository = {
            start_date = $11, end_date = $12, product_id = $13, portfolio_id = $14,
            sow_status = $15, poc = $16, developer = $17, qa = $18, ba = $19,
            remarks = $20, month = $21, quarter = $22, year = $23, updated_at = $24,
-           jira_links = $25
+           jira_links = $25, ${PROJECT_TEXT_COLUMNS.map(([, c], i) => `${c} = $${27 + i}`).join(', ')}
          WHERE id = $26`,
         [
           updated.name,
@@ -373,6 +391,7 @@ export const ProjectRepository = {
           updated.updatedAt,
           JSON.stringify(updated.jiraLinks || []),
           id,
+          ...PROJECT_TEXT_COLUMNS.map(([field]) => (updated as any)[field] || null),
         ]
       );
     }

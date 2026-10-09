@@ -177,6 +177,7 @@ export const FeatureRepository = {
         status: r.status,
         priority: r.priority,
         targetRelease: r.target_release,
+        complexity: r.complexity ?? undefined, // Sprint 25
         startDate: r.start_date,
         targetDate: r.target_date,
         progress: parseInt(r.progress, 10) || 0,
@@ -250,6 +251,7 @@ export const FeatureRepository = {
         status: r.status,
         priority: r.priority,
         targetRelease: r.target_release,
+        complexity: r.complexity ?? undefined, // Sprint 25
         startDate: r.start_date,
         targetDate: r.target_date,
         progress: parseInt(r.progress, 10) || 0,
@@ -273,11 +275,11 @@ export const FeatureRepository = {
         INSERT INTO features (
           id, code, name, description, epic_id, project_id, product_id,
           owner_id, team_id, status, priority, target_release, start_date,
-          target_date, progress, created_at, updated_at, jira_key, jira_url, backlog_order
+          target_date, progress, created_at, updated_at, jira_key, jira_url, backlog_order, complexity
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7,
           $8, $9, $10, $11, $12, $13,
-          $14, $15, $16, $17, $18, $19, $20
+          $14, $15, $16, $17, $18, $19, $20, $21
         ) RETURNING *
       `;
       for (let attempt = 1; ; attempt += 1) {
@@ -304,6 +306,7 @@ export const FeatureRepository = {
             feature.jiraKey || null,
             feature.jiraUrl || null,
             feature.backlogOrder ?? null,
+            feature.complexity || null, // Sprint 25
           ]));
           break;
         } catch (err) {
@@ -339,7 +342,7 @@ export const FeatureRepository = {
           name = $1, description = $2, epic_id = $3, project_id = $4,
           product_id = $5, owner_id = $6, team_id = $7, status = $8,
           priority = $9, target_release = $10, start_date = $11, target_date = $12,
-          progress = $13, updated_at = $14, jira_key = $15, jira_url = $16, backlog_order = $17
+          progress = $13, updated_at = $14, jira_key = $15, jira_url = $16, backlog_order = $17, complexity = $19
         WHERE id = $18
       `;
       await query(q, [
@@ -361,6 +364,7 @@ export const FeatureRepository = {
         merged.jiraUrl || null,
         merged.backlogOrder ?? null,
         id,
+        merged.complexity || null,
       ]);
     }
     memoryFeatures.set(id, merged);

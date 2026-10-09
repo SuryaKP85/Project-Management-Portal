@@ -2,12 +2,13 @@ import express from 'express';
 import path from 'path';
 import cookieParser from 'cookie-parser';
 import { createServer as createViteServer } from 'vite';
-import { assertProductionSecrets, config, resolveListenHost } from './server/config/env';
+import { applyDemoAccountGuard, assertProductionSecrets, config, resolveListenHost, sessionExpiryMs } from './server/config/env';
 import { initDatabase } from './server/config/database';
 import { dataFilePath, dataMode, durableResponses, flushNow } from './server/config/persistence';
-import { corsPolicy } from './server/middleware/corsPolicy';
+import { corsPolicy, sameOriginWrites } from './server/middleware/corsPolicy';
 import { securityHeaders } from './server/middleware/securityHeaders';
 import { errorHandler } from './server/middleware/errorHandler';
+import { allowedHosts, hostAllowlist } from './server/middleware/hostAllowlist';
 
 async function startServer() {
   const app = express();
@@ -15,8 +16,10 @@ async function startServer() {
 
   // 1. Sprint 20: configuration that must be safe before anything runs.
   assertProductionSecrets();
+  // Sprint 25: the session lifetime must be a valid duration (it sets the token and the cookie).
+  sessionExpiryMs();
   // Sprint 22A: without a private JWT_SECRET the server is reachable from this computer only.
-  const { host: HOST, loopbackOnly } = resolveListenHost();
+  const requestedListen = resolveListenHost();
   const cors = corsPolicy();
   const mode = dataMode();
 
@@ -27,6 +30,10 @@ async function startServer() {
   await ensureFirstAdmin();
   // Routes load the repositories, which restore the embedded data file before any seed runs.
   const { v1ApiRouter } = await import('./server/routes');
+  // Sprint 25: demo accounts with published passwords never face a production or network start.
+  const { UserRepository } = await import('./server/repositories/userRepository');
+  const demoAccounts = config.isProduction || !requestedListen.loopbackOnly ? await UserRepository.activeDemoAccounts() : [];
+  const { host: HOST, loopbackOnly, demoLoopback } = applyDemoAccountGuard(demoAccounts, requestedListen);
   // First-run seeds and a bootstrapped administrator are on disk before any request is served;
   // a data location that cannot be written stops startup here.
   if (mode === 'persistent-embedded' && !flushNow()) {
@@ -38,8 +45,12 @@ async function startServer() {
   console.log(`🗄️ Data mode: ${modeNote}`);
 
   // 3. Global Security & Body Parsers
+  // Sprint 25: only host names this server answers for (DNS-rebinding defence).
+  app.use(hostAllowlist(allowedHosts(process.env, HOST)));
   app.use(securityHeaders);
   app.use(cors);
+  // Sprint 25: state-changing requests come only from the portal's own (or an allowed) origin (CSRF).
+  app.use(sameOriginWrites());
   app.use(cookieParser());
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -80,7 +91,9 @@ async function startServer() {
     console.log(`🚀 Surya PM OS V2.0 Server running on http://${HOST}:${PORT}`);
     console.log(`📡 V2 REST API endpoint active at http://${HOST}:${PORT}/api/v1/health`);
     console.log(`🖥️ PM Portal Application accessible at http://${HOST}:${PORT}/PM-Portal/index.html`);
-    if (loopbackOnly) {
+    if (demoLoopback) {
+      console.log('🔒 Listening on this computer only: demo accounts whose passwords are published in the source are active. Change their passwords or deactivate them to allow access from the network.');
+    } else if (loopbackOnly) {
       console.log('🔒 Listening on this computer only: JWT_SECRET is not set to a private value. Set a random JWT_SECRET of at least 32 characters (and optionally PM_PORTAL_HOST) to allow access from the network.');
     }
   });

@@ -321,6 +321,7 @@ export const DependencyRepository = {
                status, criticality, owner_id as "ownerId", project_id as "projectId",
                description, target_date as "targetDate", due_date as "dueDate",
                resolved_at as "resolvedAt", resolution_date as "resolutionDate",
+               lag_days as "lagDays", resolution_notes as "resolutionNotes", is_critical_path as "isCriticalPath",
                created_by as "createdBy", updated_by as "updatedBy",
                created_at as "createdAt", updated_at as "updatedAt"
         FROM dependencies
@@ -583,6 +584,7 @@ export const DependencyRepository = {
                 status, criticality, owner_id as "ownerId", project_id as "projectId",
                 description, target_date as "targetDate", due_date as "dueDate",
                 resolved_at as "resolvedAt", resolution_date as "resolutionDate",
+                lag_days as "lagDays", resolution_notes as "resolutionNotes", is_critical_path as "isCriticalPath",
                 created_by as "createdBy", updated_by as "updatedBy",
                 created_at as "createdAt", updated_at as "updatedAt"
          FROM dependencies
@@ -729,8 +731,8 @@ export const DependencyRepository = {
           source_entity_code, target_entity_id, target_entity_type, target_entity_name,
           target_entity_code, dependency_type, status, criticality, owner_id, project_id,
           description, target_date, due_date, resolved_at, resolution_date,
-          created_by, updated_by, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)`,
+          created_by, updated_by, created_at, updated_at, lag_days, resolution_notes, is_critical_path
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)`,
         [
           newDep.id,
           code,
@@ -756,6 +758,9 @@ export const DependencyRepository = {
           newDep.updatedBy || null,
           newDep.createdAt,
           newDep.updatedAt,
+          newDep.lagDays ?? null,
+          newDep.resolutionNotes || null,
+          newDep.isCriticalPath ?? false,
         ]
       )
     );
@@ -855,7 +860,8 @@ export const DependencyRepository = {
           target_entity_name = $7, target_entity_code = $8, dependency_type = $9,
           status = $10, criticality = $11, owner_id = $12, project_id = $13,
           description = $14, target_date = $15, due_date = $16,
-          resolved_at = $17, resolution_date = $18, updated_by = $19, updated_at = $20
+          resolved_at = $17, resolution_date = $18, updated_by = $19, updated_at = $20,
+          lag_days = $22, resolution_notes = $23, is_critical_path = $24
          WHERE id = $21`,
         [
           updated.sourceEntityId,
@@ -879,6 +885,9 @@ export const DependencyRepository = {
           updated.updatedBy || null,
           updated.updatedAt,
           id,
+          updated.lagDays ?? null,
+          updated.resolutionNotes || null,
+          updated.isCriticalPath ?? false,
         ]
       );
       if (!res.rowCount) return { error: 'Dependency not found' };

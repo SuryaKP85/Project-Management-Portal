@@ -8,6 +8,7 @@ import { ActionItemRepository } from '../repositories/actionItemRepository';
 import { WaitingForRepository } from '../repositories/waitingForRepository';
 import { FollowUpRepository } from '../repositories/followUpRepository';
 import { DependencyRepository } from '../repositories/dependencyRepository';
+import { RoadmapRepository } from '../repositories/roadmapRepository';
 import { ProjectAccessService, forbidden, httpError, notAvailable } from './followThroughSupport';
 import { canWriteProject } from './deliveryGuards';
 import { resolveEntity } from './dependencyService';
@@ -125,6 +126,11 @@ export const ProjectScope = {
   async projectOfEntity(type: unknown, id: unknown): Promise<string | 'org' | undefined> {
     if (typeof type !== 'string' || typeof id !== 'string' || !id) return undefined;
     const kind = type.toLowerCase().replace(/-/g, '_');
+    // Sprint 25: a roadmap item chartered to a project belongs to that project.
+    if (kind === 'roadmap') {
+      const item = await RoadmapRepository.findById(id);
+      return item ? item.projectId || 'org' : undefined;
+    }
     if (ORG_LEVEL_TYPES.has(kind)) return 'org';
     const byRepo: Record<string, (id: string) => Promise<{ projectId?: string } | null>> = {
       requirement: (x) => RequirementRepository.findById(x),

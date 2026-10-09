@@ -903,3 +903,34 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_velocity_records_sprint ON velocity_records
 
 -- Team membership is stored here (one row per person per team).
 CREATE UNIQUE INDEX IF NOT EXISTS uq_team_members_team_user ON team_members(team_id, user_id);
+
+-- ====================================================================
+-- Sprint 25: production safety
+-- ====================================================================
+-- Session generation: bumped on sign-out, password change or reset, deactivation and
+-- role change; a token issued for an older generation is refused.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
+
+-- The activity actor is "first last" (each up to 100 characters).
+ALTER TABLE activity_logs ALTER COLUMN actor_name TYPE VARCHAR(255);
+
+-- Fields the API accepts and returns, which PostgreSQL could not store (they were lost on reload).
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS manager VARCHAR(255);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS manager_name VARCHAR(255);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS product_manager VARCHAR(255);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS product_name VARCHAR(255);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS portfolio_name VARCHAR(255);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS team_name VARCHAR(255);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS hd VARCHAR(255);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS sow VARCHAR(255);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS confluence_link TEXT;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS estimated_start VARCHAR(255);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS estimated_end VARCHAR(255);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS actual_start VARCHAR(255);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS actual_end VARCHAR(255);
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_update VARCHAR(255);
+ALTER TABLE epics ADD COLUMN IF NOT EXISTS target_release VARCHAR(255);
+ALTER TABLE features ADD COLUMN IF NOT EXISTS complexity VARCHAR(30);
+ALTER TABLE dependencies ADD COLUMN IF NOT EXISTS lag_days INTEGER;
+ALTER TABLE dependencies ADD COLUMN IF NOT EXISTS resolution_notes TEXT;
+ALTER TABLE dependencies ADD COLUMN IF NOT EXISTS is_critical_path BOOLEAN DEFAULT FALSE;

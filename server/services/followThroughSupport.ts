@@ -96,6 +96,17 @@ export function assertCanWrite(actor: FollowThroughActor): void {
   if (!canWrite(actor)) throw forbidden('Your role cannot create or edit these records.');
 }
 
+/**
+ * Sprint 25 — creating, editing or deleting follow-through needs write access to the
+ * project (admin, its manager, or a listed member), not only read access (which assigned
+ * work also grants). Status changes keep their owner rule (assertCanChangeStatus).
+ */
+export function assertProjectWrite(actor: FollowThroughActor, project: Project | null | undefined): void {
+  if (actor.role === 'admin') return;
+  const writer = !!project && ((project.managerId && project.managerId === actor.userId) || (project.members || []).some((m) => m && m.userId === actor.userId));
+  if (!writer) throw forbidden('You can only change records in projects you manage or are a member of.');
+}
+
 export function assertCanDelete(actor: FollowThroughActor): void {
   if (!FOLLOW_THROUGH_DELETE_ROLES.includes(actor.role)) throw forbidden('Your role cannot delete these records.');
 }

@@ -1,9 +1,10 @@
 import { Notification } from '../models/types';
-import { markDirty, persistentArray } from '../config/persistence';
-import { isDbConnected, query } from '../config/database';
+import { markDirty, persistentArray, skipDemoSeed } from '../config/persistence';
+import { isDbConnected, query, secondaryWrite } from '../config/database';
 
 // Sprint 20: restored from / saved to the embedded data file in persistent mode (the list below seeds a new store).
-const memoryNotifications = persistentArray<Notification>('notifications', [
+// Sprint 25: the demo items only seed a development or temporary store (never production or PostgreSQL).
+const memoryNotifications = persistentArray<Notification>('notifications', skipDemoSeed() ? [] : [
   {
     id: 'notif_1',
     userId: 'usr_admin_1',
@@ -49,7 +50,8 @@ export const NotificationRepository = {
 
   async create(notification: Notification): Promise<Notification> {
     if (isDbConnected()) {
-      await query(
+      // Sprint 25: a secondary write (see secondaryWrite); never fails a committed primary change.
+      await secondaryWrite('notification', () => query(
         `INSERT INTO notifications (id, user_id, title, message, type, is_read, link, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [
@@ -62,7 +64,7 @@ export const NotificationRepository = {
           notification.link || null,
           notification.createdAt,
         ]
-      );
+      ));
     }
     memoryNotifications.unshift(notification);
     markDirty();

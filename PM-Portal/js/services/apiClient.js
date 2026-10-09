@@ -6,31 +6,26 @@ export class ApiClient {
   constructor(baseUrl = '/api/v1', timeoutMs = 15000) {
     this.baseUrl = baseUrl;
     this.timeoutMs = timeoutMs;
-    this.authToken = null;
-
-    // Load initial token if available in sessionStorage for header-fallback environments
+    // Sprint 25: the session is the HttpOnly cookie only. JavaScript never holds the
+    // token, so a token stored by an earlier version is removed.
     try {
-      this.authToken = sessionStorage.getItem('pm_v2_auth_token');
+      sessionStorage.removeItem('pm_v2_auth_token');
     } catch {
-      this.authToken = null;
+      /* storage unavailable */
     }
   }
 
-  setAuthToken(token) {
-    this.authToken = token;
+  /** Kept for callers of earlier versions; the token is never stored or sent by JavaScript. */
+  setAuthToken(_token) {
     try {
-      if (token) {
-        sessionStorage.setItem('pm_v2_auth_token', token);
-      } else {
-        sessionStorage.removeItem('pm_v2_auth_token');
-      }
-    } catch (e) {
-      console.warn('Could not persist session token:', e);
+      sessionStorage.removeItem('pm_v2_auth_token');
+    } catch {
+      /* storage unavailable */
     }
   }
 
   getAuthToken() {
-    return this.authToken;
+    return null;
   }
 
   async request(endpoint, options = {}) {
@@ -40,10 +35,6 @@ export class ApiClient {
       'Accept': 'application/json',
       ...(options.headers || {}),
     };
-
-    if (this.authToken) {
-      headers['Authorization'] = `Bearer ${this.authToken}`;
-    }
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);

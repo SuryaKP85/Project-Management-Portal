@@ -180,7 +180,7 @@ export const GoalRepository = {
 
     if (isDbConnected()) {
       await query(
-        `UPDATE goals SET objective = $1, description = $2, status = $3, target_value = $4, current_value = $5, progress = $6, unit = $7, due_date = $8, portfolio_id = $9, product_id = $10, updated_at = $11
+        `UPDATE goals SET objective = $1, description = $2, status = $3, target_value = $4, current_value = $5, progress = $6, unit = $7, due_date = $8, portfolio_id = $9, product_id = $10, updated_at = $11, owner_id = $13
          WHERE id = $12`,
         [
           updated.objective,
@@ -195,6 +195,7 @@ export const GoalRepository = {
           updated.productId,
           updated.updatedAt,
           id,
+          updated.ownerId || null, // Sprint 25: an owner change is stored
         ]
       );
     }

@@ -30,6 +30,8 @@ import os from 'os';
 import path from 'path';
 
 type Manifest = Record<string, string>;
+/** Sprint 25: project fields PostgreSQL used to drop (accepted and echoed, lost on reload). */
+const PG_V1_FIELDS = { sow: 'SOW-PG', hd: 'HD-PG', confluenceLink: 'https://wiki.example.com/pg', productManager: 'PG Product Manager', estimatedStart: '2026-10-01', estimatedEnd: '2026-12-01', actualStart: '2026-10-02', actualEnd: '2026-12-02', lastUpdate: 'PG weekly sync' };
 const PHASES = ['create', 'verify', 'reverify'] as const;
 
 function withSearchPath(url: string, schema: string): string {
@@ -105,6 +107,16 @@ async function parent(): Promise<number> {
   return failed === 0 ? 0 : 1;
 }
 
+/** Sprint 25: the error code authenticateToken gives a token (null when it is accepted). */
+async function sessionCode(token: string): Promise<string | null> {
+  const { authenticateToken } = await import('../server/middleware/authMiddleware');
+  let body: any = null;
+  let passed = false;
+  const res: any = { status() { return res; }, json(b: any) { body = b; return res; } };
+  await authenticateToken({ headers: {}, cookies: { auth_token: token } } as any, res, () => { passed = true; });
+  return passed ? null : body?.error?.code || 'UNKNOWN';
+}
+
 /** One phase, in its own process: start the store the way server.ts does, then act. */
 async function phase(name: string): Promise<{ ok: boolean; checks: Array<[string, boolean]> }> {
   const checks: Array<[string, boolean]> = [];
@@ -170,7 +182,7 @@ async function phase(name: string): Promise<{ ok: boolean; checks: Array<[string
     const { WaitingForService } = await import('../server/services/waitingForService');
     const { FollowUpService } = await import('../server/services/followUpService');
 
-    const project = await ProjectService.createProject({ name: 'PG test project', client: 'PG test client', budget: 1234.5 } as any, me);
+    const project = await ProjectService.createProject({ name: 'PG test project', client: 'PG test client', budget: 1234.5, ...PG_V1_FIELDS } as any, me);
     const cascadeProject = await ProjectService.createProject({ name: 'PG cascade project', client: 'PG test client' } as any, me);
     const product = await ProductService.createProduct({ name: 'PG test product', code: `PGT-PROD-${Date.now()}` } as any, me);
     const portfolio = await PortfolioService.createPortfolio({ name: 'PG test portfolio', code: `PGT-PORT-${Date.now()}` } as any, me);
@@ -178,16 +190,17 @@ async function phase(name: string): Promise<{ ok: boolean; checks: Array<[string
     const team = await TeamService.createTeam({ name: 'PG test team' } as any, me);
     await TeamService.addMember(team.id, { userId: me.id, userName: 'PG Test Admin', roleInTeam: 'Lead', allocatedHrs: 30 }, me);
     const requirement = await RequirementService.create(ftActor, { projectId: project.id, title: 'PG test requirement' });
-    const epic = await DeliveryService.createEpic({ name: 'PG test epic', projectId: project.id } as any, me);
-    const feature = await DeliveryService.createFeature({ name: 'PG test feature', projectId: project.id, epicId: epic.id } as any, me);
+    const epic = await DeliveryService.createEpic({ name: 'PG test epic', projectId: project.id, targetRelease: 'R-PG' } as any, me);
+    const feature = await DeliveryService.createFeature({ name: 'PG test feature', projectId: project.id, epicId: epic.id, complexity: 'L' } as any, me);
     const story = await DeliveryService.createStory({ title: 'PG test story', projectId: project.id, featureId: feature.id, dueDate: '2026-10-08' } as any, me);
-    const task = await DeliveryService.createTask({ title: 'PG test task', projectId: project.id, storyId: story.id } as any, me);
+    const task = await DeliveryService.createTask({ title: 'PG test task', projectId: project.id, storyId: story.id, estimatedEffortHrs: 7, actualEffortHrs: 2 } as any, me);
     const subtask = await DeliveryService.createSubtask({ title: 'PG test subtask', taskId: task.id } as any, me);
+    const task2 = await DeliveryService.createTask({ title: 'PG test task 2', projectId: project.id, storyId: story.id } as any, me); // Sprint 25: a subtask moves here
     const cascadeEpic = await DeliveryService.createEpic({ name: 'PG cascade epic', projectId: cascadeProject.id } as any, me);
     // Critical records without an owner: the owner (and notification recipient) is the caller.
     const risk = await RiskService.createRisk({ projectId: project.id, title: 'PG test risk', probability: 5, impact: 5 } as any, actor);
     const issue = await IssueService.createIssue({ projectId: project.id, title: 'PG test issue', severity: 'Critical', priority: 'High' } as any, actor);
-    const dependency = await DependencyService.createDependency({ sourceEntityType: 'epic', sourceEntityId: epic.id, targetEntityType: 'feature', targetEntityId: feature.id, dependencyType: 'Blocks' } as any, actor);
+    const dependency = await DependencyService.createDependency({ sourceEntityType: 'epic', sourceEntityId: epic.id, targetEntityType: 'feature', targetEntityId: feature.id, dependencyType: 'Blocks', lagDays: 4, isCriticalPath: true, resolutionNotes: 'PG notes' } as any, actor);
     const milestone = await MilestoneService.createMilestone({ projectId: project.id, name: 'PG test milestone', targetDate: '2026-10-08' } as any, actor);
     const release = await ReleaseService.createRelease({ projectId: project.id, name: 'PG test release', version: '1.0.0', releaseDate: '2026-10-08' } as any, actor);
     const sprint = await repos.sprint.create({ name: 'PG test sprint', projectId: project.id, startDate: '2026-10-08', endDate: '2026-10-21', status: 'planning' } as any);
@@ -196,12 +209,18 @@ async function phase(name: string): Promise<{ ok: boolean; checks: Array<[string
     const waitingFor = await WaitingForService.create(ftActor, { projectId: project.id, title: 'PG test waiting-for', waitingOnName: 'PG vendor', expectedDate: '2026-10-08' });
     const followUp = await FollowUpService.create(ftActor, { projectId: project.id, title: 'PG test follow-up', dueDate: '2026-10-08' });
 
+    // Sprint 25: a user with the longest allowed name acts (activity actor_name), and a session is signed out.
+    const longUser = await AuthService.register({ email: `pgtest.long.${Date.now()}@example.test`, password: 'PgTest#Long2026x', firstName: 'L'.repeat(100), lastName: 'N'.repeat(100), role: 'project-manager' } as any, me);
+    const longGoal = await GoalService.createGoal({ objective: 'PG goal by the longest name' } as any, longUser as any);
+    const signedOut = (await AuthService.login(String(process.env.BOOTSTRAP_ADMIN_EMAIL), String(process.env.BOOTSTRAP_ADMIN_PASSWORD))).token;
+    await AuthService.logout({ userId: me.id } as any);
+
     // A project deleted before the restart: its id must never be issued again.
     const deletedProject = await ProjectService.createProject({ name: 'PG deleted project', client: 'PG test client' } as any, me);
     await repos.project.delete(deletedProject.id);
 
     Object.assign(manifest, {
-      deletedProject: deletedProject.id,
+      deletedProject: deletedProject.id, longUser: longUser.id, longGoal: longGoal.id, signedOut, task2: task2.id,
       project: project.id, cascadeProject: cascadeProject.id, product: product.id, portfolio: portfolio.id, goal: goal.id, team: team.id,
       requirement: requirement.id, epic: epic.id, feature: feature.id, story: story.id, task: task.id, subtask: subtask.id, cascadeEpic: cascadeEpic.id,
       risk: risk.id, riskCode: risk.code, issue: issue.id, dependency: dependency.id, milestone: milestone.id, release: release.id, sprint: sprint.id,
@@ -225,9 +244,32 @@ async function phase(name: string): Promise<{ ok: boolean; checks: Array<[string
     check('the issue keeps its reporter (issues.reported_by)', read.issue?.reportedBy === manifest.admin);
     check('team membership is stored and counted', read.team?.memberCount === 1 && read.team?.members?.[0]?.userId === manifest.admin);
     check('the project budget is a number', typeof read.project?.budget === 'number' && read.project.budget === 1234.5);
+    // Sprint 25: fields PostgreSQL used to drop, the longest actor name, and a revoked session.
+    check('project SOW#, HD#, Confluence link, product manager, estimated/actual dates and last update are stored as sent', Object.entries(PG_V1_FIELDS).every(([k, v]) => read.project?.[k] === v));
+    check('epic target release, feature complexity, task hours and dependency lag/critical-path/notes are stored', read.epic?.targetRelease === 'R-PG' && read.feature?.complexity === 'L' && read.task?.estimatedEffortHrs === 7 && read.task?.actualEffortHrs === 2 && read.dependency?.lagDays === 4 && read.dependency?.isCriticalPath === true && read.dependency?.resolutionNotes === 'PG notes');
+    const { ActivityRepository } = await import('../server/repositories/activityRepository');
+    check('a user with the longest allowed name (201 characters) is recorded as the actor', (await ActivityRepository.findByEntity('goal', manifest.longGoal)).some((a: any) => a.actorName.length === 201));
+    check(`a signed-out session stays revoked${name === 'create' ? '' : ' after a restart'}`, (await sessionCode(manifest.signedOut)) === 'SESSION_REVOKED');
   }
 
   if (name === 'verify') {
+    // Sprint 25 correction: the DATA-01 fields changed through the services (validation → repository → column).
+    const { DeliveryService } = await import('../server/services/deliveryService');
+    const { GoalService } = await import('../server/services/goalService');
+    const { DependencyService } = await import('../server/services/dependencyService');
+    await DeliveryService.updateEpic(manifest.epic, { targetRelease: 'R-PG-2' } as any, me);
+    await DeliveryService.updateFeature(manifest.feature, { complexity: 'XL' } as any, me);
+    await DeliveryService.updateTask(manifest.task, { estimatedEffortHrs: 9.5, actualEffortHrs: 4 } as any, me);
+    await DeliveryService.updateSubtask(manifest.subtask, { taskId: manifest.task2 } as any, me);
+    await GoalService.updateGoal(manifest.goal, { ownerId: manifest.longUser } as any, me);
+    await DependencyService.updateDependency(manifest.dependency, { lagDays: -3, isCriticalPath: false, resolutionNotes: 'PG notes 2' } as any, actor);
+    // Sprint 25: only the supplied user columns are written, and an update persists the Sprint 25 project fields.
+    const { UserRepository } = await import('../server/repositories/userRepository');
+    await UserRepository.update(manifest.longUser, { role: 'viewer' } as any);
+    await UserRepository.update(manifest.longUser, { firstName: 'Renamed' } as any);
+    const longAfter = await UserRepository.findById(manifest.longUser);
+    check('a profile save after a role change keeps the new role', longAfter?.role === 'viewer' && longAfter?.firstName === 'Renamed');
+    await repos.project.update(manifest.project, { sow: 'SOW-PG-2', estimatedEnd: '2027-01-15' } as any);
     const { RiskService } = await import('../server/services/riskService');
     const { TeamService } = await import('../server/services/teamService');
     await RiskService.updateRisk(manifest.risk, { title: 'PG test risk (updated)' } as any, actor);
@@ -273,6 +315,10 @@ async function phase(name: string): Promise<{ ok: boolean; checks: Array<[string
 
   if (name === 'reverify') {
     check('updates persisted across a restart', read.risk?.title === 'PG test risk (updated)' && read.issue?.status === 'Resolved' && read.team?.memberCount === 0);
+    check('updated project fields persisted across a restart (Sprint 25)', read.project?.sow === 'SOW-PG-2' && read.project?.estimatedEnd === '2027-01-15' && read.project?.hd === 'HD-PG');
+    check('updated epic target release, feature complexity, task hours, a subtask move, a goal owner and dependency lag/critical-path/notes persisted across a restart (Sprint 25)',
+      read.epic?.targetRelease === 'R-PG-2' && read.feature?.complexity === 'XL' && read.task?.estimatedEffortHrs === 9.5 && read.task?.actualEffortHrs === 4 && read.subtask?.taskId === manifest.task2
+      && read.goal?.ownerId === manifest.longUser && read.dependency?.lagDays === -3 && read.dependency?.isCriticalPath === false && read.dependency?.resolutionNotes === 'PG notes 2');
     check('a risk delete is reported by the store', (await repos.risk.delete(manifest.risk)) === true && (await repos.risk.findById(manifest.risk)) === null);
     check('a second delete of the same risk reports nothing deleted', (await repos.risk.delete(manifest.risk)) === false);
     check('a story delete removes it', (await repos.story.delete(manifest.story)) === true && (await repos.story.findById(manifest.story)) === null);

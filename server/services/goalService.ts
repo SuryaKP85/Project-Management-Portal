@@ -58,6 +58,11 @@ export const GoalService = {
     const existing = await GoalRepository.findById(id);
     if (!existing) return null;
 
+    // Sprint 25: a new owner is an existing, active user, and the name shown is theirs.
+    if (updates.ownerId !== undefined && updates.ownerId !== existing.ownerId) {
+      const owner = await ownerOrCaller(updates.ownerId, existing.ownerId);
+      updates = { ...updates, ownerId: owner?.id, ownerName: owner?.name };
+    }
     const updated = await GoalRepository.update(id, updates);
     if (updated) {
       const isStatusChange = updates.status && updates.status !== existing.status;

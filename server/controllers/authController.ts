@@ -1,7 +1,15 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthService } from '../services/authService';
-import { config } from '../config/env';
+import { config, sessionExpiryMs } from '../config/env';
 import { clearLoginFailures, loginRetryAfter, recordLoginFailure } from '../middleware/rateLimit';
+
+/**
+ * Sprint 25 — the session lives only in this HttpOnly cookie: the token is never
+ * returned to JavaScript, and its lifetime follows SESSION_EXPIRY.
+ */
+export function sessionCookieOptions() {
+  return { httpOnly: true, secure: config.isProduction, sameSite: 'lax' as const, path: '/', maxAge: sessionExpiryMs(config.sessionExpiry) };
+}
 
 export const AuthController = {
   async login(req: Request, res: Response, next: NextFunction) {
@@ -29,19 +37,13 @@ export const AuthController = {
       }
       clearLoginFailures(limitKey.ip, limitKey.email);
 
-      // Set secure HTTP-only cookie
-      res.cookie('auth_token', result.token, {
-        httpOnly: true,
-        secure: config.isProduction,
-        sameSite: 'lax',
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      });
+      res.cookie('auth_token', result.token, sessionCookieOptions());
 
+      // Sprint 25: the response carries the user, never the token.
       return res.json({
         success: true,
         data: {
           user: result.user,
-          token: result.token,
         },
       });
     } catch (err: any) {
@@ -105,15 +107,24 @@ export const AuthController = {
       if (!req.user) {
         return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } });
       }
-      await AuthService.changePassword(req.user, req.body.currentPassword, req.body.newPassword);
+      const { token } = await AuthService.changePassword(req.user, req.body.currentPassword, req.body.newPassword);
+      // Sprint 25: every other session ended with the old password; this one continues.
+      res.cookie('auth_token', token, sessionCookieOptions());
       return res.json({ success: true, data: { message: 'Password updated successfully' } });
     } catch (err) {
       next(err);
     }
   },
 
-  async logout(req: Request, res: Response) {
-    res.clearCookie('auth_token');
+  /** Sprint 25: authenticated; ends the account's sessions on the server, then clears the cookie. */
+  async logout(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (req.user) await AuthService.logout(req.user);
+    } catch (err) {
+      return next(err);
+    }
+    const { maxAge: _ignored, ...cookie } = sessionCookieOptions();
+    res.clearCookie('auth_token', cookie);
     return res.json({
       success: true,
       data: { message: 'Logged out successfully' },

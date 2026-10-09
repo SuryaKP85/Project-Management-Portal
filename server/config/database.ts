@@ -200,6 +200,32 @@ interface TransactionState {
 
 const transactionStorage = new AsyncLocalStorage<TransactionState>();
 
+/**
+ * Sprint 25 — secondary writes (the activity log, notifications). Inside a transaction
+ * they belong to the unit and fail with it, so nothing is half-done. Outside one they
+ * follow a primary change that is already committed: their failure is logged and
+ * counted, and never turns that success into an error the user would retry (which
+ * would repeat the primary change).
+ */
+let secondaryFailureCount = 0;
+export function secondaryWriteFailures(): number {
+  return secondaryFailureCount;
+}
+export async function secondaryWrite(label: string, write: () => Promise<unknown>): Promise<boolean> {
+  if (inTransaction()) {
+    await write();
+    return true;
+  }
+  try {
+    await write();
+    return true;
+  } catch (err: any) {
+    secondaryFailureCount += 1;
+    console.error(`[secondary-write-failed] ${label}: ${err?.code || ''} ${err?.message || err}`);
+    return false;
+  }
+}
+
 export function inTransaction(): boolean {
   return transactionStorage.getStore() !== undefined;
 }

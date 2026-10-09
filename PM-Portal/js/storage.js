@@ -47,14 +47,25 @@ export const Storage = {
   },
 
   /**
-   * Clear all app-specific localStorage keys and imported spreadsheets
+   * The app's localStorage keys: every pm_portal_* key, imported spreadsheets, and
+   * the unprefixed copies some modules also write. Sprint 25: read with key(i), the
+   * Storage API (Object.keys does not list stored keys everywhere).
    */
-  clear() {
-    Object.keys(localStorage).forEach(key => {
-      if (key.startsWith('pm_portal_') || key === 'excel_imported_data' || key === 'leaves' || key === 'weekend_logs') {
-        localStorage.removeItem(key);
-      }
-    });
+  appKeys() {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('pm_portal_') || ['excel_imported_data', 'leaves', 'weekend_logs', 'projects'].includes(key))) keys.push(key);
+    }
+    return keys;
+  },
+
+  /**
+   * Clear all app-specific localStorage keys and imported spreadsheets, except
+   * the given ones (Sprint 25: sign-out keeps the theme and a remembered email).
+   */
+  clear(keep = []) {
+    this.appKeys().filter(key => !keep.includes(key)).forEach(key => localStorage.removeItem(key));
   },
 
   /**

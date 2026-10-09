@@ -1,6 +1,7 @@
 /* settings.js - Portal Settings, User Administration (V2 user directory) & Sharing */
 
 import { Storage } from './storage.js';
+import { safeImageUrl } from './safeHtml.js';
 import { Authentication } from './authentication.js';
 import { AuthService } from './services/authService.js';
 import { UserService } from './services/userService.js';
@@ -378,7 +379,8 @@ export const SettingsModule = {
       ? `${v2.firstName || ''} ${v2.lastName || ''}`.trim() || v2.email || 'User'
       : (v1.name || 'User').trim();
 
-    const avatarSrc = (v2 && v2.avatarUrl) || v1.avatar || this.buildInitialsAvatar(fullName);
+    // Sprint 25: only a safe image source (an https URL or an uploaded raster image) is shown.
+    const avatarSrc = safeImageUrl((v2 && v2.avatarUrl) || v1.avatar) || this.buildInitialsAvatar(fullName);
     const role = v2 ? v2.role : v1.v2Role;
 
     return {

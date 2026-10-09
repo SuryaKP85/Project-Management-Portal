@@ -21,8 +21,8 @@ authRoutes.post(
   validateBody([
     { field: 'email', required: true, type: 'email' },
     { field: 'password', required: true, type: 'string', minLength: 8 },
-    { field: 'firstName', required: true, type: 'string' },
-    { field: 'lastName', required: true, type: 'string' },
+    { field: 'firstName', required: true, type: 'string', maxLength: 100 },
+    { field: 'lastName', required: true, type: 'string', maxLength: 100 },
   ]),
   AuthController.register
 );
@@ -38,4 +38,5 @@ authRoutes.post(
   ]),
   AuthController.changePassword
 );
-authRoutes.post('/auth/logout', AuthController.logout);
+// Sprint 25: sign-out is authenticated and ends the session on the server too.
+authRoutes.post('/auth/logout', authenticateToken, AuthController.logout);

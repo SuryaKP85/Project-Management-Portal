@@ -1000,12 +1000,12 @@ export const PortfoliosModule = {
         return `
         <tr>
           <td>
-            <div class="fw-bold text-dark">${g.objective}</div>
+            <div class="fw-bold text-dark">${esc(g.objective)}</div>
             <div class="small text-muted">${escapeHtml(g.description || 'Target objective aligned with corporate strategy')}</div>
           </td>
           <td>
             <span class="badge bg-light text-dark border">
-              <i class="fa-solid fa-briefcase me-1 text-primary"></i> ${port ? port.name : 'Enterprise'}
+              <i class="fa-solid fa-briefcase me-1 text-primary"></i> ${esc(port ? port.name : 'Enterprise')}
             </span>
             ${
               prod
@@ -1016,7 +1016,7 @@ export const PortfoliosModule = {
           <td style="max-width: 240px;">${initiativesCell(g)}</td>
           <td style="width: 200px;">
             <div class="d-flex justify-content-between small text-muted mb-1">
-              <span>${g.currentValue} / ${g.targetValue} ${g.unit || ''}</span>
+              <span>${esc(g.currentValue)} / ${esc(g.targetValue)} ${esc(g.unit || '')}</span>
               <span class="fw-bold text-primary">${percent}%</span>
             </div>
             <div class="progress" style="height: 6px;">
@@ -1026,10 +1026,10 @@ export const PortfoliosModule = {
           <td>${statusBadge}</td>
           <td class="small text-muted">${escapeHtml(g.ownerName || 'Surya Prashanth')}</td>
           <td class="text-end">
-            <button class="btn btn-sm btn-light border edit-goal-btn" data-id="${g.id}" title="Edit Goal">
+            <button class="btn btn-sm btn-light border edit-goal-btn" data-id="${esc(g.id)}" title="Edit Goal">
               <i class="fa-solid fa-pencil text-secondary"></i>
             </button>
-            <button class="btn btn-sm btn-light border text-danger delete-goal-btn" data-id="${g.id}" title="Delete Goal">
+            <button class="btn btn-sm btn-light border text-danger delete-goal-btn" data-id="${esc(g.id)}" title="Delete Goal">
               <i class="fa-solid fa-trash"></i>
             </button>
           </td>
@@ -1201,7 +1201,7 @@ export const PortfoliosModule = {
                 <div class="row g-3">
                   <div class="col-12">
                     <label class="form-label small fw-semibold">Objective Title *</label>
-                    <input type="text" class="form-control form-control-sm" id="goal-obj" value="${goal?.objective || ''}" placeholder="e.g., Deliver Zero Downtime Avionics Cloud" required />
+                    <input type="text" class="form-control form-control-sm" id="goal-obj" value="${escapeHtml(goal?.objective || '')}" placeholder="e.g., Deliver Zero Downtime Avionics Cloud" required />
                   </div>
                   <div class="col-12">
                     <label class="form-label small fw-semibold">Key Result / Description</label>
@@ -1223,15 +1223,15 @@ export const PortfoliosModule = {
                   </div>
                   <div class="col-md-4">
                     <label class="form-label small fw-semibold">Target Value *</label>
-                    <input type="number" class="form-control form-control-sm" id="goal-target" value="${goal?.targetValue ?? 100}" required />
+                    <input type="number" class="form-control form-control-sm" id="goal-target" value="${escapeHtml(goal?.targetValue ?? 100)}" required />
                   </div>
                   <div class="col-md-4">
                     <label class="form-label small fw-semibold">Current Value</label>
-                    <input type="number" class="form-control form-control-sm" id="goal-current" value="${goal?.currentValue ?? 0}" required />
+                    <input type="number" class="form-control form-control-sm" id="goal-current" value="${escapeHtml(goal?.currentValue ?? 0)}" required />
                   </div>
                   <div class="col-md-4">
                     <label class="form-label small fw-semibold">Unit</label>
-                    <input type="text" class="form-control form-control-sm" id="goal-unit" value="${goal?.unit || '%'}" placeholder="%, users, hrs" />
+                    <input type="text" class="form-control form-control-sm" id="goal-unit" value="${escapeHtml(goal?.unit || '%')}" placeholder="%, users, hrs" />
                   </div>
                   <div class="col-md-6">
                     <label class="form-label small fw-semibold">Owner</label>

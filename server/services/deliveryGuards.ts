@@ -6,6 +6,7 @@ import { EpicRepository } from '../repositories/epicRepository';
 import { FeatureRepository } from '../repositories/featureRepository';
 import { StoryRepository } from '../repositories/storyRepository';
 import { TaskRepository } from '../repositories/taskRepository';
+import { SprintRepository } from '../repositories/sprintRepository';
 import { applyJiraReference } from './jiraReference';
 import { normaliseCriteria, normaliseUserStory, readUserStory } from './storyDetails';
 import { forbidden, httpError, requireProjectUser, validationError } from './followThroughSupport';
@@ -44,7 +45,7 @@ export const DELIVERY_EDITABLE_FIELDS: Record<DeliveryKind, readonly string[]> =
   epic: ['name', 'description', 'status', 'priority', 'health', 'ownerId', 'teamId', 'productId', 'portfolioId', 'startDate', 'targetDate', 'targetRelease', 'isArchived', 'jiraKey', 'jiraUrl'],
   feature: ['name', 'description', 'epicId', 'status', 'priority', 'ownerId', 'teamId', 'productId', 'targetRelease', 'startDate', 'targetDate', 'complexity', 'jiraKey', 'jiraUrl'],
   story: ['title', 'description', 'userStory', 'acceptanceCriteria', 'userPersona', 'userAction', 'userBenefit', 'featureId', 'epicId', 'productId', 'storyPoints', 'priority', 'status', 'assigneeId', 'teamId', 'reporterId', 'sprint', 'sprintId', 'targetRelease', 'dueDate', 'jiraKey', 'jiraUrl'],
-  task: ['title', 'description', 'storyId', 'featureId', 'epicId', 'assigneeId', 'teamId', 'status', 'priority', 'dueDate', 'estimatedEffortHrs', 'actualEffortHrs', 'estimatedHours', 'spentHours', 'startDate', 'completionDate', 'sprint', 'sprintId'],
+  task: ['title', 'description', 'storyId', 'featureId', 'epicId', 'assigneeId', 'teamId', 'status', 'priority', 'dueDate', 'estimatedEffortHrs', 'actualEffortHrs', 'startDate', 'completionDate', 'sprint', 'sprintId'],
   subtask: ['taskId', 'title', 'assigneeId', 'status', 'priority', 'estimateHrs', 'dueDate'],
 };
 
@@ -147,6 +148,30 @@ async function parent(kind: 'epic' | 'feature' | 'story' | 'task', value: unknow
   return record.id;
 }
 
+/**
+ * Sprint 25 — sprint membership. A story or task joins a sprint of its own project
+ * only, and its sprint name is the sprint's own (never client text). sprintId wins;
+ * a sprint name is accepted when it names a sprint of the project; an unchanged
+ * legacy name is kept as is; a blank value takes the item out of its sprint.
+ */
+async function sprintMembership(fields: Record<string, any>, projectId: string, current: any): Promise<{ sprintId?: string; sprint?: string }> {
+  if (fields.sprintId !== undefined) {
+    const id = fields.sprintId;
+    if (id === undefined || blank(id)) return { sprintId: '', sprint: '' };
+    if (typeof id !== 'string') throw validationError("Field 'sprintId' must be a sprint id.");
+    const sprint = await SprintRepository.findById(id);
+    if (!sprint || sprint.projectId !== projectId) throw validationError("Field 'sprintId' must be a sprint of this record's project.");
+    return { sprintId: sprint.id, sprint: sprint.name };
+  }
+  const name = fields.sprint;
+  if (name === undefined || blank(name)) return { sprintId: '', sprint: '' };
+  if (typeof name !== 'string') throw validationError("Field 'sprint' must be text.");
+  if (name === current.sprint) return {};
+  const match = (await SprintRepository.findAll({ projectId })).find((s) => s.name === name.trim());
+  if (!match) throw validationError("Field 'sprint' must name a sprint of this record's project (or send sprintId).");
+  return { sprintId: match.id, sprint: match.name };
+}
+
 /** Validates the allowlisted values in place; returns the clean payload. */
 async function validateFields(kind: DeliveryKind, fields: Record<string, any>, projectId: string, current: any = {}): Promise<Record<string, any>> {
   const out: Record<string, any> = {};
@@ -157,7 +182,8 @@ async function validateFields(kind: DeliveryKind, fields: Record<string, any>, p
       case 'description': out[field] = text(value, field, 50000); break;
       // Sprint 19: legacy flat persona fields are folded into userStory below; they are never stored themselves.
       case 'userPersona': case 'userAction': case 'userBenefit': legacy[field] = text(value, field, 2000) ?? ''; break;
-      case 'targetRelease': case 'sprint': case 'sprintId': case 'productId': case 'portfolioId': out[field] = text(value, field, 100); break;
+      case 'targetRelease': case 'productId': case 'portfolioId': out[field] = text(value, field, 100); break;
+      case 'sprint': case 'sprintId': break; // Sprint 25: resolved together after the loop
       case 'complexity': out[field] = text(value, field, 30); break;
       case 'status': out[field] = oneOf(value, DELIVERY_STATUSES, 'status'); break;
       case 'priority': out[field] = oneOf(value, DELIVERY_PRIORITIES, 'priority'); break;
@@ -168,7 +194,7 @@ async function validateFields(kind: DeliveryKind, fields: Record<string, any>, p
       case 'teamId': out[field] = await team(value); break;
       case 'startDate': case 'targetDate': case 'dueDate': case 'completionDate': out[field] = date(value, field); break;
       case 'storyPoints': out[field] = number(value, field, 0, 1000, true); break;
-      case 'estimatedEffortHrs': case 'actualEffortHrs': case 'estimateHrs': case 'estimatedHours': case 'spentHours': out[field] = number(value, field, 0, 100000); break;
+      case 'estimatedEffortHrs': case 'actualEffortHrs': case 'estimateHrs': out[field] = number(value, field, 0, 100000); break;
       case 'isArchived':
         if (typeof value !== 'boolean') throw validationError("Field 'isArchived' must be true or false.");
         out[field] = value;
@@ -184,6 +210,7 @@ async function validateFields(kind: DeliveryKind, fields: Record<string, any>, p
       default: break;
     }
   }
+  if (fields.sprintId !== undefined || fields.sprint !== undefined) Object.assign(out, await sprintMembership(fields, projectId, current));
   // Legacy flat values only fill a userStory the request did not send itself.
   if (Object.keys(legacy).length && out.userStory === undefined) {
     const base = readUserStory(current.userStory, current);

@@ -2,7 +2,7 @@ import { User, SafeUser } from '../models/types';
 import { config } from '../config/env';
 import { persistentMap, skipDemoSeed } from '../config/persistence';
 import { isDbConnected, query } from '../config/database';
-import { hashPassword } from '../auth/password';
+import { hashPassword, verifyPassword } from '../auth/password';
 
 // In-memory store for standalone/local development
 // Sprint 20: restored from / saved to the embedded data file in persistent mode.
@@ -27,7 +27,7 @@ async function seedDefaultUsers() {
   const defaultUsers: User[] = [
     {
       id: 'usr_admin_1',
-      email: 'surya.prashanth.kp@gmail.com',
+      email: 'surya.prashanth@company.com', // Sprint 25: a demo address, never a personal one
       passwordHash: adminHash,
       firstName: 'Surya',
       lastName: 'Prashanth',
@@ -136,9 +136,25 @@ async function seedDefaultUsers() {
 const seedReady: Promise<void> = seedDefaultUsers();
 
 export function sanitizeUser(user: User): SafeUser {
-  const { passwordHash, ...safe } = user;
+  const { passwordHash, tokenVersion, ...safe } = user;
   return safe;
 }
+
+/**
+ * Sprint 25 — the columns update() may write, each only when its key is supplied:
+ * a profile save never rewrites role or is_active from a stale read, and a role or
+ * status change touches nothing else.
+ */
+const UPDATABLE_COLUMNS: Record<string, string> = {
+  firstName: 'first_name', lastName: 'last_name', role: 'role', department: 'department', title: 'title',
+  avatarUrl: 'avatar_url', isActive: 'is_active', msUserId: 'ms_user_id', msTenantId: 'ms_tenant_id',
+};
+/** Changes that end every existing session of the account (Sprint 25). */
+const SESSION_ENDING_FIELDS = ['role', 'isActive'];
+
+/** The seeded demo accounts and their published passwords (Sprint 25: used to refuse unsafe startups). */
+export const DEMO_ACCOUNT_IDS = ['usr_admin_1', 'usr_pm_2', 'usr_dev_3', 'usr_portal_admin', 'usr_portal_pm', 'usr_portal_dev', 'usr_portal_qa'];
+const DEMO_PASSWORDS = ['iRely@123', 'User@123', 'Admin@123'];
 
 export const UserRepository = {
   async findById(id: string): Promise<User | null> {
@@ -162,6 +178,7 @@ export const UserRepository = {
         isActive: row.is_active,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
+        tokenVersion: Number(row.token_version ?? 0),
       };
     }
     return memoryUsers.get(id) || null;
@@ -189,6 +206,7 @@ export const UserRepository = {
         isActive: row.is_active,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
+        tokenVersion: Number(row.token_version ?? 0),
       };
     }
     for (const user of memoryUsers.values()) {
@@ -252,36 +270,28 @@ export const UserRepository = {
 
   async update(id: string, updates: Partial<User>): Promise<SafeUser | null> {
     await seedReady;
-    const existing = await this.findById(id);
-    if (!existing) return null;
-
-    const updated: User = {
-      ...existing,
-      ...updates,
-      updatedAt: new Date().toISOString(),
-    };
+    // Sprint 25: only the supplied columns are written (never a stale copy of the others),
+    // and a role or status change ends the account's existing sessions.
+    const keys = Object.keys(updates).filter((k) => k in UPDATABLE_COLUMNS && (updates as any)[k] !== undefined);
+    const endsSessions = keys.some((k) => SESSION_ENDING_FIELDS.includes(k));
+    const updatedAt = new Date().toISOString();
 
     if (isDbConnected()) {
-      await query(
-        // Sprint 10A: ms_user_id / ms_tenant_id are written too, so a general
-        // update can never drop a Microsoft identity association in PostgreSQL.
-        `UPDATE users SET first_name = $1, last_name = $2, role = $3, department = $4, title = $5, avatar_url = $6, is_active = $7, updated_at = $8, ms_user_id = $9, ms_tenant_id = $10 WHERE id = $11`,
-        [
-          updated.firstName,
-          updated.lastName,
-          updated.role,
-          updated.department || null,
-          updated.title || null,
-          updated.avatarUrl || null,
-          updated.isActive,
-          updated.updatedAt,
-          updated.msUserId || null,
-          updated.msTenantId || null,
-          id,
-        ]
-      );
+      const sets = keys.map((k, i) => `${UPDATABLE_COLUMNS[k]} = $${i + 1}`);
+      const values = keys.map((k) => (k === 'isActive' ? (updates as any)[k] : (updates as any)[k] || null));
+      sets.push(`updated_at = $${keys.length + 1}`);
+      if (endsSessions) sets.push('token_version = token_version + 1');
+      const res = await query(`UPDATE users SET ${sets.join(', ')} WHERE id = $${keys.length + 2}`, [...values, updatedAt, id]);
+      if (!res.rowCount) return null;
+      const fresh = await this.findById(id);
+      return fresh ? sanitizeUser(fresh) : null;
     }
 
+    const current = memoryUsers.get(id);
+    if (!current) return null;
+    const updated: User = { ...current, updatedAt };
+    for (const k of keys) (updated as any)[k] = (updates as any)[k];
+    if (endsSessions) updated.tokenVersion = (current.tokenVersion ?? 0) + 1;
     memoryUsers.set(id, updated);
     return sanitizeUser(updated);
   },
@@ -289,17 +299,53 @@ export const UserRepository = {
   /**
    * Sprint 12: replaces a user's password hash. Kept apart from update() so the
    * hash is never carried inside a general-purpose profile update.
+   * Sprint 25: a new password ends every existing session of the account.
    */
   async updatePassword(id: string, passwordHash: string): Promise<boolean> {
     await seedReady;
-    const existing = await this.findById(id);
-    if (!existing) return false;
     const updatedAt = new Date().toISOString();
     if (isDbConnected()) {
-      await query('UPDATE users SET password_hash = $1, updated_at = $2 WHERE id = $3', [passwordHash, updatedAt, id]);
+      const res = await query('UPDATE users SET password_hash = $1, updated_at = $2, token_version = token_version + 1 WHERE id = $3', [passwordHash, updatedAt, id]);
+      return !!res.rowCount;
     }
-    memoryUsers.set(id, { ...existing, passwordHash, updatedAt });
+    const current = memoryUsers.get(id);
+    if (!current) return false;
+    memoryUsers.set(id, { ...current, passwordHash, updatedAt, tokenVersion: (current.tokenVersion ?? 0) + 1 });
     return true;
+  },
+
+  /** Sprint 25: ends every session of the account (sign-out). */
+  async bumpTokenVersion(id: string): Promise<boolean> {
+    await seedReady;
+    if (isDbConnected()) {
+      const res = await query('UPDATE users SET token_version = token_version + 1 WHERE id = $1', [id]);
+      return !!res.rowCount;
+    }
+    const current = memoryUsers.get(id);
+    if (!current) return false;
+    memoryUsers.set(id, { ...current, tokenVersion: (current.tokenVersion ?? 0) + 1 });
+    return true;
+  },
+
+  /**
+   * Sprint 25: the seeded demo accounts that are active and still accept a password
+   * published in this file. Used to refuse a production start, or a network-facing
+   * one, while anyone could sign in with them.
+   */
+  async activeDemoAccounts(): Promise<string[]> {
+    await seedReady;
+    const found: string[] = [];
+    for (const id of DEMO_ACCOUNT_IDS) {
+      const user = await this.findById(id);
+      if (!user || !user.isActive || !user.passwordHash) continue;
+      for (const password of DEMO_PASSWORDS) {
+        if (await verifyPassword(password, user.passwordHash)) {
+          found.push(user.email);
+          break;
+        }
+      }
+    }
+    return found;
   },
 
   /** Sprint 10A: the portal user linked to a Microsoft Graph user id, if any. */

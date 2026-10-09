@@ -1,5 +1,6 @@
 /* excelEngine.js - Workspace controller for the SheetJS Excel Engine */
 
+import { escapeHtml } from './safeHtml.js';
 import { Excel } from './excel.js';
 import { DashboardModule } from './dashboard.js';
 
@@ -298,7 +299,7 @@ export const ExcelEngineModule = {
           else if (lower.includes('delay') || lower === 'delayed') badgeClass = 'bg-warning text-dark';
           else if (lower.includes('critical') || lower.includes('hold')) badgeClass = 'bg-danger';
           
-          td.innerHTML = `<span class="badge ${badgeClass} text-uppercase px-2" style="font-size: 0.7rem;">${cellValue || 'N/A'}</span>`;
+          td.innerHTML = `<span class="badge ${badgeClass} text-uppercase px-2" style="font-size: 0.7rem;">${escapeHtml(cellValue || 'N/A')}</span>`; // Sprint 25: imported text is escaped
         } 
         else if (col === 'SOW') {
           const lower = cellValue.toLowerCase();
@@ -307,7 +308,7 @@ export const ExcelEngineModule = {
           else if (lower.includes('pending')) badgeClass = 'badge bg-warning-subtle text-warning border border-warning';
           else if (lower.includes('draft')) badgeClass = 'badge bg-info-subtle text-info border border-info';
           
-          td.innerHTML = `<span class="${badgeClass} px-2" style="font-size: 0.7rem;">${cellValue || 'Draft'}</span>`;
+          td.innerHTML = `<span class="${badgeClass} px-2" style="font-size: 0.7rem;">${escapeHtml(cellValue || 'Draft')}</span>`;
         }
         else if (col === 'Risk') {
           const lower = cellValue.toLowerCase();
@@ -318,7 +319,7 @@ export const ExcelEngineModule = {
           else if (lower.includes('medium')) { color = 'var(--brand-info)'; }
           else if (lower.includes('low')) { color = 'var(--brand-success)'; }
           
-          td.innerHTML = `<span style="color: ${color}; font-weight: ${weight};">${cellValue || 'None'}</span>`;
+          td.innerHTML = `<span style="color: ${color}; font-weight: ${weight};">${escapeHtml(cellValue || 'None')}</span>`;
         }
         else if (col === 'Completion %') {
           const progressNum = parseFloat(cellValue) || 0;

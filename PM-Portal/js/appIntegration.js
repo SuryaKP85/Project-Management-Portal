@@ -1,5 +1,6 @@
 /* appIntegration.js - Final Integration, Keyboard Shortcuts, Command Palette & Autosave Module */
 
+import { escapeHtml } from './safeHtml.js';
 import { Storage } from './storage.js';
 import { MigrationConfig } from './migrationConfig.js';
 import { DashboardModule } from './dashboard.js';
@@ -14,6 +15,40 @@ import { AISummaryModule } from './aiSummary.js';
 import { AIEmailGeneratorModule } from './aiEmailGenerator.js';
 import { AIInsightsModule } from './aiInsights.js';
 import { AiAssistantService } from './services/aiAssistantService.js';
+
+/**
+ * Sprint 25 — the HTML for an answer from the browser's local fallback engine. Its text
+ * (category, summary, record names and details) comes from browser data and the typed
+ * query, so every value is escaped.
+ */
+export function localAnswerHtml(res) {
+  let resHtml = `
+    <div class="mb-2 d-flex justify-content-between align-items-center border-bottom pb-1.5">
+      <span class="badge bg-primary-subtle text-primary border font-bold text-xxs uppercase">${escapeHtml(res.category)}</span>
+      <span class="font-mono text-xxs text-muted">${escapeHtml(res.resultsCount)} items found</span>
+    </div>
+    <p class="font-semibold text-xs text-primary mb-2">${escapeHtml(res.summaryText)}</p>
+  `;
+
+  if (res.results.length > 0) {
+    resHtml += `<div class="list-group">`;
+    res.results.forEach(item => {
+      const name = item.name || item.title || item.resourceName || item.label || 'Item';
+      const detail = item.status || item.department || item.sowStatus || item.role || '';
+      resHtml += `
+        <div class="list-group-item p-2 d-flex justify-content-between align-items-center bg-card">
+          <span class="font-bold text-xs text-primary">${escapeHtml(name)}</span>
+          <span class="badge bg-secondary-subtle text-secondary text-xxs">${escapeHtml(detail)}</span>
+        </div>
+      `;
+    });
+    resHtml += `</div>`;
+  } else {
+    resHtml += `<p class="text-muted text-xs italic m-0">No records found matching query criteria.</p>`;
+  }
+
+  return resHtml;
+}
 
 export const AppIntegrationModule = {
   app: null,
@@ -532,32 +567,7 @@ export const AppIntegrationModule = {
         const res = AIEngine.parseNaturalLanguageQuery(q);
         if (!res) return;
 
-        let resHtml = `
-          <div class="mb-2 d-flex justify-content-between align-items-center border-bottom pb-1.5">
-            <span class="badge bg-primary-subtle text-primary border font-bold text-xxs uppercase">${res.category}</span>
-            <span class="font-mono text-xxs text-muted">${res.resultsCount} items found</span>
-          </div>
-          <p class="font-semibold text-xs text-primary mb-2">${res.summaryText}</p>
-        `;
-
-        if (res.results.length > 0) {
-          resHtml += `<div class="list-group">`;
-          res.results.forEach(item => {
-            const name = item.name || item.title || item.resourceName || item.label || 'Item';
-            const detail = item.status || item.department || item.sowStatus || item.role || '';
-            resHtml += `
-              <div class="list-group-item p-2 d-flex justify-content-between align-items-center bg-card">
-                <span class="font-bold text-xs text-primary">${name}</span>
-                <span class="badge bg-secondary-subtle text-secondary text-xxs">${detail}</span>
-              </div>
-            `;
-          });
-          resHtml += `</div>`;
-        } else {
-          resHtml += `<p class="text-muted text-xs italic m-0">No records found matching query criteria.</p>`;
-        }
-
-        resultsContainer.innerHTML = resHtml;
+        resultsContainer.innerHTML = localAnswerHtml(res);
       };
 
       if (input) {

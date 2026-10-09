@@ -1,3 +1,4 @@
+import { resolvedLinks, withResolvedLinks } from './linkTargets';
 import { Request, Response, NextFunction } from 'express';
 import { MilestoneService } from '../services/milestoneService';
 import { ProjectScope, scopeActor } from '../services/projectScope';
@@ -42,7 +43,7 @@ export const MilestoneController = {
     try {
       await ProjectScope.assertWrite(scopeActor(req), req.body?.projectId, 'Project');
       const actor = getActor(req);
-      const milestone = await MilestoneService.createMilestone(req.body, actor);
+      const milestone = await MilestoneService.createMilestone(await withResolvedLinks(req), actor); // Sprint 25
       res.status(201).json({ success: true, data: { milestone } });
     } catch (err) {
       next(err);
@@ -55,7 +56,7 @@ export const MilestoneController = {
       if (!existing) return notFound(res);
       await ProjectScope.assertMove(scopeActor(req), existing.projectId, req.body?.projectId, 'Milestone');
       const actor = getActor(req);
-      const milestone = await MilestoneService.updateMilestone(req.params.id, req.body, actor);
+      const milestone = await MilestoneService.updateMilestone(req.params.id, await withResolvedLinks(req), actor); // Sprint 25
       if (!milestone) return notFound(res);
       res.json({ success: true, data: { milestone } });
     } catch (err) {
@@ -83,9 +84,9 @@ export const MilestoneController = {
       const milestone = await visibleMilestone(req, req.params.id);
       if (!milestone) return notFound(res);
       await ProjectScope.assertWrite(actor, milestone.projectId, 'Milestone');
-      const { targetType, targetId, targetCode, targetName } = req.body;
-      await ProjectScope.assertLinkTarget(actor, targetType, targetId);
-      const link = await MilestoneService.linkItem(milestone.id, targetType, targetId, targetCode, targetName);
+      // Sprint 25: the server checks the target and takes its code and name from the record.
+      const [target] = await resolvedLinks(req, [req.body]);
+      const link = await MilestoneService.linkItem(milestone.id, target.targetType, target.targetId, target.targetCode, target.targetName);
       res.status(201).json({ success: true, data: { link } });
     } catch (err) {
       next(err);

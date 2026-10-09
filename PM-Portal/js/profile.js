@@ -1,5 +1,6 @@
 /* profile.js - Profile Management and Avatar Engine (server-backed, Sprint 12) */
 
+import { escapeHtml, safeImageUrl } from './safeHtml.js';
 import { Authentication } from './authentication.js';
 import { UserService } from './services/userService.js';
 
@@ -65,12 +66,16 @@ export const ProfileModule = {
     const previewEl = document.getElementById('profile-avatar-preview');
     if (!previewEl) return;
 
-    if (this.user && this.user.avatar) {
-      previewEl.innerHTML = `
-        <img src="${this.user.avatar}" alt="Profile Avatar" style="width: 100px; height: 100px; border-radius: 50%; object-fit: cover; border: 3px solid var(--brand-primary); box-shadow: var(--shadow-md);" />
-      `;
+    // Sprint 25: the avatar is set through the DOM, and only when it is a safe image source.
+    const avatar = this.user ? safeImageUrl(this.user.avatar) : '';
+    if (avatar) {
+      const img = document.createElement('img');
+      img.src = avatar;
+      img.alt = 'Profile Avatar';
+      img.setAttribute('style', 'width: 100px; height: 100px; border-radius: 50%; object-fit: cover; border: 3px solid var(--brand-primary); box-shadow: var(--shadow-md);');
+      previewEl.replaceChildren(img);
     } else {
-      const initials = this.user ? `${(this.user.firstName?.[0] || this.user.name?.[0] || 'A')}${(this.user.lastName?.[0] || '')}` : 'A';
+      const initials = escapeHtml(this.user ? `${(this.user.firstName?.[0] || this.user.name?.[0] || 'A')}${(this.user.lastName?.[0] || '')}` : 'A');
       previewEl.innerHTML = `
         <div class="d-flex align-items-center justify-content-center font-bold text-white shadow-sm" style="width: 100px; height: 100px; border-radius: 50%; background: linear-gradient(135deg, var(--brand-primary), var(--brand-accent)); font-size: 2rem;">
           ${initials}
@@ -217,7 +222,8 @@ export const ProfileModule = {
     this.user = Authentication.getCurrentUser();
     if (!this.user) return;
 
-    const avatarSrc = this.user.avatar || 'assets/baby_feet.jpg';
+    // Sprint 25: only a safe image source (an https URL or an uploaded raster image) is shown.
+    const avatarSrc = safeImageUrl(this.user.avatar) || 'assets/baby_feet.jpg';
 
     // Settings Preview
     const setPrev = document.getElementById('settings-avatar-preview');
@@ -229,10 +235,15 @@ export const ProfileModule = {
 
     const navAvatar = document.getElementById('top-user-avatar');
     if (navAvatar) {
-      if (this.user.avatar) {
-        navAvatar.innerHTML = `<img src="${this.user.avatar}" alt="Avatar" style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;" />`;
+      const navSrc = safeImageUrl(this.user.avatar);
+      if (navSrc) {
+        const img = document.createElement('img');
+        img.src = navSrc;
+        img.alt = 'Avatar';
+        img.setAttribute('style', 'width: 32px; height: 32px; border-radius: 50%; object-fit: cover;');
+        navAvatar.replaceChildren(img);
       } else {
-        const initials = `${(this.user.firstName?.[0] || this.user.name?.[0] || 'A')}${(this.user.lastName?.[0] || '')}`;
+        const initials = escapeHtml(`${(this.user.firstName?.[0] || this.user.name?.[0] || 'A')}${(this.user.lastName?.[0] || '')}`);
         navAvatar.innerHTML = `<span class="avatar-circle font-bold d-inline-flex align-items-center justify-content-center" style="width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, var(--brand-primary), var(--brand-accent)); color: #fff; font-size: 0.8rem;">${initials}</span>`;
       }
     }

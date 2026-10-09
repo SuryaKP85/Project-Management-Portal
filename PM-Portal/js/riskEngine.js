@@ -627,8 +627,8 @@ export const RiskEngineModule = {
             theme = 'bg-secondary-subtle text-secondary';
           }
           triggerBadgesHTML += `
-            <span class="badge ${theme} p-1.5 rounded-1 border me-1 mb-1 font-semibold" style="font-size: 0.72rem; display: inline-flex; align-items: center; gap: 4px;" title="${f.desc}">
-              <i class="fa-solid fa-triangle-exclamation"></i> ${f.label.replace(' ⚠️', '')}
+            <span class="badge ${theme} p-1.5 rounded-1 border me-1 mb-1 font-semibold" style="font-size: 0.72rem; display: inline-flex; align-items: center; gap: 4px;" title="${escapeHtml(f.desc)}">
+              <i class="fa-solid fa-triangle-exclamation"></i> ${escapeHtml(f.label.replace(' ⚠️', ''))}
             </span>
           `;
         });
@@ -672,7 +672,7 @@ export const RiskEngineModule = {
           <div class="text-secondary font-semibold" style="font-size: 0.8rem; text-overflow: ellipsis; overflow: hidden; max-width: 170px;" title="${escapeHtml(ep.name)}">${escapeHtml(ep.name)}</div>
         </td>
         <td>
-          <div class="font-semibold text-primary">${ep.manager || 'Alex Mercer'}</div>
+          <div class="font-semibold text-primary">${escapeHtml(ep.manager || 'Alex Mercer')}</div>
           <div class="text-muted text-xs">${escapeHtml(ep.client)}</div>
         </td>
         <td style="text-align: center;">

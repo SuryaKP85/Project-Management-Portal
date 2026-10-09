@@ -4,7 +4,7 @@ import { ActionItemRepository } from '../repositories/actionItemRepository';
 import { WaitingForRepository } from '../repositories/waitingForRepository';
 import { FollowUpRepository } from '../repositories/followUpRepository';
 import {
-  FollowThroughActor, ProjectAccessService, assertCanDelete, assertCanWrite, assertSameProject, cleanEnum,
+  FollowThroughActor, ProjectAccessService, assertProjectWrite, assertCanDelete, assertCanWrite, assertSameProject, cleanEnum,
   cleanOptionalText, cleanRequiredDateTime, cleanRequiredText, listingScope, logFollowThroughActivity,
   notAvailable, paginate, parsePaging, queryText, requireProjectUser, validationError,
 } from './followThroughSupport';
@@ -88,6 +88,7 @@ export const MeetingService = {
     assertCanWrite(actor);
     const project = await ProjectAccessService.resolveAccessibleProject(actor, body.projectId);
     if (!project) throw notAvailable('Project');
+    assertProjectWrite(actor, project); // Sprint 25
 
     const organizerId = body.organizerId === undefined || body.organizerId === '' ? actor.userId : body.organizerId;
     await requireProjectUser(organizerId, project, 'organizerId');
@@ -120,6 +121,7 @@ export const MeetingService = {
   async update(actor: FollowThroughActor, id: string, body: Record<string, unknown>): Promise<Meeting> {
     assertCanWrite(actor);
     const { meeting: current, project } = await loadAccessible(actor, id);
+    assertProjectWrite(actor, project); // Sprint 25
     assertSameProject(body, current.projectId);
 
     const updates: Partial<Meeting> = { updatedBy: actor.userId };
@@ -157,7 +159,8 @@ export const MeetingService = {
 
   async remove(actor: FollowThroughActor, id: string): Promise<void> {
     assertCanDelete(actor);
-    const { meeting } = await loadAccessible(actor, id);
+    const { meeting, project } = await loadAccessible(actor, id);
+    assertProjectWrite(actor, project); // Sprint 25
     // Action items raised in the meeting stay, unlinked; references to it are cleared.
     await ActionItemRepository.detachMeeting(id);
     await WaitingForRepository.clearRelated('meeting', id);

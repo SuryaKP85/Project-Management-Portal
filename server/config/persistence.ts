@@ -207,9 +207,10 @@ export function setPostgresStore(active: boolean): void {
  * Sprint 24 — repositories load their demo records only into an embedded or
  * temporary store that has nothing restored. In PostgreSQL mode the database is
  * the source of truth, so no demo record is ever held in memory there.
+ * Sprint 25: production seeds no demo business records either (only the bootstrap administrator).
  */
 export function skipDemoSeed(): boolean {
-  return postgresStore || settings().mode === 'postgresql' || snapshotRestored();
+  return postgresStore || config.isProduction || settings().mode === 'postgresql' || snapshotRestored();
 }
 
 /** The data file in persistent-embedded mode (not secret; shown at startup), otherwise null. */

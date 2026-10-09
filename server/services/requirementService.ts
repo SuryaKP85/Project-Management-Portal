@@ -77,8 +77,12 @@ const LIMITS = { title: 255, description: 10000, rationale: 5000, source: 500 };
 
 const conflict = (message: string) => httpError(409, 'CONFLICT', message);
 
+/**
+ * Sprint 25: editing and approving need write access to the project (admin, its manager or a
+ * listed member) for every role — read access alone (e.g. through one assigned story) never
+ * lets anyone change, approve or reject a project's requirements.
+ */
 function canEdit(actor: FollowThroughActor, project: Project): boolean {
-  if (actor.role === 'admin' || actor.role === 'project-manager' || actor.role === 'product-manager') return true;
   return canWriteProject({ id: actor.userId, role: actor.role }, project);
 }
 
@@ -270,6 +274,10 @@ export const RequirementService = {
     for (const k of changed) (updates as any)[k] = fields[k];
     const substantive = changed.filter((k) => (REQUIREMENT_SUBSTANTIVE_FIELDS as readonly string[]).includes(k));
     const reopened = current.status === 'approved' && substantive.length > 0;
+    // Sprint 25: an approved requirement's content changes only through an approver (the edit reopens it).
+    if (reopened && !isApprover(actor)) {
+      throw forbidden('An approved requirement can only be changed by an administrator, project manager or product manager on the project; the change reopens it for review.');
+    }
     if (reopened) updates.status = 'in-review';
     // Sprint 18: a substantive change is a new revision (owner and target date are not).
     if (substantive.length > 0) updates.revision = (current.revision || 1) + 1;

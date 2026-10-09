@@ -40,7 +40,22 @@ export function isUnsafeJwtSecret(secret: string | undefined): boolean {
   return !value || KNOWN_SAMPLE_JWT_SECRETS.has(value) || value.length < 32;
 }
 
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
+/**
+ * Sprint 25 — SESSION_EXPIRY in milliseconds: a whole number with an optional unit
+ * (s, m, h, d; no unit means seconds), between 1 minute and 90 days. The token and
+ * the session cookie both use it; anything else is a configuration error.
+ */
+export function sessionExpiryMs(value: string = process.env.SESSION_EXPIRY || '7d'): number {
+  const match = /^\s*(\d+)\s*([smhd]?)\s*$/i.exec(String(value));
+  const unitMs: Record<string, number> = { '': 1000, s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
+  const ms = match ? Number(match[1]) * unitMs[match[2].toLowerCase()] : NaN;
+  if (!Number.isFinite(ms) || ms < 60_000 || ms > 90 * 86_400_000) {
+    throw new ConfigurationError(`SESSION_EXPIRY must be a duration such as 8h, 7d or 3600 (seconds), from 1 minute to 90 days (got '${value}').`);
+  }
+  return ms;
+}
+
+export const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
 
 /**
  * Sprint 22A — the address the server listens on. A token signed with a known
@@ -58,6 +73,35 @@ export function resolveListenHost(env: NodeJS.ProcessEnv = process.env): { host:
   throw new ConfigurationError(
     `PM_PORTAL_HOST=${requested} would make the portal reachable from other computers, but JWT_SECRET is not set to a private value (it is missing, the development default, the .env.example sample, or shorter than 32 characters), so anyone on the network could forge a sign-in. Set JWT_SECRET to a random value of at least 32 characters, for example: node -e "console.log(require('crypto').randomBytes(48).toString('base64'))", or remove PM_PORTAL_HOST to keep the portal on this computer only.`
   );
+}
+
+/**
+ * Sprint 25 — the seeded demo accounts have passwords published in the source. While
+ * any of them is active with its published password:
+ * - a production start is refused (they survive in a data file created in development);
+ * - the server stays on this computer: an explicit network PM_PORTAL_HOST is refused,
+ *   and the default every-interface address falls back to 127.0.0.1.
+ * Nothing changes when there are none. Account emails are not secret; passwords are never printed.
+ */
+export function applyDemoAccountGuard(
+  demoAccounts: string[],
+  listen: { host: string; loopbackOnly: boolean },
+  env: NodeJS.ProcessEnv = process.env,
+): { host: string; loopbackOnly: boolean; demoLoopback: boolean } {
+  if (demoAccounts.length === 0) return { ...listen, demoLoopback: false };
+  const list = demoAccounts.join(', ');
+  if (env.NODE_ENV === 'production') {
+    throw new ConfigurationError(
+      `NODE_ENV=production refuses to start: demo account(s) with passwords published in the source are active (${list}). Start in development on this computer, sign in, and change their passwords or deactivate them first.`
+    );
+  }
+  if (LOOPBACK_HOSTS.has(listen.host.toLowerCase())) return { ...listen, demoLoopback: false };
+  if (String(env.PM_PORTAL_HOST || '').trim()) {
+    throw new ConfigurationError(
+      `PM_PORTAL_HOST=${String(env.PM_PORTAL_HOST).trim()} would expose demo account(s) whose passwords are published in the source (${list}) to the network. Change their passwords or deactivate them, or remove PM_PORTAL_HOST.`
+    );
+  }
+  return { host: '127.0.0.1', loopbackOnly: true, demoLoopback: true };
 }
 
 export const config = {
